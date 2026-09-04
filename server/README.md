@@ -15,7 +15,7 @@ at the default.
 ### 2. Configure your connection
 
 Copy `.env.example` to `.env`, then edit `.env` and put in the password
-I  set when Iinstalled PostgreSQL:
+I set when Iinstalled PostgreSQL:
 
 ```
 cd server
@@ -96,46 +96,46 @@ when someone asks how a system this broad got built.
 
 Three tables carry most of the weight:
 
-| Table | Why it matters |
-| --- | --- |
-| `records` | Every quality event, whatever the module. GIN-indexed on the JSONB payload. |
-| `record_links` | The graph. One problem traced across five modules is this table. |
-| `audit_log` | Immutable field-level history. No API path updates or deletes it. |
+| Table          | Why it matters                                                              |
+| -------------- | --------------------------------------------------------------------------- |
+| `records`      | Every quality event, whatever the module. GIN-indexed on the JSONB payload. |
+| `record_links` | The graph. One problem traced across five modules is this table.            |
+| `audit_log`    | Immutable field-level history. No API path updates or deletes it.           |
 
 ## Endpoints
 
 ### Dashboard
 
-| Method | Path | Returns |
-| --- | --- | --- |
-| GET | `/api/health` | Server and database status |
-| GET | `/api/dashboard` | Every KPI on the front page |
-| GET | `/api/dashboard/open-events` | Open events feed, severity ordered |
-| GET | `/api/dashboard/readiness` | Per-clause findings, worst first, plus a gap summary |
+| Method | Path                         | Returns                                              |
+| ------ | ---------------------------- | ---------------------------------------------------- |
+| GET    | `/api/health`                | Server and database status                           |
+| GET    | `/api/dashboard`             | Every KPI on the front page                          |
+| GET    | `/api/dashboard/open-events` | Open events feed, severity ordered                   |
+| GET    | `/api/dashboard/readiness`   | Per-clause findings, worst first, plus a gap summary |
 
 ### Quality events
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| GET | `/api/records?type=ncr&open=true` | Filter by `type`, `status`, `severity`, `open` |
-| GET | `/api/records/NCR-2026-0142` | Record plus its links and full history |
-| POST | `/api/records` | Validated against the published form schema |
-| PATCH | `/api/records/NCR-2026-0142` | Writes an audit row per changed field |
-| POST | `/api/records/NCR-2026-0142/transition` | Refuses moves the workflow does not define |
+| Method | Path                                    | Notes                                          |
+| ------ | --------------------------------------- | ---------------------------------------------- |
+| GET    | `/api/records?type=ncr&open=true`       | Filter by `type`, `status`, `severity`, `open` |
+| GET    | `/api/records/NCR-2026-0142`            | Record plus its links and full history         |
+| POST   | `/api/records`                          | Validated against the published form schema    |
+| PATCH  | `/api/records/NCR-2026-0142`            | Writes an audit row per changed field          |
+| POST   | `/api/records/NCR-2026-0142/transition` | Refuses moves the workflow does not define     |
 
 ### Master data
 
-| Method | Path | Notes |
-| --- | --- | --- |
-| GET | `/api/vendors` | Ordered worst status first |
-| GET | `/api/gages` | Calibration status derived from the due date, never stored |
-| GET | `/api/documents` | With revision counts |
-| GET | `/api/documents/WI-0412/revisions` | Full revision history |
-| GET | `/api/parts` | |
-| GET | `/api/lots?on_hold=true` | |
-| GET | `/api/lots/L-88213/genealogy` | Recursive CTE, heat number to shipment |
-| GET | `/api/training/gaps` | Gaps computed at read time, never stored |
-| GET | `/api/training/matrix` | Operator against document revision |
+| Method | Path                               | Notes                                                      |
+| ------ | ---------------------------------- | ---------------------------------------------------------- |
+| GET    | `/api/vendors`                     | Ordered worst status first                                 |
+| GET    | `/api/gages`                       | Calibration status derived from the due date, never stored |
+| GET    | `/api/documents`                   | With revision counts                                       |
+| GET    | `/api/documents/WI-0412/revisions` | Full revision history                                      |
+| GET    | `/api/parts`                       |                                                            |
+| GET    | `/api/lots?on_hold=true`           |                                                            |
+| GET    | `/api/lots/L-88213/genealogy`      | Recursive CTE, heat number to shipment                     |
+| GET    | `/api/training/gaps`               | Gaps computed at read time, never stored                   |
+| GET    | `/api/training/matrix`             | Operator against document revision                         |
 
 ## Two endpoints worth reading the SQL for
 
