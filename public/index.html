@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QualityGuard QMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<div class="app">
+
+<!-- ==================== SIDEBAR ==================== -->
+<aside class="sidebar">
+    <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect x="1.5" y="1.5" width="29" height="29" rx="4" stroke="#A8703A" stroke-width="1.5"/>
+            <path d="M8 24 L16 8 L24 24" stroke="#EAF3F1" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M6 24 H26" stroke="#A8703A" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="16" cy="24" r="2.4" fill="#A8703A"/>
+        </svg>
+        <div>
+            <div class="brand-name">QualityGuard</div>
+            <span class="brand-sub">QMS / ISO 9001</span>
+        </div>
+    </div>
+
+    <div class="nav-group">Overview</div>
+    <button class="nav-item" data-view="dashboard" aria-current="true"><span>Quality Dashboard</span></button>
+
+    <div class="nav-group">Quality Events</div>
+    <button class="nav-item" data-view="ncr"><span>Nonconformance</span><span class="nav-count hot">14</span></button>
+    <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count">6</span></button>
+    <button class="nav-item" data-view="d8"><span>8D Investigations</span><span class="nav-count">2</span></button>
+    <button class="nav-item" data-view="complaints"><span>Customer Complaints</span><span class="nav-count">3</span></button>
+
+    <div class="nav-group">Control</div>
+    <button class="nav-item" data-view="documents"><span>Document Control</span></button>
+    <button class="nav-item" data-view="drawings"><span>Engineering Drawings</span></button>
+    <button class="nav-item" data-view="change"><span>Change Control</span><span class="nav-count">4</span></button>
+
+    <div class="nav-group">Operations</div>
+    <button class="nav-item" data-view="production"><span>Production</span></button>
+    <button class="nav-item" data-view="receiving"><span>Receiving Inspection</span></button>
+    <button class="nav-item" data-view="warehouse"><span>Warehouse &amp; Material</span></button>
+    <button class="nav-item" data-view="shipping"><span>Shipping</span></button>
+
+    <div class="nav-group">Resources</div>
+    <button class="nav-item" data-view="training"><span>Training &amp; Competence</span></button>
+    <button class="nav-item" data-view="calibration"><span>Calibration</span><span class="nav-count">7</span></button>
+
+    <div class="nav-group">Supply Chain</div>
+    <button class="nav-item" data-view="avl"><span>Approved Vendor List</span></button>
+    <button class="nav-item" data-view="onboarding"><span>Vendor Onboarding</span><span class="nav-count">2</span></button>
+
+    <div class="nav-group">Evaluate</div>
+    <button class="nav-item" data-view="readiness"><span>Audit Readiness</span><span class="nav-count hot" id="nav-readiness-count">-</span></button>
+    <button class="nav-item" data-view="audit"><span>Internal Audit</span><span class="nav-count hot">2</span></button>
+    <button class="nav-item" data-view="review"><span>Management Review</span></button>
+    <button class="nav-item" data-view="risk"><span>Risk Register</span></button>
+    <button class="nav-item" data-view="scorecards"><span>Scorecards &amp; KPIs</span></button>
+
+    <div class="nav-group">Configure</div>
+    <button class="nav-item" data-view="people"><span>People &amp; Access</span></button>
+    <button class="nav-item" data-view="forms"><span>Form Builder</span></button>
+    <button class="nav-item" data-view="workflows"><span>Roles &amp; Permissions</span></button>
+</aside>
+
+<!-- ==================== MAIN ==================== -->
+<div class="main">
+    <header class="topbar">
+        <div class="crumb" id="org-crumb"></div>
+        <div class="topbar-right">
+            <span class="demo-flag">Prototype</span>
+            <span class="site-pill" id="audit-countdown"></span>
+            <button class="icon-btn" id="themeToggle" type="button">Dark</button>
+            <div class="who">
+                <span class="who-name" id="user-name"></span>
+                <span class="who-role" id="user-role"></span>
+            </div>
+            <div class="avatar" id="user-avatar"></div>
+            <button class="icon-btn" id="sign-out" type="button">Sign out</button>
+        </div>
+    </header>
+
+    <div id="connection-banner" class="conn-banner" hidden>
+        Cannot reach the API. Start it with <code>npm run dev</code> in the server folder,
+        then reload this page.
+    </div>
+
+    <div class="content" id="main-content">
+
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view" id="view-dashboard">
+        <div class="view-head">
+            <h1 class="view-title">Quality Dashboard</h1>
+            <p class="view-sub">Week 36, 31 Aug - 6 Sep 2026. Sample data for demonstration.</p>
+        </div>
+
+        <div class="kpis">
+            <div class="kpi">
+                <div class="kpi-label">Open NCRs</div>
+                <div class="kpi-value is-crit" id="kpi-ncr-open">-</div>
+                <div class="kpi-foot" id="kpi-ncr-foot">loading</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Overdue CAPAs</div>
+                <div class="kpi-value is-warn" id="kpi-capa-overdue">-</div>
+                <div class="kpi-foot" id="kpi-capa-foot">loading</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Gages due in 30 d</div>
+                <div class="kpi-value is-warn" id="kpi-gages-due">-</div>
+                <div class="kpi-foot" id="kpi-gages-foot">loading</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Supplier PPM</div>
+                <div class="kpi-value" id="kpi-supplier-ppm">-</div>
+                <div class="kpi-foot" id="kpi-ppm-foot">loading</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Training gaps</div>
+                <div class="kpi-value is-warn" id="kpi-training-gaps">-</div>
+                <div class="kpi-foot" id="kpi-training-foot">loading</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Audits overdue</div>
+                <div class="kpi-value is-crit" id="kpi-audits-overdue">-</div>
+                <div class="kpi-foot" id="kpi-audits-foot">loading</div>
+            </div>
+        </div>
+
+        <div class="grid-2" style="margin-top:16px">
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Open quality events</h2>
+                        <span class="panel-note">14 NCR / 6 CAPA / 3 COMP</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Record</th><th>Description</th>
+                                    <th>Owner</th><th>Age</th><th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboard-events"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Supplier scorecard</h2>
+                        <span class="panel-note">rolling 90 d</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Vendor</th><th>Scope</th><th class="num">OTD</th><th class="num">PPM</th><th class="num">Grade</th><th>Status</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Halstead Steel</td><td class="sm dim">Bar stock, 1018 / 4140</td>
+                                    <td class="num">99.1%</td><td class="num">180</td><td class="num">A</td>
+                                    <td><span class="pill pill-done">Approved</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Corveil Coatings</td><td class="sm dim">Black oxide, passivation</td>
+                                    <td class="num">94.6%</td><td class="num">2,140</td><td class="num">C</td>
+                                    <td><span class="pill pill-prog">On watch</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Ainsley Tool</td><td class="sm dim">Perishable tooling</td>
+                                    <td class="num">98.8%</td><td class="num">0</td><td class="num">A</td>
+                                    <td><span class="pill pill-done">Approved</span></td>
+                                </tr>
+                                <tr>
+                                    <td>Nordvik Heat Treat</td><td class="sm dim">Stress relief, carburize</td>
+                                    <td class="num">91.2%</td><td class="num">3,900</td><td class="num">D</td>
+                                    <td><span class="pill pill-open">SCAR issued</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Clause readiness</h2>
+                        <span class="panel-note">ISO 9001:2015</span>
+                    </div>
+                    <div class="panel-body" style="padding-top:6px">
+                        <div class="clause-row">
+                            <span class="clause-num">4</span><span class="clause-name">Context</span>
+                            <span class="bar bar-ok"><span style="width:100%"></span></span><span class="clause-pct">100%</span>
+                        </div>
+                        <div class="clause-row">
+                            <span class="clause-num">5</span><span class="clause-name">Leadership</span>
+                            <span class="bar bar-ok"><span style="width:100%"></span></span><span class="clause-pct">100%</span>
+                        </div>
+                        <div class="clause-row">
+                            <span class="clause-num">6</span><span class="clause-name">Planning</span>
+                            <span class="bar bar-warn"><span style="width:78%"></span></span><span class="clause-pct">78%</span>
+                        </div>
+                        <div class="clause-row">
+                            <span class="clause-num">7</span><span class="clause-name">Support</span>
+                            <span class="bar bar-warn"><span style="width:86%"></span></span><span class="clause-pct">86%</span>
+                        </div>
+                        <div class="clause-row">
+                            <span class="clause-num">8</span><span class="clause-name">Operation</span>
+                            <span class="bar bar-ok"><span style="width:94%"></span></span><span class="clause-pct">94%</span>
+                        </div>
+                        <div class="clause-row">
+                            <span class="clause-num">9</span><span class="clause-name">Performance</span>
+                            <span class="bar bar-crit"><span style="width:71%"></span></span><span class="clause-pct">71%</span>
+                        </div>
+                        <div class="clause-row">
+                            <span class="clause-num">10</span><span class="clause-name">Improvement</span>
+                            <span class="bar bar-ok"><span style="width:96%"></span></span><span class="clause-pct">96%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Calibration due</h2><span class="panel-note">next 30 d</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Gage</th><th>Type</th><th>Due</th></tr></thead>
+                            <tbody id="dashboard-cal"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Training gaps</h2><span class="panel-note">clause 7.2</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Operator</th><th>Missing</th></tr></thead>
+                            <tbody id="dashboard-training"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ ISO 9001 COVERAGE ============ -->
+    <section class="view" id="view-readiness" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Audit Readiness</h1>
+            <p class="view-sub" id="readiness-sub">What an auditor would write up, worst first.</p>
+        </div>
+
+        <div class="kpis">
+            <div class="kpi">
+                <div class="kpi-label">Clauses with findings</div>
+                <div class="kpi-value is-crit" id="gap-flagged">-</div>
+                <div class="kpi-foot" id="gap-flagged-foot">loading</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Audits overdue</div>
+                <div class="kpi-value is-crit" id="gap-audits">-</div>
+                <div class="kpi-foot">clause 9.2</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">CAPAs overdue</div>
+                <div class="kpi-value is-crit" id="gap-capas">-</div>
+                <div class="kpi-foot">clause 10.2</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Gages past due</div>
+                <div class="kpi-value is-crit" id="gap-gages">-</div>
+                <div class="kpi-foot">clause 7.1.5</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">Training gaps</div>
+                <div class="kpi-value is-warn" id="gap-training">-</div>
+                <div class="kpi-foot">clause 7.2</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-label">No evidence recorded</div>
+                <div class="kpi-value is-warn" id="gap-evidence">-</div>
+                <div class="kpi-foot">nothing to show an auditor</div>
+            </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">Findings by clause</h2>
+                <div class="row">
+                    <span class="panel-note" id="readiness-count"></span>
+                    <button class="btn" id="readiness-filter" type="button">Show all clauses</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Clause</th><th>Requirement</th><th>Finding</th>
+                            <th>Evidence in</th><th class="num">Records</th>
+                        </tr>
+                    </thead>
+                    <tbody id="readiness-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ NCR ============ -->
+    <section class="view" id="view-ncr" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Nonconformance<span class="clause-ref">8.7</span></h1>
+            <p class="view-sub">Control of nonconforming outputs. Segregation, disposition, and MRB record.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">NCR register</h2>
+                    <div class="row"><button class="btn">Filter</button><button class="btn btn-primary" data-requires="ncr.create" data-new-record="ncr">New NCR</button></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>NCR</th><th>Part</th><th>Defect</th><th class="num">Qty</th><th>Disposition</th><th>Status</th></tr></thead>
+                        <tbody id="ncr-register"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="ncr-detail-number">Select a record</h2>
+                    <span id="ncr-detail-status"></span>
+                </div>
+                <div class="panel-body" id="ncr-detail"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ CAPA ============ -->
+    <section class="view" id="view-capa" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Corrective and Preventive Action<span class="clause-ref">10.2</span></h1>
+            <p class="view-sub">Root cause, action plan, and the effectiveness check that closes the loop. A CAPA cannot close without verified effectiveness.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">CAPA register</h2>
+                    <div class="row"><button class="btn">Filter</button><button class="btn btn-primary" data-requires="capa.create" data-new-record="capa">New CAPA</button></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>CAPA</th><th>Trigger</th><th>Owner</th><th>Due</th><th>Stage</th></tr></thead>
+                        <tbody id="capa-register"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">CAPA-2026-0031</h2><span class="pill pill-prog">Root cause</span></div>
+                    <div class="panel-body">
+                        <dl class="kv">
+                            <dt>Type</dt><dd>Corrective</dd>
+                            <dt>Source</dt><dd>Trend, 4 NCRs in 60 days</dd>
+                            <dt>Problem</dt><dd>Thread ring gage rejects on 1/2-13 UNC without a matching CMM failure</dd>
+                            <dt>Method</dt><dd>5-why plus gage R and R study</dd>
+                            <dt>Root cause</dt><dd class="dim">Pending, R and R results due 8 Sep</dd>
+                            <dt>Owner</dt><dd>S. Parnell</dd>
+                            <dt>Opened</dt><dd class="mono">16 Aug 2026</dd>
+                            <dt>Due</dt><dd class="mono" style="color:var(--crit)">28 Aug 2026, 19 d overdue</dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Action plan</h2><span class="panel-note">2 of 4 complete</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Action</th><th>Owner</th><th>Status</th></tr></thead>
+                            <tbody>
+                                <tr><td class="sm">Pull all 1/2-13 gages for verification</td><td class="sm">D. Whitfield</td><td><span class="pill pill-done">Done</span></td></tr>
+                                <tr><td class="sm">Run gage R and R, 3 operators x 10 parts</td><td class="sm">M. Okonkwo</td><td><span class="pill pill-done">Done</span></td></tr>
+                                <tr><td class="sm">Revise SOP-0220 cal interval for thread gages</td><td class="sm">D. Whitfield</td><td><span class="pill pill-prog">In progress</span></td></tr>
+                                <tr><td class="sm">Retrain inspectors on gage handling</td><td class="sm">S. Parnell</td><td><span class="pill pill-hold">Not started</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Effectiveness check</h2><span class="panel-note">required to close</span></div>
+                    <div class="panel-body">
+                        <dl class="kv">
+                            <dt>Criterion</dt><dd>Zero thread gage NCRs for 90 days after implementation</dd>
+                            <dt>Check date</dt><dd class="mono">Implementation plus 90 d</dd>
+                            <dt>Verified by</dt><dd class="dim">Not yet assigned</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ 8D ============ -->
+
+    <!-- ============ CUSTOMER COMPLAINTS ============ -->
+    <section class="view" id="view-complaints" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Customer Complaints<span class="clause-ref">8.2.1 / 9.1.2</span></h1>
+            <p class="view-sub">Customer communication and satisfaction. Every complaint carries a response clock and a link to the investigation that answers it.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Complaint register</h2>
+                    <div class="row"><button class="btn">Filter</button><button class="btn btn-primary" data-requires="complaint.create" data-new-record="complaint">Log complaint</button></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Complaint</th><th>Customer</th><th>Issue</th><th class="num">Qty</th><th>Response due</th><th>Status</th></tr></thead>
+                        <tbody id="complaint-register"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">COMP-2026-0009</h2><span class="pill pill-open">Investigating</span></div>
+                    <div class="panel-body">
+                        <dl class="kv">
+                            <dt>Customer</dt><dd>Voss Automotive, Tier 1</dd>
+                            <dt>Contact</dt><dd>A. Brandt, SQE</dd>
+                            <dt>Received</dt><dd class="mono">28 Aug 2026</dd>
+                            <dt>Part</dt><dd class="mono">RP-9004-B rev C</dd>
+                            <dt>Lot</dt><dd class="mono">L-87944</dd>
+                            <dt>Shipment</dt><dd class="mono">SHIP-20260821-04</dd>
+                            <dt>Claim</dt><dd>Two distinct lots found on one pallet, traceability broken</dd>
+                            <dt>Containment</dt><dd>100% sort at customer site, Ridgeline funded</dd>
+                            <dt>Investigation</dt><dd><span class="rec-id">8D-2026-0004</span></dd>
+                            <dt>Cost to date</dt><dd class="mono">14,280 USD</dd>
+                        </dl>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Satisfaction trend</h2><span class="panel-note">clause 9.1.2</span></div>
+                    <div class="panel-body" style="padding-top:8px">
+                        <div class="clause-row"><span class="clause-num">Q1</span><span class="clause-name">Voss Automotive</span><span class="bar bar-ok"><span style="width:92%"></span></span><span class="clause-pct">92</span></div>
+                        <div class="clause-row"><span class="clause-num">Q2</span><span class="clause-name">Voss Automotive</span><span class="bar bar-ok"><span style="width:89%"></span></span><span class="clause-pct">89</span></div>
+                        <div class="clause-row"><span class="clause-num">Q3</span><span class="clause-name">Voss Automotive</span><span class="bar bar-warn"><span style="width:74%"></span></span><span class="clause-pct">74</span></div>
+                        <div class="clause-row"><span class="clause-num">Q3</span><span class="clause-name">Kestrel Aerospace</span><span class="bar bar-ok"><span style="width:95%"></span></span><span class="clause-pct">95</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ DOCUMENT CONTROL ============ -->
+    <section class="view" id="view-documents" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Document Control<span class="clause-ref">7.5</span></h1>
+            <p class="view-sub">Controlled copies, revision history, approval routing, and read-and-understood acknowledgement.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Controlled documents</h2><span class="panel-note">1,204 active / 38 pending approval</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Doc</th><th>Title</th><th>Rev</th><th>Owner</th><th>Effective</th><th class="num">Ack</th><th>Status</th></tr></thead>
+                    <tbody id="documents-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-label">Revision history, WI-0412</div>
+        <div class="panel">
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Rev</th><th>Change</th><th>Author</th><th>Approved by</th><th>Date</th></tr></thead>
+                    <tbody>
+                        <tr><td class="mono sm">D</td><td class="sm">Require new traveler on any partial lot merge</td><td class="sm">K. Reyes</td><td class="sm dim">pending</td><td class="mono sm">02 Sep 2026</td></tr>
+                        <tr><td class="mono sm">C</td><td class="sm">Added label revision check at pack-out</td><td class="sm">K. Reyes</td><td class="sm">S. Parnell</td><td class="mono sm">18 Apr 2026</td></tr>
+                        <tr><td class="mono sm">B</td><td class="sm">Clarified pallet stacking limits</td><td class="sm">K. Reyes</td><td class="sm">S. Parnell</td><td class="mono sm">07 Nov 2025</td></tr>
+                        <tr><td class="mono sm">A</td><td class="sm">Initial release</td><td class="sm">K. Reyes</td><td class="sm">S. Parnell</td><td class="mono sm">15 Feb 2025</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ ENGINEERING DRAWINGS ============ -->
+    <section class="view" id="view-drawings" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Engineering Drawings<span class="clause-ref">8.3</span></h1>
+            <p class="view-sub">Design and development records. Drawing revision is the single source of truth for every inspection plan downstream.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Drawing register</h2><span class="panel-note">640 active</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Drawing</th><th>Description</th><th>Rev</th><th>Customer</th><th>Open ECN</th><th>Access</th></tr></thead>
+                        <tbody>
+                            <tr><td class="mono sm">RP-4471-A</td><td class="sm">Housing, hydraulic manifold</td><td class="mono sm">D</td><td class="sm">Voss</td><td class="mono sm">-</td><td><span class="pill pill-info">Eng + QA</span></td></tr>
+                            <tr><td class="mono sm">RP-2210-C</td><td class="sm">Shaft, drive spline</td><td class="mono sm">G</td><td class="sm">Kestrel</td><td class="mono sm">ECN-0118</td><td><span class="pill pill-info">Eng + QA</span></td></tr>
+                            <tr><td class="mono sm">RP-9004-B</td><td class="sm">Bracket, mounting</td><td class="mono sm">C</td><td class="sm">Voss</td><td class="mono sm">-</td><td><span class="pill pill-info">All plant</span></td></tr>
+                            <tr><td class="mono sm">RP-8890-D</td><td class="sm">Cap, end closure</td><td class="mono sm">B</td><td class="sm">Dunmore</td><td class="mono sm">-</td><td><span class="pill pill-info">Eng + QA</span></td></tr>
+                            <tr><td class="mono sm">RP-6612-E</td><td class="sm">Retainer ring</td><td class="mono sm">A</td><td class="sm">Halberd</td><td class="mono sm">ECN-0121</td><td><span class="pill pill-hold">Eng only</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">RP-4471-A rev D</h2><span class="pill pill-done">Released</span></div>
+                    <div class="panel-body">
+                        <dl class="kv">
+                            <dt>Material</dt><dd>6061-T6 aluminium</dd>
+                            <dt>Critical char.</dt><dd class="mono">DIA 12.70 +0.013/-0.000</dd>
+                            <dt>Surface finish</dt><dd class="mono">3.2 Ra max</dd>
+                            <dt>Datum scheme</dt><dd class="mono">A / B / C</dd>
+                            <dt>True position</dt><dd class="mono">0.05 MMC to A-B-C</dd>
+                            <dt>Approved by</dt><dd>R. Sandoval, Eng Mgr</dd>
+                            <dt>Released</dt><dd class="mono">11 Feb 2026</dd>
+                        </dl>
+                        <div class="section-label">Downstream links</div>
+                        <div class="chip-list">
+                            <span class="chip">Inspection plan IP-4471</span>
+                            <span class="chip">Control plan CP-4471</span>
+                            <span class="chip">WO-31882</span>
+                            <span class="chip">NCR-2026-0142</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Access control</h2><span class="panel-note">clause 7.5.3</span></div>
+                    <div class="panel-body">
+                        <p class="sm dim" style="margin:0 0 10px">Drawings are read-only to production. Only Engineering can upload a new revision, and a release automatically supersedes the prior rev at every shop-floor terminal.</p>
+                        <div class="chip-list">
+                            <span class="chip">Engineering: read, write, release</span>
+                            <span class="chip">Quality: read, comment</span>
+                            <span class="chip">Production: read current rev only</span>
+                            <span class="chip">Supplier portal: scoped read</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ CHANGE CONTROL ============ -->
+
+    <!-- ============ PRODUCTION ============ -->
+    <section class="view" id="view-d8" hidden>
+        <div class="view-head">
+            <h1 class="view-title">8D Investigations<span class="clause-ref">10.2</span></h1>
+            <p class="view-sub">The eight disciplines are the workflow. A record sits on one until the discipline is complete, and cannot skip ahead.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head"><h2 class="panel-title">Open investigations</h2></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Record</th><th>Problem</th><th>Customer</th><th>Champion</th><th>Discipline</th></tr></thead>
+                    <tbody id="eightd-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div>
+                <div class="panel" style="margin-bottom:16px">
+                    <div class="panel-head">
+                        <h2 class="panel-title" id="eightd-number">Select an investigation</h2>
+                        <span class="panel-note">eight disciplines</span>
+                    </div>
+                </div>
+                <div class="d8" id="eightd-track"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Investigation detail</h2></div>
+                <div class="panel-body" id="eightd-side"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="view" id="view-change" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Change Control<span class="clause-ref">6.3 / 8.5.6</span></h1>
+            <p class="view-sub">Planned changes with an impact assessment. Nothing reaches the floor until every affected area has signed for its own impact.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">Engineering change notices</h2>
+                <button class="btn btn-primary" data-requires="change.create" data-new-record="ecn">Raise ECN</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>ECN</th><th>Change</th><th>Part</th><th>Effectivity</th><th>Status</th></tr></thead>
+                    <tbody id="ecn-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="ecn-number">Select a change</h2>
+                    <span class="panel-note" id="ecn-note"></span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Area</th><th>Impact</th><th>Signed</th><th>Sign-off</th></tr></thead>
+                        <tbody id="impact-table"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Change detail</h2></div>
+                <div class="panel-body" id="ecn-side"></div>
+            </div>
+        </div>
+    </section>
+    <section class="view" id="view-production" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Production<span class="clause-ref">8.5.1</span></h1>
+            <p class="view-sub">Control of production. A work order carries the traveller, the first article, and every quality event raised against it.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Work orders</h2>
+                    <span class="panel-note">holds first</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>WO</th><th>Part</th><th>Lot</th><th class="num">Qty</th><th>Ops</th><th>Cell</th><th>Status</th></tr></thead>
+                        <tbody id="wo-table"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title" id="wo-detail-number">Select a work order</h2>
+                        <span id="wo-detail-status"></span>
+                    </div>
+                    <div class="panel-body" id="wo-detail"></div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Traveller</h2><span class="panel-note">operation sign-off</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Op</th><th>Description</th><th>Operator</th><th>Check</th></tr></thead>
+                            <tbody id="traveller-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel" id="fai-panel" hidden>
+                    <div class="panel-head"><h2 class="panel-title">First article</h2><span class="panel-note">AS9102 form 3</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Char.</th><th>Spec</th><th>Actual</th><th>Gage</th><th>Result</th></tr></thead>
+                            <tbody id="fai-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ RECEIVING INSPECTION ============ -->
+    <section class="view" id="view-receiving" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Receiving Inspection<span class="clause-ref">8.4.2</span></h1>
+            <p class="view-sub">Verification that purchased product meets requirements before it reaches the floor. Sampling plan follows the vendor's grade.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Receipts awaiting disposition</h2><span class="panel-note">ANSI Z1.4 level II</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Receipt</th><th>PO</th><th>Vendor</th><th>Material</th><th class="num">Qty</th><th>Plan</th><th>Result</th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="sev sev-warn"></span><span class="rec-id">RCV-20260901-3</span></td><td class="mono sm">PO-55401</td><td class="sm">Halstead Steel</td><td class="mono sm">RM-1018-HR</td><td class="num">2,400</td><td class="mono sm">Skip-lot</td><td><span class="pill pill-open">Cert issue</span></td></tr>
+                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">RCV-20260902-1</span></td><td class="mono sm">PO-55418</td><td class="sm">Ainsley Tool</td><td class="mono sm">TL-CARB-38</td><td class="num">60</td><td class="mono sm">Skip-lot</td><td><span class="pill pill-done">Accept</span></td></tr>
+                            <tr><td><span class="sev sev-crit"></span><span class="rec-id">RCV-20260902-2</span></td><td class="mono sm">PO-55390</td><td class="sm">Nordvik Heat Treat</td><td class="mono sm">RP-2210-C</td><td class="num">150</td><td class="mono sm">100%</td><td><span class="pill pill-open">Hardness low</span></td></tr>
+                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">RCV-20260903-1</span></td><td class="mono sm">PO-55422</td><td class="sm">Brightline Plating</td><td class="mono sm">RP-9004-B</td><td class="num">1,200</td><td class="mono sm">AQL 1.0</td><td><span class="pill pill-done">Accept</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">RCV-20260902-2</h2><span class="pill pill-open">Reject</span></div>
+                <div class="panel-body">
+                    <dl class="kv">
+                        <dt>Vendor</dt><dd>Nordvik Heat Treat, grade D</dd>
+                        <dt>Process</dt><dd>Carburize and temper</dd>
+                        <dt>Spec</dt><dd class="mono">HRC 58-62 case</dd>
+                        <dt>Sample 1</dt><dd class="mono" style="color:var(--crit)">HRC 54.2</dd>
+                        <dt>Sample 2</dt><dd class="mono" style="color:var(--crit)">HRC 55.1</dd>
+                        <dt>Sample 3</dt><dd class="mono">HRC 58.4</dd>
+                        <dt>Gage</dt><dd class="mono">HG-018</dd>
+                        <dt>Raised</dt><dd><span class="rec-id">NCR-2026-0143</span></dd>
+                        <dt>Vendor action</dt><dd><span class="rec-id">SCAR-2026-0004</span></dd>
+                    </dl>
+                    <div class="section-label">Sampling escalation</div>
+                    <p class="sm dim" style="margin:0">Grade D vendors move to 100% inspection automatically. Nordvik returns to AQL 1.0 after five consecutive accepted lots.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ WAREHOUSE AND MATERIAL ============ -->
+    <section class="view" id="view-warehouse" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Warehouse and Material<span class="clause-ref">8.5.2 / 8.5.4</span></h1>
+            <p class="view-sub">Identification, traceability, and preservation. Follow any finished lot back to the heat number it came from.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Lot genealogy, L-88213</h2><span class="panel-note">full traceability</span></div>
+                <div class="panel-body">
+                    <div class="tree" id="genealogy-tree"></div>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Material on hold</h2><span class="panel-note">clause 8.7</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Lot</th><th>Location</th><th class="num">Qty</th><th>Reason</th></tr></thead>
+                            <tbody id="holds-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Preservation checks</h2><span class="panel-note">clause 8.5.4</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Control</th><th>Area</th><th>Status</th></tr></thead>
+                            <tbody>
+                                <tr><td class="sm">Humidity, 45% max</td><td class="sm">Finished goods</td><td><span class="pill pill-done">38%</span></td></tr>
+                                <tr><td class="sm">Shelf life, adhesives</td><td class="sm">Consumables</td><td><span class="pill pill-prog">2 expiring</span></td></tr>
+                                <tr><td class="sm">FIFO rotation</td><td class="sm">Raw stock</td><td><span class="pill pill-done">Compliant</span></td></tr>
+                                <tr><td class="sm">ESD handling</td><td class="sm">Not applicable</td><td><span class="pill pill-hold">N/A</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ SHIPPING ============ -->
+    <section class="view" id="view-shipping" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Shipping<span class="clause-ref">8.6</span></h1>
+            <p class="view-sub">Release of product. Nothing ships until every planned verification is complete and an authorized person signs the release.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Shipments</h2><span class="panel-note">1,940 released YTD / 97.4% OTD</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Shipment</th><th>Customer</th><th>Part / Lot</th><th class="num">Qty</th><th>Released by</th><th>Status</th></tr></thead>
+                        <tbody>
+                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">SHIP-20260903-01</span></td><td class="sm">Kestrel Aerospace</td><td class="mono sm">RP-6612-E / L-88221</td><td class="num">880</td><td class="sm">M. Okonkwo</td><td><span class="pill pill-done">Shipped</span></td></tr>
+                            <tr><td><span class="sev sev-warn"></span><span class="rec-id">SHIP-20260903-02</span></td><td class="sm">Voss Automotive</td><td class="mono sm">RP-9004-B / L-88240</td><td class="num">2,000</td><td class="sm dim">-</td><td><span class="pill pill-prog">Awaiting release</span></td></tr>
+                            <tr><td><span class="sev sev-crit"></span><span class="rec-id">SHIP-20260904-01</span></td><td class="sm">Dunmore Industrial</td><td class="mono sm">RP-4471-A / L-88213</td><td class="num">400</td><td class="sm dim">-</td><td><span class="pill pill-open">Blocked, NCR</span></td></tr>
+                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">SHIP-20260828-02</span></td><td class="sm">Halberd Motion</td><td class="mono sm">RP-6612-E / L-88221</td><td class="num">880</td><td class="sm">M. Okonkwo</td><td><span class="pill pill-done">Shipped</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Release checklist</h2><span class="pill pill-prog">SHIP-20260903-02</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Verification</th><th>Evidence</th><th>Status</th></tr></thead>
+                        <tbody>
+                            <tr><td class="sm">Final inspection complete</td><td class="mono sm">IP-9004 rec 2,000</td><td><span class="pill pill-done">Pass</span></td></tr>
+                            <tr><td class="sm">All ops signed on traveler</td><td class="mono sm">WO-31890</td><td><span class="pill pill-done">Pass</span></td></tr>
+                            <tr><td class="sm">No open NCR on lot</td><td class="mono sm">L-88240</td><td><span class="pill pill-done">Clear</span></td></tr>
+                            <tr><td class="sm">Cert of conformance generated</td><td class="mono sm">C of C 20260903-02</td><td><span class="pill pill-done">Ready</span></td></tr>
+                            <tr><td class="sm">Customer-specific labels</td><td class="mono sm">Voss spec VS-114</td><td><span class="pill pill-prog">Printing</span></td></tr>
+                            <tr><td class="sm">Authorized release signature</td><td class="sm dim">Quality manager</td><td><span class="pill pill-hold">Pending</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ TRAINING ============ -->
+    <section class="view" id="view-training" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Training and Competence<span class="clause-ref">7.2</span></h1>
+            <p class="view-sub">Competency matrix. Each operator against the revision of the work instruction they are qualified to run.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Competency matrix</h2><span class="panel-note">operator against document revision</span></div>
+            <div class="table-wrap">
+                <table id="training-matrix-table"></table>
+            </div>
+        </div>
+
+        <div class="section-label">Open gaps</div>
+        <div class="panel">
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Operator</th><th>Role</th><th>Required document</th><th>Gap</th></tr></thead>
+                    <tbody id="training-gaps-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-label">Why a gap appears</div>
+        <div class="panel">
+            <div class="panel-body">
+                <p class="sm dim" style="margin:0;max-width:66ch">A gap is not a stored flag. The server computes it at read time from two tables: which documents a role is required to be trained on, and which training records exist at the document's current revision. Release a new revision in Document Control and the gaps appear on their own. This is the link auditors probe hardest under clause 7.2.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ CALIBRATION ============ -->
+    <section class="view" id="view-calibration" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Calibration<span class="clause-ref">7.1.5</span></h1>
+            <p class="view-sub">Monitoring and measuring resources. 214 gages under control, traceable to NIST.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Gage register</h2><span class="panel-note">1 past due / 7 due in 30 d</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Gage ID</th><th>Description</th><th>Range</th><th>Interval</th><th>Last cal</th><th>Due</th><th>Status</th></tr></thead>
+                    <tbody id="calibration-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-label">Out-of-tolerance impact, MIC-114</div>
+        <div class="panel">
+            <div class="panel-body">
+                <p class="sm dim" style="margin:0 0 12px;max-width:66ch">A gage found out of tolerance at calibration triggers a reverse traceability sweep: every lot measured with it since the last good calibration is listed for review. Clause 7.1.5.2 requires this and it is the most commonly missed requirement in the standard.</p>
+                <div class="chip-list">
+                    <span class="chip">L-87902, 640 pc, shipped</span>
+                    <span class="chip">L-88044, 220 pc, in stock</span>
+                    <span class="chip">L-88102, 96 pc, NCR-0135</span>
+                    <span class="chip">L-88190, 88 pc, on hold</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ APPROVED VENDOR LIST ============ -->
+    <section class="view" id="view-avl" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Approved Vendor List<span class="clause-ref">8.4</span></h1>
+            <p class="view-sub">Control of externally provided processes, products and services. Approval scope, certification, and performance.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Approved vendors</h2><span class="panel-note">62 active / 1 SCAR open</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Vendor</th><th>Approved scope</th><th>Cert</th><th>Expires</th><th class="num">OTD</th><th class="num">PPM</th><th>Status</th></tr></thead>
+                    <tbody id="vendors-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-label">Open supplier corrective action</div>
+        <div class="panel">
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>SCAR</th><th>Vendor</th><th>Issue</th><th>Raised</th><th>Response due</th><th>Status</th></tr></thead>
+                    <tbody>
+                        <tr><td><span class="sev sev-crit"></span><span class="rec-id">SCAR-2026-0004</span></td><td class="sm">Nordvik Heat Treat</td><td class="sm">Case hardness below spec, 2 of 3 samples</td><td class="mono sm">02 Sep 2026</td><td class="mono sm">16 Sep 2026</td><td><span class="pill pill-open">Awaiting 8D</span></td></tr>
+                        <tr><td><span class="sev sev-warn"></span><span class="rec-id">SCAR-2026-0003</span></td><td class="sm">Corveil Coatings</td><td class="sm">Coating thickness variation</td><td class="mono sm">11 Aug 2026</td><td class="mono sm">25 Aug 2026</td><td><span class="pill pill-prog">Response received</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ VENDOR ONBOARDING ============ -->
+    <section class="view" id="view-onboarding" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Vendor Onboarding<span class="clause-ref">8.4.1</span></h1>
+            <p class="view-sub">Evaluation and selection of external providers. A vendor cannot receive a production PO until every stage is signed.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Merrow Fasteners</h2><span class="pill pill-prog">Stage 4 of 6</span></div>
+                </div>
+                <div class="pipe">
+                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Questionnaire returned</div><div class="pipe-meta">Self-assessment, 42 questions, scored 88</div></div><span class="pill pill-done">12 Aug</span></div>
+                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Certification verified</div><div class="pipe-meta">ISO 9001 confirmed with registrar, expires 2028</div></div><span class="pill pill-done">15 Aug</span></div>
+                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Financial and capacity check</div><div class="pipe-meta">D and B pulled, capacity confirmed for 40k pc/yr</div></div><span class="pill pill-done">21 Aug</span></div>
+                    <div class="pipe-step active"><span class="pipe-dot"></span><div><div class="pipe-name">On-site audit</div><div class="pipe-meta">Scheduled 12 Sep, auditor T. Alvarez</div></div><span class="pill pill-prog">Scheduled</span></div>
+                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">First article approval</div><div class="pipe-meta">PPAP level 3 required</div></div><span class="pill pill-hold">-</span></div>
+                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">Added to AVL</div><div class="pipe-meta">Quality manager signature required</div></div><span class="pill pill-hold">-</span></div>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Onboarding queue</h2><span class="panel-note">2 active</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Vendor</th><th>Scope</th><th>Stage</th><th>Owner</th></tr></thead>
+                            <tbody>
+                                <tr><td class="sm">Merrow Fasteners</td><td class="sm">Class 10.9 hardware</td><td class="mono sm">4 of 6</td><td class="sm">T. Alvarez</td></tr>
+                                <tr><td class="sm">Ostrand Grinding</td><td class="sm">Centerless grinding</td><td class="mono sm">2 of 6</td><td class="sm">T. Alvarez</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Approval criteria</h2><span class="panel-note">SOP-0088</span></div>
+                    <div class="panel-body">
+                        <p class="sm dim" style="margin:0 0 10px;max-width:60ch">Criteria are configurable per commodity. Special processes such as heat treat and plating require an on-site audit; distributors of catalogue hardware do not.</p>
+                        <div class="chip-list">
+                            <span class="chip">Questionnaire score 75 min</span>
+                            <span class="chip">Valid ISO 9001 or AS9100</span>
+                            <span class="chip">On-site audit, special process</span>
+                            <span class="chip">PPAP level 3</span>
+                            <span class="chip">Signed quality agreement</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ INTERNAL AUDIT ============ -->
+    <section class="view" id="view-audit" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Internal Audit<span class="clause-ref">9.2</span></h1>
+            <p class="view-sub">Planned audit programme covering every clause at defined intervals, with findings that feed corrective action.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Audit schedule 2026</h2><span class="panel-note">2 overdue</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Audit</th><th>Scope</th><th>Auditor</th><th>Planned</th><th>Status</th></tr></thead>
+                            <tbody id="audit-register"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="panel" style="margin-bottom:16px">
+                    <div class="panel-head"><h2 class="panel-title">Findings, AUD-2026-009</h2><span class="panel-note">1 major / 1 minor / 1 OFI</span></div>
+                </div>
+
+                <div class="finding major">
+                    <div class="finding-head">
+                        <h3 class="finding-title">Major nonconformity</h3>
+                        <span class="pill pill-open">Clause 8.5.2</span>
+                    </div>
+                    <p class="finding-body">Partial lot merges observed at op 70 with no re-identification. Traceability cannot be reconstructed for merged lots.</p>
+                    <div class="chip-list"><span class="chip">CAPA-2026-0029</span><span class="chip">WI-0412 rev D</span></div>
+                </div>
+
+                <div class="finding minor">
+                    <div class="finding-head">
+                        <h3 class="finding-title">Minor nonconformity</h3>
+                        <span class="pill pill-prog">Clause 7.2</span>
+                    </div>
+                    <p class="finding-body">Three operators running work instructions they are not recorded as trained on. Training matrix not updated after rev C release.</p>
+                    <div class="chip-list"><span class="chip">CAPA-2026-0030</span></div>
+                </div>
+
+                <div class="finding ofi">
+                    <div class="finding-head">
+                        <h3 class="finding-title">Opportunity for improvement</h3>
+                        <span class="pill pill-hold">Clause 8.5.1</span>
+                    </div>
+                    <p class="finding-body">Traveler sign-offs are legible but handwritten. Electronic sign-off would reduce transcription risk and speed release.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ MANAGEMENT REVIEW ============ -->
+    <section class="view" id="view-review" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Management Review<span class="clause-ref">9.3</span></h1>
+            <p class="view-sub">The standard names the required inputs and outputs. QualityGuard assembles the inputs automatically from every other module.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Q3 2026 inputs</h2><span class="panel-note">clause 9.3.2, auto-assembled</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Required input</th><th>Source module</th><th>Summary</th></tr></thead>
+                        <tbody>
+                            <tr><td class="sm">Status of prior actions</td><td class="sm dim">Management Review</td><td class="mono sm">6 of 8 closed</td></tr>
+                            <tr><td class="sm">Changes in external and internal issues</td><td class="sm dim">Risk Register</td><td class="mono sm">3 new risks</td></tr>
+                            <tr><td class="sm">Customer satisfaction</td><td class="sm dim">Complaints</td><td class="mono sm">74 Voss, down 15</td></tr>
+                            <tr><td class="sm">Quality objectives performance</td><td class="sm dim">Scorecards</td><td class="mono sm">6 of 9 on target</td></tr>
+                            <tr><td class="sm">Process performance and conformity</td><td class="sm dim">Production, NCR</td><td class="mono sm">842 PPM</td></tr>
+                            <tr><td class="sm">Nonconformities and corrective actions</td><td class="sm dim">NCR, CAPA</td><td class="mono sm">14 NCR, 2 CAPA late</td></tr>
+                            <tr><td class="sm">Monitoring and measurement results</td><td class="sm dim">Calibration</td><td class="mono sm">1 gage past due</td></tr>
+                            <tr><td class="sm">Audit results</td><td class="sm dim">Internal Audit</td><td class="mono sm">2 audits overdue</td></tr>
+                            <tr><td class="sm">External provider performance</td><td class="sm dim">AVL</td><td class="mono sm">1 vendor grade D</td></tr>
+                            <tr><td class="sm">Adequacy of resources</td><td class="sm dim">Training</td><td class="mono sm">3 competency gaps</td></tr>
+                            <tr><td class="sm">Effectiveness of risk actions</td><td class="sm dim">Risk Register</td><td class="mono sm">2 unmitigated</td></tr>
+                            <tr><td class="sm">Opportunities for improvement</td><td class="sm dim">Audit, CAPA</td><td class="mono sm">5 OFIs open</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Review history</h2><span class="panel-note">quarterly</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Review</th><th>Held</th><th>Chair</th><th>Status</th></tr></thead>
+                            <tbody>
+                                <tr><td class="mono sm">MR-2026-Q3</td><td class="mono sm">due 30 Sep</td><td class="sm">R. Sandoval</td><td><span class="pill pill-prog">Pending</span></td></tr>
+                                <tr><td class="mono sm">MR-2026-Q2</td><td class="mono sm">28 Jun 2026</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Closed</span></td></tr>
+                                <tr><td class="mono sm">MR-2026-Q1</td><td class="mono sm">29 Mar 2026</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Closed</span></td></tr>
+                                <tr><td class="mono sm">MR-2025-Q4</td><td class="mono sm">18 Dec 2025</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Closed</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Q2 outputs</h2><span class="panel-note">clause 9.3.3</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Decision</th><th>Owner</th><th>Status</th></tr></thead>
+                            <tbody>
+                                <tr><td class="sm">Add second CMM to relieve inspection queue</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Approved</span></td></tr>
+                                <tr><td class="sm">Move Nordvik to 100% incoming</td><td class="sm">T. Alvarez</td><td><span class="pill pill-done">Done</span></td></tr>
+                                <tr><td class="sm">Revise PPM objective to 700</td><td class="sm">S. Parnell</td><td><span class="pill pill-prog">In progress</span></td></tr>
+                                <tr><td class="sm">Hire second quality technician</td><td class="sm">R. Sandoval</td><td><span class="pill pill-prog">Open req</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ RISK REGISTER ============ -->
+    <section class="view" id="view-risk" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Risk Register<span class="clause-ref">6.1</span></h1>
+            <p class="view-sub">Actions to address risks and opportunities. Severity times likelihood times detection gives the priority number that drives action.</p>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Risks and opportunities</h2><span class="panel-note">17 tracked / 2 unmitigated</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>ID</th><th>Risk or opportunity</th><th>Process</th><th class="num">Sev</th><th class="num">Occ</th><th class="num">Det</th><th class="num">RPN</th><th>Action</th><th>Status</th></tr></thead>
+                    <tbody id="risk-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ SCORECARDS ============ -->
+    <section class="view" id="view-scorecards" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Scorecards and KPIs<span class="clause-ref">6.2 / 9.1.3</span></h1>
+            <p class="view-sub">Quality objectives with a measurable target, an owner, and the actual pulled live from the module that owns the data.</p>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Quality objectives 2026</h2><span class="panel-note">6 of 9 on target</span></div>
+            <div class="panel-body" style="padding-top:8px">
+                <div class="obj-row" style="border-bottom:1px solid var(--hairline)">
+                    <span class="section-label" style="margin:0">Objective</span>
+                    <span class="section-label" style="margin:0;text-align:right">Target</span>
+                    <span class="section-label" style="margin:0;text-align:right">Actual</span>
+                    <span class="section-label" style="margin:0">Progress</span>
+                    <span class="section-label" style="margin:0;text-align:right">State</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Internal defect rate</span><span class="obj-num">700 PPM</span><span class="obj-num">842</span>
+                    <span class="bar bar-warn"><span style="width:83%"></span></span><span class="obj-num" style="color:var(--warn)">Off</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">On-time delivery</span><span class="obj-num">96.0%</span><span class="obj-num">97.4%</span>
+                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">CAPA closed within 30 d</span><span class="obj-num">90%</span><span class="obj-num">67%</span>
+                    <span class="bar bar-crit"><span style="width:67%"></span></span><span class="obj-num" style="color:var(--crit)">Off</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Calibration on time</span><span class="obj-num">100%</span><span class="obj-num">99.5%</span>
+                    <span class="bar bar-warn"><span style="width:99%"></span></span><span class="obj-num" style="color:var(--warn)">Off</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Supplier PPM, all vendors</span><span class="obj-num">1,500</span><span class="obj-num">1,146</span>
+                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Customer satisfaction</span><span class="obj-num">85</span><span class="obj-num">86</span>
+                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Training compliance</span><span class="obj-num">98%</span><span class="obj-num">99.4%</span>
+                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Internal audits on schedule</span><span class="obj-num">100%</span><span class="obj-num">83%</span>
+                    <span class="bar bar-crit"><span style="width:83%"></span></span><span class="obj-num" style="color:var(--crit)">Off</span>
+                </div>
+                <div class="obj-row">
+                    <span class="obj-name">Scrap cost as percent of sales</span><span class="obj-num">1.20%</span><span class="obj-num">0.94%</span>
+                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ PEOPLE AND ACCESS ============ -->
+    <section class="view" id="view-people" hidden>
+        <div class="view-head">
+            <h1 class="view-title">People and Access<span class="clause-ref">5.3</span></h1>
+            <p class="view-sub">Who works here, what they are authorised to do, and who granted it. Access is withdrawn, never deleted, so the history stays readable.</p>
+        </div>
+
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Directory</h2>
+                <div class="row">
+                    <span class="panel-note" id="people-note"></span>
+                    <button class="btn btn-primary" data-requires="user.create">Add person</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th><th>Job title</th><th>Discipline</th>
+                            <th>Role</th><th class="num">Permissions</th><th>Access</th>
+                        </tr>
+                    </thead>
+                    <tbody id="people-table"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section-label">How authority is assigned</div>
+        <div class="panel">
+            <div class="panel-body">
+                <p class="sm dim" style="margin:0 0 12px;max-width:70ch">
+                    A person holds one role, and the role carries the permissions. Nobody is granted
+                    an authority directly, which means the answer to "who can approve a use-as-is
+                    disposition" is always a short list of roles rather than an audit of every
+                    individual account.
+                </p>
+                <p class="sm dim" style="margin:0;max-width:70ch">
+                    Discipline is recorded separately because it describes what somebody works on,
+                    not what they may do. A mechanical and an electrical engineer hold identical
+                    authority; splitting them into two roles would double this matrix without adding
+                    a single rule.
+                </p>
+                <div class="chip-list">
+                    <span class="chip">Add a person: user.create</span>
+                    <span class="chip">Change a role: user.edit</span>
+                    <span class="chip">Withdraw access: user.deactivate</span>
+                    <span class="chip">Change what a role may do: roles.manage</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ FORM BUILDER ============ -->
+    <section class="view" id="view-forms" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Form Builder</h1>
+            <p class="view-sub">Every record type in QualityGuard is a form you configure, not code someone writes. This is what makes the system fit your plant instead of the other way round.</p>
+        </div>
+
+        <div class="builder">
+            <div>
+                <div class="section-label" style="margin-top:0">Field types</div>
+                <div class="palette">
+                    <div class="palette-item"><span class="palette-kind">TXT</span> Short text</div>
+                    <div class="palette-item"><span class="palette-kind">MEM</span> Long text</div>
+                    <div class="palette-item"><span class="palette-kind">NUM</span> Number with units</div>
+                    <div class="palette-item"><span class="palette-kind">DAT</span> Date</div>
+                    <div class="palette-item"><span class="palette-kind">SEL</span> Pick list</div>
+                    <div class="palette-item"><span class="palette-kind">LNK</span> Record link</div>
+                    <div class="palette-item"><span class="palette-kind">USR</span> Person</div>
+                    <div class="palette-item"><span class="palette-kind">FIL</span> Attachment</div>
+                    <div class="palette-item"><span class="palette-kind">SIG</span> E-signature</div>
+                    <div class="palette-item"><span class="palette-kind">CLC</span> Calculated</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">NCR form, version 4</h2>
+                    <div class="row"><span class="panel-note">142 records on v3</span><button class="btn btn-primary">Publish v4</button></div>
+                </div>
+                <div class="panel-body">
+                    <div class="field required"><div><div class="field-name">Part number</div><div class="field-rule">LNK to Drawings, required</div></div><span class="chip">Edit</span></div>
+                    <div class="field required"><div><div class="field-name">Lot or serial</div><div class="field-rule">TXT, required, pattern L-#####</div></div><span class="chip">Edit</span></div>
+                    <div class="field required"><div><div class="field-name">Quantity affected</div><div class="field-rule">NUM, required, min 1</div></div><span class="chip">Edit</span></div>
+                    <div class="field"><div><div class="field-name">Characteristic</div><div class="field-rule">TXT, prefill from control plan</div></div><span class="chip">Edit</span></div>
+                    <div class="field"><div><div class="field-name">Measured value</div><div class="field-rule">NUM, flags when outside spec</div></div><span class="chip">Edit</span></div>
+                    <div class="field required"><div><div class="field-name">Gage used</div><div class="field-rule">LNK to Calibration, blocks if cal expired</div></div><span class="chip">Edit</span></div>
+                    <div class="field required"><div><div class="field-name">Disposition</div><div class="field-rule">SEL, 5 options, MRB approval if Use-as-is</div></div><span class="chip">Edit</span></div>
+                    <div class="field"><div><div class="field-name">Photo evidence</div><div class="field-rule">FIL, up to 5, required when Scrap</div></div><span class="chip">Edit</span></div>
+                    <div class="field required"><div><div class="field-name">Raised by</div><div class="field-rule">SIG, captures name, role, timestamp</div></div><span class="chip">Edit</span></div>
+
+                    <div class="section-label">Conditional rules on this form</div>
+                    <div class="chip-list">
+                        <span class="chip">If Disposition = Use-as-is then require MRB approval</span>
+                        <span class="chip">If Qty &gt; 500 then notify Quality Manager</span>
+                        <span class="chip">If gage cal expired then block submit</span>
+                        <span class="chip">If Scrap then require photo</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ WORKFLOWS AND ROLES ============ -->
+    <section class="view" id="view-workflows" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Workflows and Roles<span class="clause-ref">5.3</span></h1>
+            <p class="view-sub">Roles, responsibilities and authorities. The same state machine drives every record type, configured per module.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">NCR workflow</h2><span class="panel-note">6 states, 4 gates</span></div>
+                </div>
+                <div class="pipe">
+                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Draft</div><div class="pipe-meta">Anyone on the floor can raise</div></div><span class="pill pill-hold">no gate</span></div>
+                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Containment</div><div class="pipe-meta">Segregation confirmed, WIP hold applied</div></div><span class="pill pill-info">Quality tech</span></div>
+                    <div class="pipe-step active"><span class="pipe-dot"></span><div><div class="pipe-name">MRB review</div><div class="pipe-meta">Disposition selected and justified</div></div><span class="pill pill-info">MRB quorum</span></div>
+                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">Disposition executed</div><div class="pipe-meta">Rework, scrap or return complete</div></div><span class="pill pill-info">Production lead</span></div>
+                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">Verification</div><div class="pipe-meta">Reworked parts re-inspected</div></div><span class="pill pill-info">Inspector</span></div>
+                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">Closed</div><div class="pipe-meta">Immutable, audit trail sealed</div></div><span class="pill pill-info">Quality manager</span></div>
+                </div>
+            </div>
+
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Roles</h2></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Role</th><th>Authority</th><th class="num">Permissions</th></tr></thead>
+                            <tbody id="roles-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Audit trail</h2><span class="panel-note">immutable, per record</span></div>
+                    <div class="panel-body">
+                        <p class="sm dim" style="margin:0;max-width:60ch">Every field change is stored with the old value, the new value, who changed it, when, and why. Records cannot be deleted, only superseded. This is what an auditor asks to see when they doubt a number.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-label">Permission matrix</div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Who may do what</h2>
+                <span class="panel-note" id="matrix-note">clause 5.3</span>
+            </div>
+            <div class="panel-body" style="padding-bottom:0">
+                <p class="sm dim" id="matrix-hint" style="margin:0 0 10px"></p>
+                <p class="conn-banner" id="matrix-message" hidden style="margin:0 0 10px;border-radius:5px;border:1px solid var(--crit)"></p>
+            </div>
+            <div class="table-wrap">
+                <table class="matrix" id="roles-matrix"></table>
+            </div>
+        </div>
+    </section>
+
+    </div>
+</div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

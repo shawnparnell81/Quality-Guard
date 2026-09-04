@@ -1,0 +1,27 @@
+{
+  "name": "qualityguard-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QualityGuard QMS API. Node plus PostgreSQL, no ORM.",
+  "type": "module",
+  "main": "src/app.js",
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/app.js",
+    "dev": "node --env-file=.env --watch src/app.js",
+    "db:schema": "node --env-file=.env scripts/run-sql.js db/schema.sql",
+    "db:seed": "node --env-file=.env scripts/run-sql.js db/seed.sql",
+    "db:passwords": "node --env-file=.env scripts/set-passwords.js",
+    "db:migrate": "node --env-file=.env scripts/migrate.js",
+    "db:backup": "node --env-file=.env scripts/backup.js",
+    "db:restore": "node --env-file=.env scripts/restore.js",
+    "db:reset": "node --env-file=.env scripts/reset.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}
