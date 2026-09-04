@@ -30,9 +30,26 @@ const publicDir = join(here, "..", "..", "public");
 
 app.use(express.json({ limit: "1mb" }));
 
+/* The public address is the pitch, not the product. Visiting the bare
+   domain shows the landing page; the working application only lives
+   at /app, which nobody reaches without going through sign-in first
+   (the app's own client-side session check bounces straight to
+   /login.html for anyone not authenticated). */
+app.get("/", (request, response) => {
+    response.sendFile(join(publicDir, "landing.html"));
+});
+
+app.get("/app", (request, response) => {
+    response.sendFile(join(publicDir, "index.html"));
+});
+
 /* Serving the front end from this same server means the browser sees
    one origin, so there is no CORS to configure and ES modules load
    normally. Only the public folder is exposed, never server/.env.
+
+   index: false because / is handled above, deliberately, rather than
+   express.static's own default of serving index.html for a directory
+   request - that default is exactly the behaviour being turned off.
 
    This is not only convenience: the session cookie is SameSite=Lax
    and the API client sends credentials: "same-origin", so a front end
@@ -40,7 +57,7 @@ app.use(express.json({ limit: "1mb" }));
    never actually authenticate against this API. Cross-origin support
    was removed rather than half-fixed; open the app at this server's
    own URL during development. */
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, { index: false }));
 
 /* One line per request. Enough to see what the front end is asking
    for without pulling in a logging library. */
@@ -122,8 +139,9 @@ app.use((error, request, response, next) => {
 
 const server = app.listen(PORT, () => {
     console.log("QualityGuard running on http://localhost:" + PORT);
-    console.log("  App:    http://localhost:" + PORT + "/");
-    console.log("  Health: http://localhost:" + PORT + "/api/health");
+    console.log("  Landing: http://localhost:" + PORT + "/");
+    console.log("  App:     http://localhost:" + PORT + "/app");
+    console.log("  Health:  http://localhost:" + PORT + "/api/health");
 });
 
 /* Close the pool cleanly so Postgres does not keep the connections
