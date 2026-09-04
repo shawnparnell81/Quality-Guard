@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Server",
+            "type": "node",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/server",
+            "runtimeExecutable": "node",
+            "runtimeArgs": ["--watch"],
+            "program": "${workspaceFolder}/server/src/app.js",
+            "envFile": "${workspaceFolder}/server/.env",
+            "console": "integratedTerminal",
+            "outputCapture": "std",
+            "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+        },
+        {
+            "name": "Launch Chrome against server",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:3001",
+            "webRoot": "${workspaceFolder}/public"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Debug Server + Chrome",
+            "configurations": ["Debug Server", "Launch Chrome against server"]
+        }
+    ]
+}

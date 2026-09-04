@@ -24,10 +24,6 @@ pool.on("error", (error) => {
     console.error("Unexpected database pool error:", error.message);
 });
 
-/* Every record in the seed belongs to one organization. A real
-   deployment reads this from the authenticated session instead. */
-export const DEMO_ORG_ID = "11111111-1111-1111-1111-111111111111";
-
 export function query(text, params) {
     return pool.query(text, params);
 }

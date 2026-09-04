@@ -8,7 +8,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import {
     setSessionCookie, clearSessionCookie, requireAuth,
     SESSION_COOKIE, SESSION_HOURS
@@ -25,11 +25,15 @@ const LOCK_MINUTES = 15;
    password" confirms an account exists. Both get the same sentence. */
 const REJECTED = "Email or password is not correct";
 
-async function recordAuthEvent(field, userId, detail) {
+/* orgId is required: audit_log belongs to exactly one company, and an
+   event with no company to attribute it to (an unknown email at the
+   single, global login box) does not belong in any tenant's audit
+   trail. See the unknown-email branch below for that case instead. */
+async function recordAuthEvent(orgId, field, userId, detail) {
     await query(`
         insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
         values ($1, 'auth', $2, $3, $4, $2)
-    `, [DEMO_ORG_ID, userId, field, detail || null]).catch(() => {
+    `, [orgId, userId, field, detail || null]).catch(() => {
         /* An audit write must not be able to block a sign-in. */
     });
 }
@@ -43,13 +47,18 @@ auth.post("/login", async (request, response, next) => {
             return response.status(400).json({ error: "Email and password are required" });
         }
 
+        /* One global sign-in box for every company on the platform, so
+           this looks a person up by email alone - email is unique
+           across the whole system, not per organization, precisely so
+           this query never needs to know which company someone means
+           before it knows who they are. */
         const found = await query(`
-            select id, full_name, initials, role, active,
+            select id, org_id, full_name, initials, role, active,
                    password_hash, password_salt, must_change_password,
                    failed_attempts, locked_until
               from users
-             where org_id = $1 and lower(email) = lower($2)
-        `, [DEMO_ORG_ID, email]);
+             where lower(email) = lower($1)
+        `, [email]);
 
         const user = found.rows[0];
 
@@ -59,11 +68,18 @@ auth.post("/login", async (request, response, next) => {
            stopwatch. */
         if (!user) {
             await verifyPassword(password, "00".repeat(64), "decoy");
+
+            /* No account, and so no company to attribute this to - the
+               audit log is a tenant's own compliance record, not a
+               platform security log. This still belongs somewhere, so
+               it goes to the server log rather than being dropped. */
+            console.warn("login_failed: unknown email " + String(email).slice(0, 200));
+
             return response.status(401).json({ error: REJECTED });
         }
 
         if (!user.active) {
-            await recordAuthEvent("login_denied", user.id, "account inactive");
+            await recordAuthEvent(user.org_id, "login_denied", user.id, "account inactive");
             return response.status(401).json({ error: REJECTED });
         }
 
@@ -89,7 +105,7 @@ auth.post("/login", async (request, response, next) => {
                  where id = $1
             `, [user.id, lock ? 0 : attempts, lock, String(LOCK_MINUTES)]);
 
-            await recordAuthEvent("login_failed", user.id, "attempt " + attempts);
+            await recordAuthEvent(user.org_id, "login_failed", user.id, "attempt " + attempts);
 
             return response.status(401).json({ error: REJECTED });
         }
@@ -113,7 +129,7 @@ auth.post("/login", async (request, response, next) => {
             return created.rows[0];
         });
 
-        await recordAuthEvent("login", user.id, null);
+        await recordAuthEvent(user.org_id, "login", user.id, null);
 
         setSessionCookie(response, session.id);
 
@@ -135,7 +151,7 @@ auth.post("/logout", async (request, response, next) => {
                 "update sessions set revoked_at = now() where id = $1",
                 [request.user.session_id]
             );
-            await recordAuthEvent("logout", request.user.id, null);
+            await recordAuthEvent(request.user.org_id, "logout", request.user.id, null);
         }
 
         clearSessionCookie(response);
@@ -194,7 +210,7 @@ auth.post("/change-password", requireAuth, async (request, response, next) => {
             `, [request.user.id, request.user.session_id]);
         });
 
-        await recordAuthEvent("password_changed", request.user.id, null);
+        await recordAuthEvent(request.user.org_id, "password_changed", request.user.id, null);
 
         response.json({ ok: true, other_sessions_ended: true });
     } catch (error) {

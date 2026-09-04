@@ -20,6 +20,11 @@ import { renderRegister, wireRegisterClicks } from "./views/events.js";
 import { renderRoles, renderPeople, wireMatrixEditing } from "./views/access.js";
 import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
+import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
+import {
+    renderDrawings, renderOnboarding, renderReview, renderScorecards, wireEvaluate
+} from "./views/evaluate.js";
+import { renderForms, wireForms } from "./views/formbuilder.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -44,7 +49,14 @@ const LOADERS = {
     people:      renderPeople,
     production:  renderProduction,
     d8:          renderEightD,
-    change:      renderChange
+    change:      renderChange,
+    drawings:    renderDrawings,
+    receiving:   renderReceiving,
+    shipping:    renderShipping,
+    onboarding:  renderOnboarding,
+    review:      renderReview,
+    scorecards:  renderScorecards,
+    forms:       renderForms
 };
 
 const views = document.querySelectorAll(".view");
@@ -259,6 +271,9 @@ async function start() {
     wireMatrixEditing();
     wireProduction();
     wireChangeScreens();
+    wireOperations();
+    wireEvaluate();
+    wireForms();
     checkConnection();
     fillHeader();
     showReadinessBadge();

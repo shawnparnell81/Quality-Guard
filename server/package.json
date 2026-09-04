@@ -15,12 +15,12 @@
     "db:seed": "node --env-file=.env scripts/run-sql.js db/seed.sql",
     "db:passwords": "node --env-file=.env scripts/set-passwords.js",
     "db:migrate": "node --env-file=.env scripts/migrate.js",
+    "provision-org": "node --env-file=.env scripts/provision-org.js",
     "db:backup": "node --env-file=.env scripts/backup.js",
     "db:restore": "node --env-file=.env scripts/restore.js",
     "db:reset": "node --env-file=.env scripts/reset.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.21.2",
     "pg": "^8.13.1"
   }

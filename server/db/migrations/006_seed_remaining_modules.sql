@@ -125,6 +125,12 @@ on conflict do nothing;
 -- Vendor onboarding
 -- ------------------------------------------------------------
 
+-- Ostrand is a candidate, not yet approved.
+insert into vendors (org_id, name, scope, status)
+values ('11111111-1111-1111-1111-111111111111', 'Ostrand Grinding',
+        'Centreless grinding', 'onboarding')
+on conflict (org_id, name) do nothing;
+
 insert into vendor_onboarding_stages
     (vendor_id, stage_key, name, detail, status, completed_by, completed_at, position)
 select ve.id, v.key, v.name, v.detail, v.status,
@@ -148,11 +154,6 @@ from (values
 join vendors ve on ve.name = v.vendor
 on conflict do nothing;
 
--- Ostrand is a candidate, not yet approved.
-insert into vendors (org_id, name, scope, status)
-values ('11111111-1111-1111-1111-111111111111', 'Ostrand Grinding',
-        'Centreless grinding', 'onboarding')
-on conflict (org_id, name) do nothing;
 
 
 -- ------------------------------------------------------------

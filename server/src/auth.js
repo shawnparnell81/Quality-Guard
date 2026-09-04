@@ -12,7 +12,7 @@
    have expired on its own.
    ============================================================ */
 
-import { query, DEMO_ORG_ID } from "./db.js";
+import { query } from "./db.js";
 
 export const SESSION_COOKIE = "qg_session";
 export const SESSION_HOURS = 12;
@@ -28,7 +28,13 @@ function readCookie(request, name) {
         if (index === -1) continue;
 
         if (part.slice(0, index).trim() === name) {
-            return decodeURIComponent(part.slice(index + 1).trim());
+            /* A malformed %-sequence here should mean "no session", not
+               a 500 on every request a broken or hostile client sends. */
+            try {
+                return decodeURIComponent(part.slice(index + 1).trim());
+            } catch {
+                return null;
+            }
         }
     }
 
@@ -69,22 +75,25 @@ async function resolveUser(request) {
 
     /* An invalid uuid in the cookie would otherwise raise a database
        error on every request. */
-    if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return null;
 
+    /* r.key = u.role alone is not enough now that roles are per
+       organization: two different companies can each have their own
+       "quality_manager", and without pinning the join to the same
+       org_id this would match whichever one happened to be found. */
     const result = await query(`
-        select u.id, u.full_name, u.initials, u.role, u.active,
+        select u.id, u.org_id, u.full_name, u.initials, u.role, u.active,
                u.must_change_password,
                r.name as role_name,
                s.id as session_id, s.expires_at
           from sessions s
           join users u on u.id = s.user_id
-          join roles r on r.key = u.role
+          join roles r on r.key = u.role and r.org_id = u.org_id
          where s.id = $1
            and s.revoked_at is null
            and s.expires_at > now()
            and u.active
-           and u.org_id = $2
-    `, [sessionId, DEMO_ORG_ID]);
+    `, [sessionId]);
 
     if (result.rowCount === 0) return null;
 
@@ -106,8 +115,8 @@ export async function identify(request, response, next) {
             request.permissions = new Set();
         } else {
             const granted = await query(
-                "select permission_key from role_permissions where role_key = $1",
-                [user.role]
+                "select permission_key from role_permissions where org_id = $1 and role_key = $2",
+                [user.org_id, user.role]
             );
 
             request.user = user;

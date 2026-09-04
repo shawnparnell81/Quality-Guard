@@ -11,7 +11,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 
 export const change = Router();
 
@@ -38,7 +38,7 @@ change.get("/changes/:number/impact", async (request, response, next) => {
          left join users u   on u.id = a.signed_by
              where r.org_id = $1 and r.number = $2
              order by a.position
-        `, [DEMO_ORG_ID, request.params.number]);
+        `, [request.user.org_id, request.params.number]);
 
         /* Tell the caller which lines they personally may sign, so the
            UI does not have to know the mapping above. */
@@ -90,7 +90,7 @@ change.post("/changes/:number/impact/:area/sign", async (request, response, next
                   join records r on r.id = a.record_id
                  where r.org_id = $1 and r.number = $2 and a.area = $3
                    for update of a
-            `, [DEMO_ORG_ID, number, area]);
+            `, [request.user.org_id, number, area]);
 
             if (found.rowCount === 0) return null;
 
@@ -116,7 +116,7 @@ change.post("/changes/:number/impact/:area/sign", async (request, response, next
                     (org_id, record_id, entity, entity_id, field,
                      old_value, new_value, reason, changed_by)
                 values ($1, $2, 'change_impact', $3, $4, 'pending', $5, $6, $7)
-            `, [DEMO_ORG_ID, line.record_id, line.id, area + " sign-off",
+            `, [request.user.org_id, line.record_id, line.id, area + " sign-off",
                 status, request.body?.note || null, request.user.id]);
 
             return { line: updated.rows[0] };

@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, DEMO_ORG_ID } from "../db.js";
+import { query } from "../db.js";
 
 export const dashboard = Router();
 
@@ -24,14 +24,14 @@ dashboard.get("/", async (request, response, next) => {
                   join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1
                  group by rt.key
-            `, [DEMO_ORG_ID]),
+            `, [request.user.org_id]),
 
             query(`
                 select count(*) filter (where next_due < current_date) as past_due,
                        count(*) filter (where next_due < current_date + interval '30 days') as due_soon,
                        count(*) as total
                   from gages where org_id = $1
-            `, [DEMO_ORG_ID]),
+            `, [request.user.org_id]),
 
             query(`
                 select count(*) as gaps
@@ -45,7 +45,7 @@ dashboard.get("/", async (request, response, next) => {
                    and u.active
                    and (tr.id is null
                         or tr.revision_trained is distinct from d.current_revision)
-            `, [DEMO_ORG_ID]),
+            `, [request.user.org_id]),
 
             query(`
                 select count(*) filter (where status = 'scar_open') as scar_open,
@@ -53,14 +53,14 @@ dashboard.get("/", async (request, response, next) => {
                        round(avg(ppm))                              as avg_ppm,
                        count(*)                                     as total
                   from vendors where org_id = $1 and status <> 'onboarding'
-            `, [DEMO_ORG_ID]),
+            `, [request.user.org_id]),
 
             query(`
                 select count(*) filter (where r.status = 'overdue') as overdue
                   from records r
                   join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and rt.key = 'audit'
-            `, [DEMO_ORG_ID])
+            `, [request.user.org_id])
         ]);
 
         const byType = {};
@@ -117,7 +117,7 @@ dashboard.get("/open-events", async (request, response, next) => {
              order by case r.severity when 'crit' then 0 when 'warn' then 1 else 2 end,
                       r.opened_at
              limit 25
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, events: result.rows });
     } catch (error) {
@@ -187,7 +187,7 @@ dashboard.get("/readiness", async (request, response, next) => {
          left join records r on r.record_type_id = rt.id
              where rt.org_id = $1
              group by rt.key
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         const byType = {};
         for (const row of eventCounts.rows) {
@@ -203,7 +203,7 @@ dashboard.get("/readiness", async (request, response, next) => {
         await Promise.all(COUNTABLE.map(async (table) => {
             const result = await query(
                 "select count(*)::int as n from " + table + " where org_id = $1",
-                [DEMO_ORG_ID]
+                [request.user.org_id]
             );
             sourceCounts[table] = result.rows[0].n;
         }));
@@ -211,7 +211,7 @@ dashboard.get("/readiness", async (request, response, next) => {
         /* The specific things an auditor writes up. */
         const [gages, training, vendors, risks] = await Promise.all([
             query(`select count(*) filter (where next_due < current_date)::int as past_due
-                     from gages where org_id = $1`, [DEMO_ORG_ID]),
+                     from gages where org_id = $1`, [request.user.org_id]),
 
             query(`select count(*)::int as gaps
                      from users u
@@ -223,17 +223,17 @@ dashboard.get("/readiness", async (request, response, next) => {
                     where u.org_id = $1 and u.active
                       and (tr.id is null
                            or tr.revision_trained is distinct from d.current_revision)`,
-                  [DEMO_ORG_ID]),
+                  [request.user.org_id]),
 
             query(`select count(*) filter (where cert_expires < current_date)::int as expired,
                           count(*) filter (where status = 'scar_open')::int        as scar_open
-                     from vendors where org_id = $1`, [DEMO_ORG_ID]),
+                     from vendors where org_id = $1`, [request.user.org_id]),
 
             query(`select count(*)::int as unmitigated
                      from records r
                      join record_types rt on rt.id = r.record_type_id
                     where r.org_id = $1 and rt.key = 'risk'
-                      and r.status = 'unmitigated'`, [DEMO_ORG_ID])
+                      and r.status = 'unmitigated'`, [request.user.org_id])
         ]);
 
         const gagesPastDue  = gages.rows[0].past_due;

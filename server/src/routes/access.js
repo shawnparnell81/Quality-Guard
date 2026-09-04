@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { hashPassword, generateTemporaryPassword } from "../passwords.js";
 
@@ -49,7 +49,8 @@ access.put("/roles/:roleKey/permissions/:permissionKey",
             const granted = request.body?.granted === true;
 
             const [role, permission] = await Promise.all([
-                query("select key, name from roles where key = $1", [roleKey]),
+                query("select key, name from roles where org_id = $1 and key = $2",
+                    [request.user.org_id, roleKey]),
                 query("select key, description from permissions where key = $1", [permissionKey])
             ]);
 
@@ -73,10 +74,14 @@ access.put("/roles/:roleKey/permissions/:permissionKey",
                 });
             }
 
-            /* Somebody has to be able to administer access. */
+            /* Somebody has to be able to administer access. Scoped to
+               this org: another company running low on roles.manage
+               holders is not this company's problem, and is not this
+               company's business to see. */
             if (!granted && permissionKey === "roles.manage") {
                 const holders = await query(
-                    "select count(*)::int as n from role_permissions where permission_key = 'roles.manage'"
+                    "select count(*)::int as n from role_permissions where org_id = $1 and permission_key = 'roles.manage'",
+                    [request.user.org_id]
                 );
                 if (holders.rows[0].n <= 1) {
                     return response.status(409).json({
@@ -87,8 +92,8 @@ access.put("/roles/:roleKey/permissions/:permissionKey",
 
             const changed = await withTransaction(async (client) => {
                 const before = await client.query(
-                    "select 1 from role_permissions where role_key = $1 and permission_key = $2",
-                    [roleKey, permissionKey]
+                    "select 1 from role_permissions where org_id = $1 and role_key = $2 and permission_key = $3",
+                    [request.user.org_id, roleKey, permissionKey]
                 );
 
                 const had = before.rowCount > 0;
@@ -96,13 +101,13 @@ access.put("/roles/:roleKey/permissions/:permissionKey",
 
                 if (granted) {
                     await client.query(
-                        "insert into role_permissions (role_key, permission_key) values ($1, $2)",
-                        [roleKey, permissionKey]
+                        "insert into role_permissions (org_id, role_key, permission_key) values ($1, $2, $3)",
+                        [request.user.org_id, roleKey, permissionKey]
                     );
                 } else {
                     await client.query(
-                        "delete from role_permissions where role_key = $1 and permission_key = $2",
-                        [roleKey, permissionKey]
+                        "delete from role_permissions where org_id = $1 and role_key = $2 and permission_key = $3",
+                        [request.user.org_id, roleKey, permissionKey]
                     );
                 }
 
@@ -110,7 +115,7 @@ access.put("/roles/:roleKey/permissions/:permissionKey",
                     insert into audit_log
                         (org_id, entity, field, old_value, new_value, reason, changed_by)
                     values ($1, 'role_permissions', $2, $3, $4, $5, $6)
-                `, [DEMO_ORG_ID,
+                `, [request.user.org_id,
                     roleKey + " / " + permissionKey,
                     had ? "granted" : "not granted",
                     granted ? "granted" : "not granted",
@@ -138,7 +143,7 @@ access.get("/roles/history", requirePermission("roles.manage"), async (request, 
              where a.org_id = $1 and a.entity = 'role_permissions'
              order by a.changed_at desc
              limit 40
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, history: result.rows });
     } catch (error) {
@@ -156,12 +161,12 @@ access.get("/users", requirePermission("user.read"), async (request, response, n
                    u.job_title, u.active, u.created_at,
                    r.name as role_name, r.position as role_position,
                    (select count(*)::int from role_permissions rp
-                     where rp.role_key = u.role) as permission_count
+                     where rp.org_id = u.org_id and rp.role_key = u.role) as permission_count
               from users u
-              join roles r on r.key = u.role
+              join roles r on r.key = u.role and r.org_id = u.org_id
              where u.org_id = $1
              order by r.position desc, u.full_name
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, users: result.rows });
     } catch (error) {
@@ -183,14 +188,17 @@ access.post("/users", requirePermission("user.create"), async (request, response
             });
         }
 
-        const roleRow = await query("select key from roles where key = $1", [role]);
+        const roleRow = await query(
+            "select key from roles where org_id = $1 and key = $2",
+            [request.user.org_id, role]
+        );
         if (roleRow.rowCount === 0) {
             return response.status(400).json({ error: "Unknown role: " + role });
         }
 
         const clash = await query(
             "select initials from users where org_id = $1 and (email = $2 or initials = $3)",
-            [DEMO_ORG_ID, email, initials.toUpperCase()]
+            [request.user.org_id, email, initials.toUpperCase()]
         );
         if (clash.rowCount > 0) {
             return response.status(409).json({
@@ -212,14 +220,14 @@ access.post("/users", requirePermission("user.create"), async (request, response
                      password_hash, password_salt, must_change_password, created_by)
                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10)
                 returning id, initials, full_name, role
-            `, [DEMO_ORG_ID, email, full_name, initials.toUpperCase(), role,
+            `, [request.user.org_id, email, full_name, initials.toUpperCase(), role,
                 discipline || null, job_title || null, hash, salt, request.user.id]);
 
             await client.query(`
                 insert into audit_log
                     (org_id, entity, entity_id, field, new_value, reason, changed_by)
                 values ($1, 'users', $2, 'created', $3, $4, $5)
-            `, [DEMO_ORG_ID, inserted.rows[0].id,
+            `, [request.user.org_id, inserted.rows[0].id,
                 full_name + " as " + role, "New user added", request.user.id]);
 
             return inserted.rows[0];
@@ -243,7 +251,10 @@ access.patch("/users/:initials", requirePermission("user.edit"), async (request,
         const { role, discipline, job_title, reason } = request.body || {};
 
         if (role) {
-            const roleRow = await query("select key from roles where key = $1", [role]);
+            const roleRow = await query(
+            "select key from roles where org_id = $1 and key = $2",
+            [request.user.org_id, role]
+        );
             if (roleRow.rowCount === 0) {
                 return response.status(400).json({ error: "Unknown role: " + role });
             }
@@ -252,7 +263,7 @@ access.patch("/users/:initials", requirePermission("user.edit"), async (request,
         const updated = await withTransaction(async (client) => {
             const existing = await client.query(
                 "select id, role, discipline, job_title from users where org_id = $1 and initials = $2 for update",
-                [DEMO_ORG_ID, request.params.initials.toUpperCase()]
+                [request.user.org_id, request.params.initials.toUpperCase()]
             );
 
             if (existing.rowCount === 0) return null;
@@ -263,7 +274,7 @@ access.patch("/users/:initials", requirePermission("user.edit"), async (request,
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'users', $2, 'role', $3, $4, $5, $6)
-                `, [DEMO_ORG_ID, before.id, before.role, role,
+                `, [request.user.org_id, before.id, before.role, role,
                     reason || null, request.user.id]);
             }
 
@@ -303,7 +314,7 @@ access.post("/users/:initials/reset-password",
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
                     "select id, full_name from users where org_id = $1 and initials = $2 for update",
-                    [DEMO_ORG_ID, target]
+                    [request.user.org_id, target]
                 );
 
                 if (found.rowCount === 0) return null;
@@ -326,7 +337,7 @@ access.post("/users/:initials/reset-password",
                     insert into audit_log
                         (org_id, entity, entity_id, field, new_value, reason, changed_by)
                     values ($1, 'users', $2, 'password_reset', 'temporary issued', $3, $4)
-                `, [DEMO_ORG_ID, user.id, request.body?.reason || null, request.user.id]);
+                `, [request.user.org_id, user.id, request.body?.reason || null, request.user.id]);
 
                 return user;
             });
@@ -363,7 +374,7 @@ access.post("/users/:initials/deactivate",
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
                     "select id, active from users where org_id = $1 and initials = $2 for update",
-                    [DEMO_ORG_ID, target]
+                    [request.user.org_id, target]
                 );
 
                 if (found.rowCount === 0) return null;
@@ -377,7 +388,7 @@ access.post("/users/:initials/deactivate",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'users', $2, 'active', 'true', 'false', $3, $4)
-                `, [DEMO_ORG_ID, found.rows[0].id,
+                `, [request.user.org_id, found.rows[0].id,
                     request.body?.reason || null, request.user.id]);
 
                 return { initials: target, active: false };
@@ -396,10 +407,12 @@ access.post("/users/:initials/deactivate",
 access.get("/roles", async (request, response, next) => {
     try {
         const [roles, permissions, grants] = await Promise.all([
-            query("select key, name, description, position from roles order by position"),
+            query("select key, name, description, position from roles where org_id = $1 order by position",
+                [request.user.org_id]),
             query(`select key, resource, action, description, clause
                      from permissions order by clause nulls last, key`),
-            query("select role_key, permission_key from role_permissions")
+            query("select role_key, permission_key from role_permissions where org_id = $1",
+                [request.user.org_id])
         ]);
 
         /* Set lookup so the client can render a grid without an N by M

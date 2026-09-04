@@ -8,7 +8,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 
 export const production = Router();
@@ -42,7 +42,7 @@ production.get("/work-orders", async (request, response, next) => {
                         when 'running'      then 2
                         else 3 end,
                       w.wo_number
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, work_orders: result.rows });
     } catch (error) {
@@ -65,7 +65,7 @@ production.get("/work-orders/:wo", async (request, response, next) => {
          left join lots  l on l.id = w.lot_id
          left join users u on u.id = w.held_by
              where w.org_id = $1 and w.wo_number = $2
-        `, [DEMO_ORG_ID, request.params.wo]);
+        `, [request.user.org_id, request.params.wo]);
 
         if (found.rowCount === 0) {
             return response.status(404).json({ error: "No such work order" });
@@ -102,7 +102,7 @@ production.get("/work-orders/:wo", async (request, response, next) => {
                  where r.org_id = $1
                    and r.data->>'work_order' = $2
                  order by r.opened_at desc
-            `, [DEMO_ORG_ID, request.params.wo])
+            `, [request.user.org_id, request.params.wo])
         ]);
 
         response.json({
@@ -133,7 +133,7 @@ production.post("/work-orders/:wo/hold",
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
                     "select id, status from work_orders where org_id = $1 and wo_number = $2 for update",
-                    [DEMO_ORG_ID, request.params.wo]
+                    [request.user.org_id, request.params.wo]
                 );
 
                 if (found.rowCount === 0) return null;
@@ -155,7 +155,7 @@ production.post("/work-orders/:wo/hold",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'work_orders', $2, 'status', $3, 'quality_hold', $4, $5)
-                `, [DEMO_ORG_ID, workOrder.id, workOrder.status, reason, request.user.id]);
+                `, [request.user.org_id, workOrder.id, workOrder.status, reason, request.user.id]);
 
                 return { workOrder: updated.rows[0] };
             });
@@ -181,7 +181,7 @@ production.post("/work-orders/:wo/release",
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
                     "select id, status from work_orders where org_id = $1 and wo_number = $2 for update",
-                    [DEMO_ORG_ID, request.params.wo]
+                    [request.user.org_id, request.params.wo]
                 );
 
                 if (found.rowCount === 0) return null;
@@ -194,7 +194,7 @@ production.post("/work-orders/:wo/release",
                        and r.data->>'work_order' = $2
                        and r.closed_at is null
                        and rt.key = 'ncr'
-                `, [DEMO_ORG_ID, request.params.wo]);
+                `, [request.user.org_id, request.params.wo]);
 
                 if (openEvents.rowCount > 0) {
                     return {
@@ -215,7 +215,7 @@ production.post("/work-orders/:wo/release",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'work_orders', $2, 'status', $3, 'running', $4, $5)
-                `, [DEMO_ORG_ID, workOrder.id, workOrder.status,
+                `, [request.user.org_id, workOrder.id, workOrder.status,
                     request.body?.reason || null, request.user.id]);
 
                 return { workOrder: updated.rows[0] };

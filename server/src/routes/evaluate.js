@@ -9,7 +9,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 
 export const evaluate = Router();
@@ -71,12 +71,12 @@ evaluate.get("/objectives", async (request, response, next) => {
          left join users u on u.id = o.owner_id
              where o.org_id = $1
              order by o.position
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         /* Compute every actual the system can measure for itself. */
         const computed = {};
         await Promise.all(Object.entries(COMPUTED).map(async ([key, sql]) => {
-            const result = await query(sql, [DEMO_ORG_ID]);
+            const result = await query(sql, [request.user.org_id]);
             computed[key] = Number(result.rows[0].value);
         }));
 
@@ -133,7 +133,7 @@ evaluate.get("/reviews", async (request, response, next) => {
          left join users u on u.id = m.chair_id
              where m.org_id = $1
              order by m.reference desc
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, reviews: result.rows });
     } catch (error) {
@@ -149,7 +149,7 @@ evaluate.get("/reviews/:reference/inputs", async (request, response, next) => {
     try {
         const found = await query(
             "select id, reference, period, status from management_reviews where org_id = $1 and reference = $2",
-            [DEMO_ORG_ID, request.params.reference]
+            [request.user.org_id, request.params.reference]
         );
 
         if (found.rowCount === 0) {
@@ -165,10 +165,10 @@ evaluate.get("/reviews/:reference/inputs", async (request, response, next) => {
                       from record_types rt
                  left join records r on r.record_type_id = rt.id
                      where rt.org_id = $1 group by rt.key
-                `, [DEMO_ORG_ID]),
+                `, [request.user.org_id]),
 
                 query(`select count(*) filter (where next_due < current_date)::int as past_due
-                         from gages where org_id = $1`, [DEMO_ORG_ID]),
+                         from gages where org_id = $1`, [request.user.org_id]),
 
                 query(`select count(*)::int as gaps
                          from users u
@@ -179,25 +179,27 @@ evaluate.get("/reviews/:reference/inputs", async (request, response, next) => {
                            on tr.user_id = u.id and tr.document_id = d.id
                         where u.org_id = $1 and u.active
                           and (tr.id is null or tr.revision_trained is distinct from d.current_revision)`,
-                      [DEMO_ORG_ID]),
+                      [request.user.org_id]),
 
                 query(`select count(*) filter (where grade = 'D')::int as grade_d,
                               count(*) filter (where status = 'scar_open')::int as scar_open
-                         from vendors where org_id = $1`, [DEMO_ORG_ID]),
+                         from vendors where org_id = $1`, [request.user.org_id]),
 
                 query(`select count(*) filter (where r.status = 'unmitigated')::int as unmitigated
                          from records r join record_types rt on rt.id = r.record_type_id
-                        where r.org_id = $1 and rt.key = 'risk'`, [DEMO_ORG_ID]),
+                        where r.org_id = $1 and rt.key = 'risk'`, [request.user.org_id]),
 
                 query(`select count(*)::int as total from quality_objectives where org_id = $1`,
-                      [DEMO_ORG_ID]),
+                      [request.user.org_id]),
 
+                /* Both tables carry a status column, so this one has to
+                   be qualified or Postgres cannot tell which is meant. */
                 query(`select count(*)::int as total,
-                              count(*) filter (where status = 'done')::int as done
+                              count(*) filter (where a.status = 'done')::int as done
                          from management_review_actions a
                          join management_reviews m on m.id = a.review_id
                         where m.org_id = $1 and m.reference <> $2`,
-                      [DEMO_ORG_ID, request.params.reference])
+                      [request.user.org_id, request.params.reference])
             ]);
 
         const byType = {};
@@ -264,7 +266,7 @@ evaluate.get("/onboarding", requirePermission("vendor.read"),
                  where v.org_id = $1
                  group by v.id, v.name, v.scope, v.status
                  order by v.name
-            `, [DEMO_ORG_ID]);
+            `, [request.user.org_id]);
 
             response.json({ count: result.rowCount, candidates: result.rows });
         } catch (error) {
@@ -283,7 +285,7 @@ evaluate.get("/onboarding/:vendor", requirePermission("vendor.read"),
              left join users u   on u.id = s.completed_by
                  where v.org_id = $1 and v.name = $2
                  order by s.position
-            `, [DEMO_ORG_ID, request.params.vendor]);
+            `, [request.user.org_id, request.params.vendor]);
 
             if (result.rowCount === 0) {
                 return response.status(404).json({ error: "No onboarding for that vendor" });
@@ -312,7 +314,7 @@ evaluate.post("/onboarding/:vendor/stages/:stageKey/complete",
                       join vendors v on v.id = s.vendor_id
                      where v.org_id = $1 and v.name = $2 and s.stage_key = $3
                        for update of s
-                `, [DEMO_ORG_ID, request.params.vendor, request.params.stageKey]);
+                `, [request.user.org_id, request.params.vendor, request.params.stageKey]);
 
                 if (found.rowCount === 0) return null;
                 const stage = found.rows[0];
@@ -359,7 +361,7 @@ evaluate.post("/onboarding/:vendor/stages/:stageKey/complete",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'vendor_onboarding', $2, $3, $4, 'complete', $5, $6)
-                `, [DEMO_ORG_ID, stage.vendor_id, stage.stage_key, stage.status,
+                `, [request.user.org_id, stage.vendor_id, stage.stage_key, stage.status,
                     request.body?.reason || null, request.user.id]);
 
                 return { stage: stage.stage_key, approved };

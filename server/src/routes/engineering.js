@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 
 export const engineering = Router();
@@ -30,7 +30,7 @@ engineering.get("/drawings", requirePermission("drawing.read"),
              left join parts p on p.id = d.part_id
                  where d.org_id = $1
                  order by d.drawing_number
-            `, [DEMO_ORG_ID]);
+            `, [request.user.org_id]);
 
             response.json({ count: result.rowCount, drawings: result.rows });
         } catch (error) {
@@ -49,7 +49,7 @@ engineering.get("/drawings/:number", requirePermission("drawing.read"),
              left join users u on u.id = d.owner_id
              left join parts p on p.id = d.part_id
                  where d.org_id = $1 and d.drawing_number = $2
-            `, [DEMO_ORG_ID, request.params.number]);
+            `, [request.user.org_id, request.params.number]);
 
             if (found.rowCount === 0) {
                 return response.status(404).json({ error: "No such drawing" });
@@ -92,7 +92,7 @@ engineering.post("/drawings/:number/revisions/:revision/release",
                       join drawings d on d.id = r.drawing_id
                      where d.org_id = $1 and d.drawing_number = $2 and r.revision = $3
                        for update of r
-                `, [DEMO_ORG_ID, request.params.number, request.params.revision]);
+                `, [request.user.org_id, request.params.number, request.params.revision]);
 
                 if (found.rowCount === 0) return null;
                 const revision = found.rows[0];
@@ -125,7 +125,7 @@ engineering.post("/drawings/:number/revisions/:revision/release",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'drawings', $2, 'released_revision', $3, $4, $5, $6)
-                `, [DEMO_ORG_ID, revision.drawing_id, revision.status, revision.revision,
+                `, [request.user.org_id, revision.drawing_id, revision.status, revision.revision,
                     request.body?.reason || null, request.user.id]);
 
                 return { released: revision.revision };

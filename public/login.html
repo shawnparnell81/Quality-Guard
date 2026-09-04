@@ -28,7 +28,7 @@
 
         <div class="signin-panel">
             <h1 class="signin-title">Sign in</h1>
-            <p class="signin-sub">Ridgeline Precision, Plant 2</p>
+            <p class="signin-sub">Quality management, one place</p>
 
             <div class="signin-error" id="signin-error" hidden></div>
 
@@ -45,19 +45,6 @@
 
                 <button type="submit" class="signin-submit" id="signin-submit">Sign in</button>
             </form>
-
-            <div class="signin-foot">
-                <strong>Development accounts</strong> &mdash; password
-                <code>RidgelinePrecision2026</code>
-                <table>
-                    <tr><td><code>r.sandoval@ridgeline.example</code></td><td>General Manager</td></tr>
-                    <tr><td><code>i.brannigan@ridgeline.example</code></td><td>Administrator</td></tr>
-                    <tr><td><code>s.parnell@ridgeline.example</code></td><td>Quality Manager</td></tr>
-                    <tr><td><code>r.vandermeer@ridgeline.example</code></td><td>Engineering Manager</td></tr>
-                    <tr><td><code>h.okafor@ridgeline.example</code></td><td>Design Engineer</td></tr>
-                    <tr><td><code>r.delacroix@ridgeline.example</code></td><td>Operator</td></tr>
-                </table>
-            </div>
         </div>
     </div>
 </div>
@@ -81,6 +68,7 @@ form.addEventListener("submit", async (event) => {
     try {
         const response = await fetch("/api/auth/login", {
             method: "POST",
+            credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 email: document.getElementById("email").value.trim(),

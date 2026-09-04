@@ -77,8 +77,17 @@ export async function renderTraining() {
                 const cells = docNumbers.map((doc) => {
                     const entry = row.documents[doc];
 
+                    /* Not in the object at all means this document is not
+                       required for this person's role. Present with no
+                       trained_revision means it IS required and nobody
+                       has ever recorded training against it, which is a
+                       gap in its own right and distinct from a stale one. */
                     if (!entry) return el("td", { class: "dim", text: "-" });
                     if (entry.ok) current++;
+
+                    if (entry.trained_revision === null) {
+                        return el("td", {}, pill("Never trained", "open"));
+                    }
 
                     return el("td", {}, entry.ok
                         ? pill("rev " + entry.trained_revision, "done")
@@ -190,11 +199,38 @@ export async function renderWarehouse() {
     if (holds) loadingRow(holds, 4);
     if (tree) tree.replaceChildren(el("div", { class: "sm dim", text: "Loading..." }));
 
+    /* Fetched separately, not with Promise.all: the genealogy tree and
+       the holds table are unrelated data, and a problem tracing one lot
+       should never blank a table that loaded fine. */
+    const onHold = await api.lots({ on_hold: "true" }).catch((error) => {
+        errorRow(holds, 4, error);
+        return null;
+    });
+
+    if (onHold) {
+        fillTable(holds, onHold.lots, [
+            { className: "mono sm", render: (row) => row.lot_number },
+            { className: "sm", render: (row) => row.location || "-" },
+            { className: "num", render: (row) => row.qty.toLocaleString() },
+            { render: (row) => pill(humanize(row.status), "open") }
+        ], "Nothing on hold");
+    }
+
+    /* There is no lot picker on this screen yet, so there is no single
+       lot to always trace. Leading with whatever is on hold shows the
+       one someone is actually likely to need traced right now, rather
+       than a lot number that only exists in the demo data. */
+    const targetLot = onHold?.lots?.[0]?.lot_number;
+
+    if (!targetLot) {
+        if (tree) {
+            tree.replaceChildren(el("div", { class: "sm dim", text: "Nothing on hold to trace." }));
+        }
+        return;
+    }
+
     try {
-        const [genealogy, onHold] = await Promise.all([
-            api.genealogy("L-88213"),
-            api.lots({ on_hold: "true" })
-        ]);
+        const genealogy = await api.genealogy(targetLot);
 
         if (tree) {
             tree.replaceChildren(...genealogy.tree.map((node) => {
@@ -213,20 +249,11 @@ export async function renderWarehouse() {
                 ]);
             }));
         }
-
-        fillTable(holds, onHold.lots, [
-            { className: "mono sm", render: (row) => row.lot_number },
-            { className: "sm", render: (row) => row.location || "-" },
-            { className: "num", render: (row) => row.qty.toLocaleString() },
-            { render: (row) => pill(humanize(row.status), "open") }
-        ], "Nothing on hold");
-
     } catch (error) {
         if (tree) {
             tree.replaceChildren(
                 el("div", { class: "sm", style: "color:var(--crit)", text: error.message })
             );
         }
-        errorRow(holds, 4, error);
     }
 }

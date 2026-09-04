@@ -503,58 +503,30 @@
     <section class="view" id="view-drawings" hidden>
         <div class="view-head">
             <h1 class="view-title">Engineering Drawings<span class="clause-ref">8.3</span></h1>
-            <p class="view-sub">Design and development records. Drawing revision is the single source of truth for every inspection plan downstream.</p>
+            <p class="view-sub">Design output under control. Production works to the released revision and sees nothing else.</p>
         </div>
-
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Drawing register</h2><span class="panel-note">640 active</span></div>
+                <div class="panel-head"><h2 class="panel-title">Drawing register</h2></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Drawing</th><th>Description</th><th>Rev</th><th>Customer</th><th>Open ECN</th><th>Access</th></tr></thead>
-                        <tbody>
-                            <tr><td class="mono sm">RP-4471-A</td><td class="sm">Housing, hydraulic manifold</td><td class="mono sm">D</td><td class="sm">Voss</td><td class="mono sm">-</td><td><span class="pill pill-info">Eng + QA</span></td></tr>
-                            <tr><td class="mono sm">RP-2210-C</td><td class="sm">Shaft, drive spline</td><td class="mono sm">G</td><td class="sm">Kestrel</td><td class="mono sm">ECN-0118</td><td><span class="pill pill-info">Eng + QA</span></td></tr>
-                            <tr><td class="mono sm">RP-9004-B</td><td class="sm">Bracket, mounting</td><td class="mono sm">C</td><td class="sm">Voss</td><td class="mono sm">-</td><td><span class="pill pill-info">All plant</span></td></tr>
-                            <tr><td class="mono sm">RP-8890-D</td><td class="sm">Cap, end closure</td><td class="mono sm">B</td><td class="sm">Dunmore</td><td class="mono sm">-</td><td><span class="pill pill-info">Eng + QA</span></td></tr>
-                            <tr><td class="mono sm">RP-6612-E</td><td class="sm">Retainer ring</td><td class="mono sm">A</td><td class="sm">Halberd</td><td class="mono sm">ECN-0121</td><td><span class="pill pill-hold">Eng only</span></td></tr>
-                        </tbody>
+                        <thead><tr><th>Drawing</th><th>Title</th><th>Rev</th><th>Customer</th><th>Open ECN</th><th>Access</th></tr></thead>
+                        <tbody id="drawing-table"></tbody>
                     </table>
                 </div>
             </div>
-
             <div class="stack">
                 <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">RP-4471-A rev D</h2><span class="pill pill-done">Released</span></div>
-                    <div class="panel-body">
-                        <dl class="kv">
-                            <dt>Material</dt><dd>6061-T6 aluminium</dd>
-                            <dt>Critical char.</dt><dd class="mono">DIA 12.70 +0.013/-0.000</dd>
-                            <dt>Surface finish</dt><dd class="mono">3.2 Ra max</dd>
-                            <dt>Datum scheme</dt><dd class="mono">A / B / C</dd>
-                            <dt>True position</dt><dd class="mono">0.05 MMC to A-B-C</dd>
-                            <dt>Approved by</dt><dd>R. Sandoval, Eng Mgr</dd>
-                            <dt>Released</dt><dd class="mono">11 Feb 2026</dd>
-                        </dl>
-                        <div class="section-label">Downstream links</div>
-                        <div class="chip-list">
-                            <span class="chip">Inspection plan IP-4471</span>
-                            <span class="chip">Control plan CP-4471</span>
-                            <span class="chip">WO-31882</span>
-                            <span class="chip">NCR-2026-0142</span>
-                        </div>
-                    </div>
+                    <div class="panel-head"><h2 class="panel-title" id="drawing-number">Select a drawing</h2></div>
+                    <div class="panel-body" id="drawing-detail"></div>
                 </div>
                 <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Access control</h2><span class="panel-note">clause 7.5.3</span></div>
-                    <div class="panel-body">
-                        <p class="sm dim" style="margin:0 0 10px">Drawings are read-only to production. Only Engineering can upload a new revision, and a release automatically supersedes the prior rev at every shop-floor terminal.</p>
-                        <div class="chip-list">
-                            <span class="chip">Engineering: read, write, release</span>
-                            <span class="chip">Quality: read, comment</span>
-                            <span class="chip">Production: read current rev only</span>
-                            <span class="chip">Supplier portal: scoped read</span>
-                        </div>
+                    <div class="panel-head"><h2 class="panel-title">Revision history</h2><span class="panel-note">clause 7.5.3</span></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Rev</th><th>Change</th><th>ECN</th><th>Released</th><th>Status</th></tr></thead>
+                            <tbody id="revision-table"></tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -693,41 +665,31 @@
     <section class="view" id="view-receiving" hidden>
         <div class="view-head">
             <h1 class="view-title">Receiving Inspection<span class="clause-ref">8.4.2</span></h1>
-            <p class="view-sub">Verification that purchased product meets requirements before it reaches the floor. Sampling plan follows the vendor's grade.</p>
+            <p class="view-sub">Verification that purchased product meets requirements before it reaches the floor. The sampling plan follows the grade of the vendor.</p>
         </div>
-
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Receipts awaiting disposition</h2><span class="panel-note">ANSI Z1.4 level II</span></div>
+                <div class="panel-head"><h2 class="panel-title">Receipts</h2><span class="panel-note">pending first</span></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Receipt</th><th>PO</th><th>Vendor</th><th>Material</th><th class="num">Qty</th><th>Plan</th><th>Result</th></tr></thead>
-                        <tbody>
-                            <tr><td><span class="sev sev-warn"></span><span class="rec-id">RCV-20260901-3</span></td><td class="mono sm">PO-55401</td><td class="sm">Halstead Steel</td><td class="mono sm">RM-1018-HR</td><td class="num">2,400</td><td class="mono sm">Skip-lot</td><td><span class="pill pill-open">Cert issue</span></td></tr>
-                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">RCV-20260902-1</span></td><td class="mono sm">PO-55418</td><td class="sm">Ainsley Tool</td><td class="mono sm">TL-CARB-38</td><td class="num">60</td><td class="mono sm">Skip-lot</td><td><span class="pill pill-done">Accept</span></td></tr>
-                            <tr><td><span class="sev sev-crit"></span><span class="rec-id">RCV-20260902-2</span></td><td class="mono sm">PO-55390</td><td class="sm">Nordvik Heat Treat</td><td class="mono sm">RP-2210-C</td><td class="num">150</td><td class="mono sm">100%</td><td><span class="pill pill-open">Hardness low</span></td></tr>
-                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">RCV-20260903-1</span></td><td class="mono sm">PO-55422</td><td class="sm">Brightline Plating</td><td class="mono sm">RP-9004-B</td><td class="num">1,200</td><td class="mono sm">AQL 1.0</td><td><span class="pill pill-done">Accept</span></td></tr>
-                        </tbody>
+                        <thead><tr><th>Receipt</th><th>PO</th><th>Vendor</th><th>Part</th><th class="num">Qty</th><th>Plan</th><th>Status</th></tr></thead>
+                        <tbody id="receipt-table"></tbody>
                     </table>
                 </div>
             </div>
-
-            <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">RCV-20260902-2</h2><span class="pill pill-open">Reject</span></div>
-                <div class="panel-body">
-                    <dl class="kv">
-                        <dt>Vendor</dt><dd>Nordvik Heat Treat, grade D</dd>
-                        <dt>Process</dt><dd>Carburize and temper</dd>
-                        <dt>Spec</dt><dd class="mono">HRC 58-62 case</dd>
-                        <dt>Sample 1</dt><dd class="mono" style="color:var(--crit)">HRC 54.2</dd>
-                        <dt>Sample 2</dt><dd class="mono" style="color:var(--crit)">HRC 55.1</dd>
-                        <dt>Sample 3</dt><dd class="mono">HRC 58.4</dd>
-                        <dt>Gage</dt><dd class="mono">HG-018</dd>
-                        <dt>Raised</dt><dd><span class="rec-id">NCR-2026-0143</span></dd>
-                        <dt>Vendor action</dt><dd><span class="rec-id">SCAR-2026-0004</span></dd>
-                    </dl>
-                    <div class="section-label">Sampling escalation</div>
-                    <p class="sm dim" style="margin:0">Grade D vendors move to 100% inspection automatically. Nordvik returns to AQL 1.0 after five consecutive accepted lots.</p>
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title" id="receipt-number">Select a receipt</h2></div>
+                    <div class="panel-body" id="receipt-detail"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Measurements</h2></div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Characteristic</th><th>Spec</th><th>Actual</th><th>Gage</th><th>Result</th></tr></thead>
+                            <tbody id="measurement-table"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -780,39 +742,34 @@
     <section class="view" id="view-shipping" hidden>
         <div class="view-head">
             <h1 class="view-title">Shipping<span class="clause-ref">8.6</span></h1>
-            <p class="view-sub">Release of product. Nothing ships until every planned verification is complete and an authorized person signs the release.</p>
+            <p class="view-sub">Release of product. Nothing ships until every planned verification is complete and an authorised person signs.</p>
         </div>
-
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Shipments</h2><span class="panel-note">1,940 released YTD / 97.4% OTD</span></div>
+                <div class="panel-head"><h2 class="panel-title">Shipments</h2><span class="panel-note">blocked first</span></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Shipment</th><th>Customer</th><th>Part / Lot</th><th class="num">Qty</th><th>Released by</th><th>Status</th></tr></thead>
-                        <tbody>
-                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">SHIP-20260903-01</span></td><td class="sm">Kestrel Aerospace</td><td class="mono sm">RP-6612-E / L-88221</td><td class="num">880</td><td class="sm">M. Okonkwo</td><td><span class="pill pill-done">Shipped</span></td></tr>
-                            <tr><td><span class="sev sev-warn"></span><span class="rec-id">SHIP-20260903-02</span></td><td class="sm">Voss Automotive</td><td class="mono sm">RP-9004-B / L-88240</td><td class="num">2,000</td><td class="sm dim">-</td><td><span class="pill pill-prog">Awaiting release</span></td></tr>
-                            <tr><td><span class="sev sev-crit"></span><span class="rec-id">SHIP-20260904-01</span></td><td class="sm">Dunmore Industrial</td><td class="mono sm">RP-4471-A / L-88213</td><td class="num">400</td><td class="sm dim">-</td><td><span class="pill pill-open">Blocked, NCR</span></td></tr>
-                            <tr><td><span class="sev sev-ok"></span><span class="rec-id">SHIP-20260828-02</span></td><td class="sm">Halberd Motion</td><td class="mono sm">RP-6612-E / L-88221</td><td class="num">880</td><td class="sm">M. Okonkwo</td><td><span class="pill pill-done">Shipped</span></td></tr>
-                        </tbody>
+                        <thead><tr><th>Shipment</th><th>Customer</th><th>Part</th><th>Lot</th><th class="num">Qty</th><th>Checks</th><th>Status</th></tr></thead>
+                        <tbody id="shipment-table"></tbody>
                     </table>
                 </div>
             </div>
-
-            <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Release checklist</h2><span class="pill pill-prog">SHIP-20260903-02</span></div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Verification</th><th>Evidence</th><th>Status</th></tr></thead>
-                        <tbody>
-                            <tr><td class="sm">Final inspection complete</td><td class="mono sm">IP-9004 rec 2,000</td><td><span class="pill pill-done">Pass</span></td></tr>
-                            <tr><td class="sm">All ops signed on traveler</td><td class="mono sm">WO-31890</td><td><span class="pill pill-done">Pass</span></td></tr>
-                            <tr><td class="sm">No open NCR on lot</td><td class="mono sm">L-88240</td><td><span class="pill pill-done">Clear</span></td></tr>
-                            <tr><td class="sm">Cert of conformance generated</td><td class="mono sm">C of C 20260903-02</td><td><span class="pill pill-done">Ready</span></td></tr>
-                            <tr><td class="sm">Customer-specific labels</td><td class="mono sm">Voss spec VS-114</td><td><span class="pill pill-prog">Printing</span></td></tr>
-                            <tr><td class="sm">Authorized release signature</td><td class="sm dim">Quality manager</td><td><span class="pill pill-hold">Pending</span></td></tr>
-                        </tbody>
-                    </table>
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title" id="shipment-number">Select a shipment</h2>
+                        <span class="panel-note" id="shipment-note"></span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Verification</th><th>Evidence</th><th>Status</th><th></th></tr></thead>
+                            <tbody id="check-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Shipment detail</h2></div>
+                    <div class="panel-body" id="shipment-detail"></div>
                 </div>
             </div>
         </div>
@@ -913,50 +870,23 @@
     <section class="view" id="view-onboarding" hidden>
         <div class="view-head">
             <h1 class="view-title">Vendor Onboarding<span class="clause-ref">8.4.1</span></h1>
-            <p class="view-sub">Evaluation and selection of external providers. A vendor cannot receive a production PO until every stage is signed.</p>
+            <p class="view-sub">Evaluation and selection of external providers. Stages run in order, and the last one is the only route onto the approved vendor list.</p>
         </div>
-
         <div class="grid-2">
-            <div class="stack">
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Merrow Fasteners</h2><span class="pill pill-prog">Stage 4 of 6</span></div>
-                </div>
-                <div class="pipe">
-                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Questionnaire returned</div><div class="pipe-meta">Self-assessment, 42 questions, scored 88</div></div><span class="pill pill-done">12 Aug</span></div>
-                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Certification verified</div><div class="pipe-meta">ISO 9001 confirmed with registrar, expires 2028</div></div><span class="pill pill-done">15 Aug</span></div>
-                    <div class="pipe-step done"><span class="pipe-dot"></span><div><div class="pipe-name">Financial and capacity check</div><div class="pipe-meta">D and B pulled, capacity confirmed for 40k pc/yr</div></div><span class="pill pill-done">21 Aug</span></div>
-                    <div class="pipe-step active"><span class="pipe-dot"></span><div><div class="pipe-name">On-site audit</div><div class="pipe-meta">Scheduled 12 Sep, auditor T. Alvarez</div></div><span class="pill pill-prog">Scheduled</span></div>
-                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">First article approval</div><div class="pipe-meta">PPAP level 3 required</div></div><span class="pill pill-hold">-</span></div>
-                    <div class="pipe-step"><span class="pipe-dot"></span><div><div class="pipe-name">Added to AVL</div><div class="pipe-meta">Quality manager signature required</div></div><span class="pill pill-hold">-</span></div>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Candidates</h2></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Vendor</th><th>Scope</th><th>Progress</th><th>Status</th></tr></thead>
+                        <tbody id="candidate-table"></tbody>
+                    </table>
                 </div>
             </div>
-
-            <div class="stack">
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Onboarding queue</h2><span class="panel-note">2 active</span></div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead><tr><th>Vendor</th><th>Scope</th><th>Stage</th><th>Owner</th></tr></thead>
-                            <tbody>
-                                <tr><td class="sm">Merrow Fasteners</td><td class="sm">Class 10.9 hardware</td><td class="mono sm">4 of 6</td><td class="sm">T. Alvarez</td></tr>
-                                <tr><td class="sm">Ostrand Grinding</td><td class="sm">Centerless grinding</td><td class="mono sm">2 of 6</td><td class="sm">T. Alvarez</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+            <div>
+                <div class="panel" style="margin-bottom:16px">
+                    <div class="panel-head"><h2 class="panel-title" id="candidate-name">Select a candidate</h2><span class="panel-note">six stages</span></div>
                 </div>
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Approval criteria</h2><span class="panel-note">SOP-0088</span></div>
-                    <div class="panel-body">
-                        <p class="sm dim" style="margin:0 0 10px;max-width:60ch">Criteria are configurable per commodity. Special processes such as heat treat and plating require an on-site audit; distributors of catalogue hardware do not.</p>
-                        <div class="chip-list">
-                            <span class="chip">Questionnaire score 75 min</span>
-                            <span class="chip">Valid ISO 9001 or AS9100</span>
-                            <span class="chip">On-site audit, special process</span>
-                            <span class="chip">PPAP level 3</span>
-                            <span class="chip">Signed quality agreement</span>
-                        </div>
-                    </div>
-                </div>
+                <div class="pipe" id="onboarding-pipe"></div>
             </div>
         </div>
     </section>
@@ -1019,61 +949,34 @@
     <section class="view" id="view-review" hidden>
         <div class="view-head">
             <h1 class="view-title">Management Review<span class="clause-ref">9.3</span></h1>
-            <p class="view-sub">The standard names the required inputs and outputs. QualityGuard assembles the inputs automatically from every other module.</p>
+            <p class="view-sub">The standard names twelve required inputs. Every one is assembled from the module that holds it, so the pack cannot go stale.</p>
         </div>
-
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head"><h2 class="panel-title">Reviews</h2><span class="panel-note">quarterly</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Reference</th><th>Period</th><th>Held</th><th>Chair</th><th>Status</th></tr></thead>
+                    <tbody id="review-table"></tbody>
+                </table>
+            </div>
+        </div>
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Q3 2026 inputs</h2><span class="panel-note">clause 9.3.2, auto-assembled</span></div>
+                <div class="panel-head"><h2 class="panel-title" id="review-reference">Select a review</h2><span class="panel-note">clause 9.3.2 inputs</span></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Required input</th><th>Source module</th><th>Summary</th></tr></thead>
-                        <tbody>
-                            <tr><td class="sm">Status of prior actions</td><td class="sm dim">Management Review</td><td class="mono sm">6 of 8 closed</td></tr>
-                            <tr><td class="sm">Changes in external and internal issues</td><td class="sm dim">Risk Register</td><td class="mono sm">3 new risks</td></tr>
-                            <tr><td class="sm">Customer satisfaction</td><td class="sm dim">Complaints</td><td class="mono sm">74 Voss, down 15</td></tr>
-                            <tr><td class="sm">Quality objectives performance</td><td class="sm dim">Scorecards</td><td class="mono sm">6 of 9 on target</td></tr>
-                            <tr><td class="sm">Process performance and conformity</td><td class="sm dim">Production, NCR</td><td class="mono sm">842 PPM</td></tr>
-                            <tr><td class="sm">Nonconformities and corrective actions</td><td class="sm dim">NCR, CAPA</td><td class="mono sm">14 NCR, 2 CAPA late</td></tr>
-                            <tr><td class="sm">Monitoring and measurement results</td><td class="sm dim">Calibration</td><td class="mono sm">1 gage past due</td></tr>
-                            <tr><td class="sm">Audit results</td><td class="sm dim">Internal Audit</td><td class="mono sm">2 audits overdue</td></tr>
-                            <tr><td class="sm">External provider performance</td><td class="sm dim">AVL</td><td class="mono sm">1 vendor grade D</td></tr>
-                            <tr><td class="sm">Adequacy of resources</td><td class="sm dim">Training</td><td class="mono sm">3 competency gaps</td></tr>
-                            <tr><td class="sm">Effectiveness of risk actions</td><td class="sm dim">Risk Register</td><td class="mono sm">2 unmitigated</td></tr>
-                            <tr><td class="sm">Opportunities for improvement</td><td class="sm dim">Audit, CAPA</td><td class="mono sm">5 OFIs open</td></tr>
-                        </tbody>
+                        <thead><tr><th>Clause</th><th>Required input</th><th>From</th><th>Now</th></tr></thead>
+                        <tbody id="review-inputs"></tbody>
                     </table>
                 </div>
             </div>
-
-            <div class="stack">
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Review history</h2><span class="panel-note">quarterly</span></div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead><tr><th>Review</th><th>Held</th><th>Chair</th><th>Status</th></tr></thead>
-                            <tbody>
-                                <tr><td class="mono sm">MR-2026-Q3</td><td class="mono sm">due 30 Sep</td><td class="sm">R. Sandoval</td><td><span class="pill pill-prog">Pending</span></td></tr>
-                                <tr><td class="mono sm">MR-2026-Q2</td><td class="mono sm">28 Jun 2026</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Closed</span></td></tr>
-                                <tr><td class="mono sm">MR-2026-Q1</td><td class="mono sm">29 Mar 2026</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Closed</span></td></tr>
-                                <tr><td class="mono sm">MR-2025-Q4</td><td class="mono sm">18 Dec 2025</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Closed</span></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Q2 outputs</h2><span class="panel-note">clause 9.3.3</span></div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead><tr><th>Decision</th><th>Owner</th><th>Status</th></tr></thead>
-                            <tbody>
-                                <tr><td class="sm">Add second CMM to relieve inspection queue</td><td class="sm">R. Sandoval</td><td><span class="pill pill-done">Approved</span></td></tr>
-                                <tr><td class="sm">Move Nordvik to 100% incoming</td><td class="sm">T. Alvarez</td><td><span class="pill pill-done">Done</span></td></tr>
-                                <tr><td class="sm">Revise PPM objective to 700</td><td class="sm">S. Parnell</td><td><span class="pill pill-prog">In progress</span></td></tr>
-                                <tr><td class="sm">Hire second quality technician</td><td class="sm">R. Sandoval</td><td><span class="pill pill-prog">Open req</span></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Decisions and actions</h2><span class="panel-note">clause 9.3.3</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Decision</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
+                        <tbody id="review-actions"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -1101,55 +1004,18 @@
     <section class="view" id="view-scorecards" hidden>
         <div class="view-head">
             <h1 class="view-title">Scorecards and KPIs<span class="clause-ref">6.2 / 9.1.3</span></h1>
-            <p class="view-sub">Quality objectives with a measurable target, an owner, and the actual pulled live from the module that owns the data.</p>
+            <p class="view-sub">Quality objectives with a target, an owner, and an actual. Figures marked live are recalculated from the records every time this page loads.</p>
         </div>
-
         <div class="panel">
-            <div class="panel-head"><h2 class="panel-title">Quality objectives 2026</h2><span class="panel-note">6 of 9 on target</span></div>
-            <div class="panel-body" style="padding-top:8px">
-                <div class="obj-row" style="border-bottom:1px solid var(--hairline)">
-                    <span class="section-label" style="margin:0">Objective</span>
-                    <span class="section-label" style="margin:0;text-align:right">Target</span>
-                    <span class="section-label" style="margin:0;text-align:right">Actual</span>
-                    <span class="section-label" style="margin:0">Progress</span>
-                    <span class="section-label" style="margin:0;text-align:right">State</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Internal defect rate</span><span class="obj-num">700 PPM</span><span class="obj-num">842</span>
-                    <span class="bar bar-warn"><span style="width:83%"></span></span><span class="obj-num" style="color:var(--warn)">Off</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">On-time delivery</span><span class="obj-num">96.0%</span><span class="obj-num">97.4%</span>
-                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">CAPA closed within 30 d</span><span class="obj-num">90%</span><span class="obj-num">67%</span>
-                    <span class="bar bar-crit"><span style="width:67%"></span></span><span class="obj-num" style="color:var(--crit)">Off</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Calibration on time</span><span class="obj-num">100%</span><span class="obj-num">99.5%</span>
-                    <span class="bar bar-warn"><span style="width:99%"></span></span><span class="obj-num" style="color:var(--warn)">Off</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Supplier PPM, all vendors</span><span class="obj-num">1,500</span><span class="obj-num">1,146</span>
-                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Customer satisfaction</span><span class="obj-num">85</span><span class="obj-num">86</span>
-                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Training compliance</span><span class="obj-num">98%</span><span class="obj-num">99.4%</span>
-                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Internal audits on schedule</span><span class="obj-num">100%</span><span class="obj-num">83%</span>
-                    <span class="bar bar-crit"><span style="width:83%"></span></span><span class="obj-num" style="color:var(--crit)">Off</span>
-                </div>
-                <div class="obj-row">
-                    <span class="obj-name">Scrap cost as percent of sales</span><span class="obj-num">1.20%</span><span class="obj-num">0.94%</span>
-                    <span class="bar bar-ok"><span style="width:100%"></span></span><span class="obj-num" style="color:var(--ok)">On</span>
-                </div>
+            <div class="panel-head">
+                <h2 class="panel-title">Quality objectives</h2>
+                <span class="panel-note" id="objective-note"></span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Objective</th><th>Clause</th><th class="num">Target</th><th class="num">Actual</th><th>Unit</th><th>Owner</th><th>State</th></tr></thead>
+                    <tbody id="objective-table"></tbody>
+                </table>
             </div>
         </div>
     </section>
@@ -1211,48 +1077,48 @@
     <section class="view" id="view-forms" hidden>
         <div class="view-head">
             <h1 class="view-title">Form Builder</h1>
-            <p class="view-sub">Every record type in QualityGuard is a form you configure, not code someone writes. This is what makes the system fit your plant instead of the other way round.</p>
+            <p class="view-sub">Every record type is a form held in the database. What is shown here is the schema the server validates against, not a picture of one.</p>
         </div>
 
-        <div class="builder">
-            <div>
-                <div class="section-label" style="margin-top:0">Field types</div>
-                <div class="palette">
-                    <div class="palette-item"><span class="palette-kind">TXT</span> Short text</div>
-                    <div class="palette-item"><span class="palette-kind">MEM</span> Long text</div>
-                    <div class="palette-item"><span class="palette-kind">NUM</span> Number with units</div>
-                    <div class="palette-item"><span class="palette-kind">DAT</span> Date</div>
-                    <div class="palette-item"><span class="palette-kind">SEL</span> Pick list</div>
-                    <div class="palette-item"><span class="palette-kind">LNK</span> Record link</div>
-                    <div class="palette-item"><span class="palette-kind">USR</span> Person</div>
-                    <div class="palette-item"><span class="palette-kind">FIL</span> Attachment</div>
-                    <div class="palette-item"><span class="palette-kind">SIG</span> E-signature</div>
-                    <div class="palette-item"><span class="palette-kind">CLC</span> Calculated</div>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Record types</h2><span class="panel-note">published forms</span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Type</th><th>Prefix</th><th>Clause</th><th class="num">Records</th><th>Form</th><th>Fields</th></tr></thead>
+                        <tbody id="record-type-table"></tbody>
+                    </table>
                 </div>
             </div>
 
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">NCR form, version 4</h2>
-                    <div class="row"><span class="panel-note">142 records on v3</span><button class="btn btn-primary">Publish v4</button></div>
+            <div class="stack">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title" id="schema-name">Select a record type</h2>
+                        <span class="panel-note" id="schema-note"></span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>Type</th><th>Label</th><th>Key</th><th>Validation</th></tr></thead>
+                            <tbody id="schema-fields"></tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="panel-body">
-                    <div class="field required"><div><div class="field-name">Part number</div><div class="field-rule">LNK to Drawings, required</div></div><span class="chip">Edit</span></div>
-                    <div class="field required"><div><div class="field-name">Lot or serial</div><div class="field-rule">TXT, required, pattern L-#####</div></div><span class="chip">Edit</span></div>
-                    <div class="field required"><div><div class="field-name">Quantity affected</div><div class="field-rule">NUM, required, min 1</div></div><span class="chip">Edit</span></div>
-                    <div class="field"><div><div class="field-name">Characteristic</div><div class="field-rule">TXT, prefill from control plan</div></div><span class="chip">Edit</span></div>
-                    <div class="field"><div><div class="field-name">Measured value</div><div class="field-rule">NUM, flags when outside spec</div></div><span class="chip">Edit</span></div>
-                    <div class="field required"><div><div class="field-name">Gage used</div><div class="field-rule">LNK to Calibration, blocks if cal expired</div></div><span class="chip">Edit</span></div>
-                    <div class="field required"><div><div class="field-name">Disposition</div><div class="field-rule">SEL, 5 options, MRB approval if Use-as-is</div></div><span class="chip">Edit</span></div>
-                    <div class="field"><div><div class="field-name">Photo evidence</div><div class="field-rule">FIL, up to 5, required when Scrap</div></div><span class="chip">Edit</span></div>
-                    <div class="field required"><div><div class="field-name">Raised by</div><div class="field-rule">SIG, captures name, role, timestamp</div></div><span class="chip">Edit</span></div>
 
-                    <div class="section-label">Conditional rules on this form</div>
-                    <div class="chip-list">
-                        <span class="chip">If Disposition = Use-as-is then require MRB approval</span>
-                        <span class="chip">If Qty &gt; 500 then notify Quality Manager</span>
-                        <span class="chip">If gage cal expired then block submit</span>
-                        <span class="chip">If Scrap then require photo</span>
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Conditional rules</h2></div>
+                    <div class="panel-body" id="schema-rules"></div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head"><h2 class="panel-title">Editing</h2><span class="demo-flag">Not built</span></div>
+                    <div class="panel-body">
+                        <p class="sm dim" style="margin:0;max-width:62ch">
+                            Adding, removing and reordering fields needs write endpoints for
+                            form_versions, and publishing has to leave existing records pointing
+                            at the version they were captured under. Reading is real; editing is
+                            the next piece.
+                        </p>
                     </div>
                 </div>
             </div>

@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 
 export const operations = Router();
@@ -33,7 +33,7 @@ operations.get("/receipts", async (request, response, next) => {
              where r.org_id = $1
              order by case r.status when 'pending' then 0 when 'reject' then 1 else 2 end,
                       r.received_at desc
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, receipts: result.rows });
     } catch (error) {
@@ -52,7 +52,7 @@ operations.get("/receipts/:number", async (request, response, next) => {
          left join vendors v on v.id = r.vendor_id
          left join users u   on u.id = r.inspected_by
              where r.org_id = $1 and r.receipt_number = $2
-        `, [DEMO_ORG_ID, request.params.number]);
+        `, [request.user.org_id, request.params.number]);
 
         if (found.rowCount === 0) {
             return response.status(404).json({ error: "No such receipt" });
@@ -84,7 +84,7 @@ operations.post("/receipts/:number/disposition",
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
                     "select id, status from receipts where org_id = $1 and receipt_number = $2 for update",
-                    [DEMO_ORG_ID, request.params.number]
+                    [request.user.org_id, request.params.number]
                 );
 
                 if (found.rowCount === 0) return null;
@@ -105,7 +105,7 @@ operations.post("/receipts/:number/disposition",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'receipts', $2, 'status', 'pending', $3, $4, $5)
-                `, [DEMO_ORG_ID, found.rows[0].id, accept ? "accept" : "reject",
+                `, [request.user.org_id, found.rows[0].id, accept ? "accept" : "reject",
                     request.body?.notes || null, request.user.id]);
 
                 return { receipt: updated.rows[0] };
@@ -146,7 +146,7 @@ operations.get("/shipments", async (request, response, next) => {
                         when 'preparing' then 2
                         else 3 end,
                       s.ship_date desc
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, shipments: result.rows });
     } catch (error) {
@@ -164,7 +164,7 @@ operations.get("/shipments/:number", async (request, response, next) => {
          left join lots  l on l.id = s.lot_id
          left join users u on u.id = s.released_by
              where s.org_id = $1 and s.shipment_number = $2
-        `, [DEMO_ORG_ID, request.params.number]);
+        `, [request.user.org_id, request.params.number]);
 
         if (found.rowCount === 0) {
             return response.status(404).json({ error: "No such shipment" });
@@ -201,7 +201,7 @@ operations.post("/shipments/:number/release",
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
                     "select id, status from shipments where org_id = $1 and shipment_number = $2 for update",
-                    [DEMO_ORG_ID, request.params.number]
+                    [request.user.org_id, request.params.number]
                 );
 
                 if (found.rowCount === 0) return null;
@@ -235,7 +235,7 @@ operations.post("/shipments/:number/release",
                     insert into audit_log
                         (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
                     values ($1, 'shipments', $2, 'status', $3, 'shipped', $4, $5)
-                `, [DEMO_ORG_ID, shipment.id, shipment.status,
+                `, [request.user.org_id, shipment.id, shipment.status,
                     request.body?.reason || null, request.user.id]);
 
                 return { shipment: updated.rows[0] };
@@ -270,7 +270,7 @@ operations.post("/shipments/:number/checks/:position/pass",
                    and s.org_id = $1 and s.shipment_number = $2
                    and c.position = $4
                 returning c.description, c.status
-            `, [DEMO_ORG_ID, request.params.number,
+            `, [request.user.org_id, request.params.number,
                 request.body?.evidence || null, Number(request.params.position)]);
 
             if (result.rowCount === 0) {

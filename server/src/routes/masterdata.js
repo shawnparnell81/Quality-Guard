@@ -8,7 +8,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, DEMO_ORG_ID } from "../db.js";
+import { query } from "../db.js";
 
 export const masterdata = Router();
 
@@ -27,7 +27,7 @@ masterdata.get("/organization", async (request, response, next) => {
          left join sites s on s.org_id = o.id
              where o.id = $1
              limit 1
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         if (org.rowCount === 0) {
             return response.status(404).json({ error: "Organization not found" });
@@ -41,7 +41,7 @@ masterdata.get("/organization", async (request, response, next) => {
               from certifications
              where org_id = $1
              order by next_audit_on
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({
             ...org.rows[0],
@@ -81,6 +81,37 @@ const LINK_SOURCES = {
               from lots where org_id = $1 order by lot_number desc`
 };
 
+/* GET /api/record-types
+   Every record type and whichever form version is published against
+   it. The Form Builder screen reads this, so what it shows is the
+   schema the API actually validates against. */
+masterdata.get("/record-types", async (request, response, next) => {
+    try {
+        const result = await query(`
+            select rt.key, rt.name, rt.prefix, rt.clause,
+                   fv.version, fv.published_at,
+                   u.full_name as published_by,
+                   jsonb_array_length(coalesce(fv.schema->'fields', '[]'::jsonb)) as field_count,
+                   jsonb_array_length(coalesce(fv.schema->'rules',  '[]'::jsonb)) as rule_count,
+                   (select count(*)::int from records r
+                     where r.record_type_id = rt.id) as record_count
+              from record_types rt
+         left join lateral (
+                   select * from form_versions f
+                    where f.record_type_id = rt.id and f.published_at is not null
+                    order by f.version desc limit 1
+                 ) fv on true
+         left join users u on u.id = fv.published_by
+             where rt.org_id = $1
+             order by rt.clause nulls last, rt.name
+        `, [request.user.org_id]);
+
+        response.json({ count: result.rowCount, record_types: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
 masterdata.get("/record-types/:key/form", async (request, response, next) => {
     try {
         const found = await query(`
@@ -92,7 +123,7 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
              where rt.org_id = $1 and rt.key = $2
              order by fv.version desc
              limit 1
-        `, [DEMO_ORG_ID, request.params.key]);
+        `, [request.user.org_id, request.params.key]);
 
         if (found.rowCount === 0) {
             return response.status(404).json({ error: "No such record type" });
@@ -116,7 +147,7 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
 
         const options = {};
         await Promise.all(targets.map(async (target) => {
-            const rows = await query(LINK_SOURCES[target], [DEMO_ORG_ID]);
+            const rows = await query(LINK_SOURCES[target], [request.user.org_id]);
             options[target] = rows.rows;
         }));
 
@@ -146,7 +177,7 @@ masterdata.get("/vendors", async (request, response, next) => {
                                   when 'on_watch'  then 1
                                   else 2 end,
                       name
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, vendors: result.rows });
     } catch (error) {
@@ -171,7 +202,7 @@ masterdata.get("/gages", async (request, response, next) => {
               from gages
              where org_id = $1
              order by next_due
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, gages: result.rows });
     } catch (error) {
@@ -191,7 +222,7 @@ masterdata.get("/documents", async (request, response, next) => {
          left join users u on u.id = d.owner_id
              where d.org_id = $1
              order by d.doc_number
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, documents: result.rows });
     } catch (error) {
@@ -211,7 +242,7 @@ masterdata.get("/documents/:docNumber/revisions", async (request, response, next
          left join users approver       on approver.id = dr.approved_by
              where d.org_id = $1 and d.doc_number = $2
              order by dr.revision desc
-        `, [DEMO_ORG_ID, request.params.docNumber]);
+        `, [request.user.org_id, request.params.docNumber]);
 
         response.json({ count: result.rowCount, revisions: result.rows });
     } catch (error) {
@@ -225,7 +256,7 @@ masterdata.get("/parts", async (request, response, next) => {
         const result = await query(`
             select part_number, description, revision, customer
               from parts where org_id = $1 order by part_number
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, parts: result.rows });
     } catch (error) {
@@ -274,7 +305,7 @@ masterdata.get("/lots/:lotNumber/genealogy", async (request, response, next) => 
               from descendants d
          left join parts p on p.id = d.part_id
              order by d.depth, d.lot_number
-        `, [DEMO_ORG_ID, request.params.lotNumber]);
+        `, [request.user.org_id, request.params.lotNumber]);
 
         if (result.rowCount === 0) {
             return response.status(404).json({ error: "Lot not found" });
@@ -298,7 +329,7 @@ masterdata.get("/lots", async (request, response, next) => {
              where l.org_id = $1
                ${onHold ? "and l.status in ('on_hold','quarantine')" : ""}
              order by l.lot_number desc
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, lots: result.rows });
     } catch (error) {
@@ -337,7 +368,7 @@ masterdata.get("/training/gaps", async (request, response, next) => {
                      or tr.revision_trained is distinct from d.current_revision
                    )
              order by u.full_name, d.doc_number
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, gaps: result.rows });
     } catch (error) {
@@ -347,6 +378,10 @@ masterdata.get("/training/gaps", async (request, response, next) => {
 
 masterdata.get("/training/matrix", async (request, response, next) => {
     try {
+        /* Built from document_requirements outward, the same shape as
+           /training/gaps, so an operator required to hold a document but
+           never trained on it still gets a row and a cell for it, rather
+           than being absent from the matrix altogether. */
         const result = await query(`
             select u.full_name as operator, u.role,
                    json_object_agg(
@@ -354,16 +389,20 @@ masterdata.get("/training/matrix", async (request, response, next) => {
                        json_build_object(
                            'trained_revision', tr.revision_trained,
                            'current_revision', d.current_revision,
-                           'ok', tr.revision_trained = d.current_revision
+                           'ok', tr.revision_trained is not null
+                                 and tr.revision_trained = d.current_revision
                        )
                    ) as documents
               from users u
-              join training_records tr on tr.user_id = u.id
-              join documents d         on d.id = tr.document_id
-             where u.org_id = $1
+              join document_requirements req
+                on req.role = u.role and req.org_id = u.org_id
+              join documents d on d.id = req.document_id
+         left join training_records tr
+                on tr.user_id = u.id and tr.document_id = d.id
+             where u.org_id = $1 and u.active
              group by u.id, u.full_name, u.role
              order by u.full_name
-        `, [DEMO_ORG_ID]);
+        `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, matrix: result.rows });
     } catch (error) {

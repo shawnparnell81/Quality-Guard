@@ -94,6 +94,7 @@ export const api = {
     openEvents:   ()        => get("/dashboard/open-events"),
     readiness:    ()        => get("/dashboard/readiness"),
 
+    recordTypes:  ()        => get("/record-types"),
     recordForm:   (typeKey) => get("/record-types/" + encodeURIComponent(typeKey) + "/form"),
     records:      (params)  => get(withQuery("/records", params)),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),
@@ -132,7 +133,7 @@ export const api = {
         request("POST", "/shipments/" + encodeURIComponent(number) + "/release", payload),
     passShipmentCheck: (number, position, payload) =>
         request("POST", "/shipments/" + encodeURIComponent(number)
-                + "/checks/" + position + "/pass", payload),
+                + "/checks/" + encodeURIComponent(position) + "/pass", payload),
 
     objectives:    ()       => get("/objectives"),
     reviews:       ()       => get("/reviews"),

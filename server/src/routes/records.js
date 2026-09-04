@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query, withTransaction, DEMO_ORG_ID } from "../db.js";
+import { query, withTransaction } from "../db.js";
 import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
 
 export const records = Router();
@@ -30,6 +30,7 @@ function editPermissionFor(request) {
 
 const SELECT_RECORD = `
     select r.id,
+           r.record_type_id,
            r.number,
            r.title,
            r.status,
@@ -55,7 +56,7 @@ const SELECT_RECORD = `
 records.get("/", async (request, response, next) => {
     try {
         const conditions = [];
-        const params = [DEMO_ORG_ID];
+        const params = [request.user.org_id];
 
         if (request.query.type) {
             params.push(request.query.type);
@@ -96,7 +97,7 @@ records.get("/:number", async (request, response, next) => {
     try {
         const found = await query(
             SELECT_RECORD + " and r.number = $2",
-            [DEMO_ORG_ID, request.params.number]
+            [request.user.org_id, request.params.number]
         );
 
         if (found.rowCount === 0) {
@@ -138,19 +139,23 @@ records.get("/:number", async (request, response, next) => {
         /* Which moves are legal from here, and whether this particular
            person may make them. The UI needs both: an action nobody can
            take should not appear, and one this person cannot take
-           should say who can. */
+           should say who can.
+
+           Matched on record_type_id, not rt.key: a type key like
+           "eightd" is only unique per organization, not across all of
+           them, so filtering on the key alone would return every
+           tenant's transitions that happen to share a from_state. */
         const moves = await query(`
             select wt.to_state, wt.required_permission,
                    ws.name as to_name, ws.is_terminal,
                    p.description as permission_description
               from workflow_transitions wt
-              join record_types rt on rt.id = wt.record_type_id
          left join workflow_states ws
                 on ws.record_type_id = wt.record_type_id and ws.key = wt.to_state
          left join permissions p on p.key = wt.required_permission
-             where rt.key = $1 and wt.from_state = $2
+             where wt.record_type_id = $1 and wt.from_state = $2
              order by ws.position
-        `, [record.type, record.status]);
+        `, [record.record_type_id, record.status]);
 
         const closeKey = closePermissionFor(record.type);
 
@@ -199,7 +204,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
 
         const typeRow = await query(
             "select id, prefix from record_types where org_id = $1 and key = $2",
-            [DEMO_ORG_ID, type]
+            [request.user.org_id, type]
         );
 
         if (typeRow.rowCount === 0) {
@@ -242,7 +247,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
                 select number from records
                  where org_id = $1 and record_type_id = $2 and number like $3
                  order by number desc limit 1
-            `, [DEMO_ORG_ID, recordType.id, pattern]);
+            `, [request.user.org_id, recordType.id, pattern]);
 
             const nextSeq = last.rowCount === 0
                 ? 1
@@ -254,26 +259,38 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             const ownerRow = owner
                 ? await client.query(
                     "select id from users where org_id = $1 and initials = $2",
-                    [DEMO_ORG_ID, owner]
+                    [request.user.org_id, owner]
                   )
                 : { rowCount: 0, rows: [] };
 
             const ownerId = ownerRow.rowCount ? ownerRow.rows[0].id : null;
 
+            /* A new record starts at whatever this type's workflow calls
+               its first state, not a literal 'draft'. 8D's first state
+               is 'd1', for instance - a type with no workflow defined at
+               all still falls back to 'draft' so creating one never
+               hard-fails, but nothing shipped today should hit that
+               fallback. */
+            const firstState = await client.query(
+                "select key from workflow_states where record_type_id = $1 order by position limit 1",
+                [recordType.id]
+            );
+            const initialStatus = firstState.rowCount > 0 ? firstState.rows[0].key : "draft";
+
             const inserted = await client.query(`
                 insert into records
                     (org_id, record_type_id, number, title, status, severity,
                      owner_id, data, form_version, created_by)
-                values ($1, $2, $3, $4, 'draft', $5, $6, $7, $8, $6)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 returning id, number, status
-            `, [DEMO_ORG_ID, recordType.id, number, title, severity,
-                ownerId, data, formVersion]);
+            `, [request.user.org_id, recordType.id, number, title, initialStatus,
+                severity, ownerId, data, formVersion, request.user.id]);
 
             await client.query(`
                 insert into audit_log
                     (org_id, record_id, entity, entity_id, field, new_value, changed_by)
                 values ($1, $2, 'records', $2, 'created', $3, $4)
-            `, [DEMO_ORG_ID, inserted.rows[0].id, number, ownerId]);
+            `, [request.user.org_id, inserted.rows[0].id, number, request.user.id]);
 
             return inserted.rows[0];
         });
@@ -293,26 +310,22 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
    leaving a trace. */
 records.patch("/:number", requirePermission(editPermissionFor), async (request, response, next) => {
     try {
-        const { data = {}, severity, reason, actor } = request.body || {};
+        const { data = {}, severity, reason } = request.body || {};
 
         const updated = await withTransaction(async (client) => {
             const current = await client.query(
                 "select id, data, severity from records where org_id = $1 and number = $2 for update",
-                [DEMO_ORG_ID, request.params.number]
+                [request.user.org_id, request.params.number]
             );
 
             if (current.rowCount === 0) return null;
 
             const record = current.rows[0];
 
-            const actorRow = actor
-                ? await client.query(
-                    "select id from users where org_id = $1 and initials = $2",
-                    [DEMO_ORG_ID, actor]
-                  )
-                : { rowCount: 0, rows: [] };
-
-            const actorId = actorRow.rowCount ? actorRow.rows[0].id : null;
+            /* Who made this change is who is signed in, never a value the
+               client sends. The audit log is only worth anything if the
+               server, not the caller, decides whose name goes on it. */
+            const actorId = request.user.id;
 
             for (const [key, value] of Object.entries(data)) {
                 const before = record.data[key];
@@ -323,7 +336,7 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                         (org_id, record_id, entity, entity_id, field,
                          old_value, new_value, reason, changed_by)
                     values ($1, $2, 'records', $2, $3, $4, $5, $6, $7)
-                `, [DEMO_ORG_ID, record.id, key,
+                `, [request.user.org_id, record.id, key,
                     before === undefined ? null : String(before),
                     String(value), reason || null, actorId]);
             }
@@ -377,7 +390,7 @@ records.post("/:number/transition", async (request, response, next) => {
                   join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
                    for update of r
-            `, [DEMO_ORG_ID, request.params.number]);
+            `, [request.user.org_id, request.params.number]);
 
             if (current.rowCount === 0) return { code: 404 };
 
@@ -452,7 +465,7 @@ records.post("/:number/transition", async (request, response, next) => {
                     (org_id, record_id, entity, entity_id, field,
                      old_value, new_value, reason, changed_by)
                 values ($1, $2, 'records', $2, 'status', $3, $4, $5, $6)
-            `, [DEMO_ORG_ID, record.id, record.status, to, reason || null, actorId]);
+            `, [request.user.org_id, record.id, record.status, to, reason || null, actorId]);
 
             return { code: 200, body: moved.rows[0] };
         });

@@ -6,7 +6,6 @@
    ============================================================ */
 
 import express from "express";
-import cors from "cors";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -33,16 +32,15 @@ app.use(express.json({ limit: "1mb" }));
 
 /* Serving the front end from this same server means the browser sees
    one origin, so there is no CORS to configure and ES modules load
-   normally. Only the public folder is exposed, never server/.env. */
-app.use(express.static(publicDir));
+   normally. Only the public folder is exposed, never server/.env.
 
-/* Kept for the case where the front end is served from somewhere else,
-   such as the Live Server extension on port 5500. */
-app.use(cors({
-    origin: process.env.CLIENT_ORIGIN
-        ? process.env.CLIENT_ORIGIN.split(",")
-        : true
-}));
+   This is not only convenience: the session cookie is SameSite=Lax
+   and the API client sends credentials: "same-origin", so a front end
+   served from a different origin (Live Server on :5500, say) could
+   never actually authenticate against this API. Cross-origin support
+   was removed rather than half-fixed; open the app at this server's
+   own URL during development. */
+app.use(express.static(publicDir));
 
 /* One line per request. Enough to see what the front end is asking
    for without pulling in a logging library. */
