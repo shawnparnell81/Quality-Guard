@@ -1012,6 +1012,44 @@ th.col-you { color: var(--brand); }
     cursor: not-allowed;
 }
 
+/* ---------- form builder: field editor ---------- */
+.field-row-list {
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 340px; overflow-y: auto; margin-bottom: 12px;
+}
+.field-row {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid var(--hairline); border-radius: var(--radius);
+    padding: 9px 10px; background: var(--surface-2);
+}
+.field-row-move { display: flex; flex-direction: column; gap: 3px; flex: none; }
+.field-row-move .btn { padding: 1px 8px; font-size: 11px; line-height: 1.6; }
+.field-row-main {
+    flex: 1; min-width: 0; display: flex; align-items: center;
+    gap: 8px; flex-wrap: wrap;
+}
+.field-row-main input[type="text"] {
+    flex: 1 1 140px; min-width: 120px;
+    font: inherit; font-size: 13px; padding: 7px 9px;
+    border: 1px solid var(--hairline); border-radius: 5px;
+    background: var(--surface); color: var(--ink);
+}
+.field-row-main select {
+    font: inherit; font-size: 13px; padding: 7px 9px;
+    border: 1px solid var(--hairline); border-radius: 5px;
+    background: var(--surface); color: var(--ink);
+}
+.field-row-required {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 12px; color: var(--ink-2); white-space: nowrap;
+}
+.field-row-extra { flex-basis: 100%; }
+.field-row-extra input, .field-row-extra select {
+    width: 100%; font: inherit; font-size: 13px; padding: 7px 9px;
+    border: 1px solid var(--hairline); border-radius: 5px;
+    background: var(--surface); color: var(--ink);
+}
+
 .req { color: var(--crit); }
 
 /* ============================================================

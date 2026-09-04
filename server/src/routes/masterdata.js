@@ -8,7 +8,8 @@
    ============================================================ */
 
 import { Router } from "express";
-import { query } from "../db.js";
+import { query, withTransaction } from "../db.js";
+import { requirePermission } from "../auth.js";
 
 export const masterdata = Router();
 
@@ -164,6 +165,98 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
         next(error);
     }
 });
+
+const FIELD_TYPES = new Set([
+    "text", "memo", "number", "date", "select", "link", "file", "signature", "user"
+]);
+
+/* Never trust the client's own validation. The in-app editor already
+   checks all of this before it ever sends a request, but the field
+   list is exactly the shape every screen in the app renders forms
+   from, so a bad one here breaks every future record of this type,
+   not just the request that sent it. */
+function problemWith(fields) {
+    if (!Array.isArray(fields) || fields.length === 0) {
+        return "At least one field is required";
+    }
+
+    const seenKeys = new Set();
+
+    for (const field of fields) {
+        if (!field || typeof field !== "object") return "Every field must be an object";
+        if (!field.key || typeof field.key !== "string") return "Every field needs a key";
+        if (!field.label || typeof field.label !== "string") return "Every field needs a label";
+        if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
+
+        if (seenKeys.has(field.key)) return "Two fields share the key \"" + field.key + "\"";
+        seenKeys.add(field.key);
+
+        if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
+            return "\"" + field.label + "\" needs at least one option";
+        }
+        if (field.type === "link" && !LINK_SOURCES[field.target]) {
+            return "\"" + field.label + "\" needs a valid link target";
+        }
+    }
+
+    return null;
+}
+
+/* PUT /api/record-types/ncr/form   { fields: [...] }
+
+   Publishing a new version, never overwriting the one records were
+   captured under - unchanged from how the Form Builder already
+   described itself working, now made real. Conditional rules are not
+   editable from here yet, so whatever the previous version had is
+   carried forward untouched rather than silently dropped. */
+masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
+    async (request, response, next) => {
+        try {
+            const problem = problemWith(request.body?.fields);
+            if (problem) return response.status(422).json({ error: problem });
+
+            const fields = request.body.fields;
+
+            const typeRow = await query(
+                "select id from record_types where org_id = $1 and key = $2",
+                [request.user.org_id, request.params.key]
+            );
+
+            if (typeRow.rowCount === 0) {
+                return response.status(404).json({ error: "No such record type" });
+            }
+
+            const recordTypeId = typeRow.rows[0].id;
+
+            const version = await withTransaction(async (client) => {
+                const previous = await client.query(`
+                    select version, schema from form_versions
+                     where record_type_id = $1
+                     order by version desc limit 1
+                `, [recordTypeId]);
+
+                const nextVersion = previous.rowCount > 0 ? previous.rows[0].version + 1 : 1;
+                const rules = previous.rowCount > 0 ? (previous.rows[0].schema.rules || []) : [];
+
+                await client.query(`
+                    insert into form_versions (record_type_id, version, schema, published_at, published_by)
+                    values ($1, $2, $3, now(), $4)
+                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules }), request.user.id]);
+
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'form_versions', $2, 'published', $3, $4)
+                `, [request.user.org_id, recordTypeId, "v" + nextVersion + ", " + fields.length + " fields", request.user.id]);
+
+                return nextVersion;
+            });
+
+            response.json({ key: request.params.key, version, field_count: fields.length });
+        } catch (error) {
+            next(error);
+        }
+    });
 
 /* ---------- vendors ---------- */
 masterdata.get("/vendors", async (request, response, next) => {

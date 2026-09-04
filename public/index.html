@@ -1096,6 +1096,7 @@
                     <div class="panel-head">
                         <h2 class="panel-title" id="schema-name">Select a record type</h2>
                         <span class="panel-note" id="schema-note"></span>
+                        <button type="button" class="btn" id="edit-fields" data-requires="forms.manage" disabled>Edit fields</button>
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -1106,20 +1107,11 @@
                 </div>
 
                 <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Conditional rules</h2></div>
-                    <div class="panel-body" id="schema-rules"></div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Editing</h2><span class="demo-flag">Not built</span></div>
-                    <div class="panel-body">
-                        <p class="sm dim" style="margin:0;max-width:62ch">
-                            Adding, removing and reordering fields needs write endpoints for
-                            form_versions, and publishing has to leave existing records pointing
-                            at the version they were captured under. Reading is real; editing is
-                            the next piece.
-                        </p>
+                    <div class="panel-head">
+                        <h2 class="panel-title">Conditional rules</h2>
+                        <span class="panel-note">not editable here yet</span>
                     </div>
+                    <div class="panel-body" id="schema-rules"></div>
                 </div>
             </div>
         </div>
