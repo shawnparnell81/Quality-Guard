@@ -425,4 +425,11 @@ export function wireEvaluate() {
             }));
         });
     }
+
+    const objectivesPdf = document.getElementById("objectives-pdf");
+    if (objectivesPdf) {
+        objectivesPdf.addEventListener("click", () => {
+            window.location.href = "/api/objectives/pdf";
+        });
+    }
 }
