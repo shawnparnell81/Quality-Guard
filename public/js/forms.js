@@ -74,12 +74,15 @@ function buildField(field, options) {
                 el("option", { value: "", text: "Choose..." }),
                 ...list.map((item) => {
                     const option = el("option", { value: item.value, text: item.label });
-                    /* A gage past its calibration date cannot be used to
-                       judge a part. The form rule says block; this is
-                       where that becomes visible. */
+                    /* A gage past its calibration date, or on hold after
+                       failing one, cannot be used to judge a part. The
+                       form rule says block; this is where that becomes
+                       visible, and why is whatever the server actually
+                       says it is - a hold from a failed calibration is
+                       not the same fact as one that just expired. */
                     if (item.disabled) {
                         option.disabled = true;
-                        option.textContent = item.label + "  (calibration expired)";
+                        option.textContent = item.label + "  (" + (item.disabled_reason || "unavailable") + ")";
                     }
                     return option;
                 })

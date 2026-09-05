@@ -798,28 +798,15 @@
     <section class="view" id="view-calibration" hidden>
         <div class="view-head">
             <h1 class="view-title">Calibration<span class="clause-ref">7.1.5</span></h1>
-            <p class="view-sub">Monitoring and measuring resources. 214 gages under control, traceable to NIST.</p>
+            <p class="view-sub">Monitoring and measuring resources. Every result recorded here, kept as history, not just a due date.</p>
         </div>
         <div class="panel">
-            <div class="panel-head"><h2 class="panel-title">Gage register</h2><span class="panel-note">1 past due / 7 due in 30 d</span></div>
+            <div class="panel-head"><h2 class="panel-title">Gage register</h2><span class="panel-note" id="calibration-note"></span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Gage ID</th><th>Description</th><th>Range</th><th>Interval</th><th>Last cal</th><th>Due</th><th>Status</th></tr></thead>
+                    <thead><tr><th>Gage ID</th><th>Description</th><th>Range</th><th>Interval</th><th>Last cal</th><th>Due</th><th>Status</th><th>Availability</th><th></th></tr></thead>
                     <tbody id="calibration-table"></tbody>
                 </table>
-            </div>
-        </div>
-
-        <div class="section-label">Out-of-tolerance impact, MIC-114</div>
-        <div class="panel">
-            <div class="panel-body">
-                <p class="sm dim" style="margin:0 0 12px;max-width:66ch">A gage found out of tolerance at calibration triggers a reverse traceability sweep: every lot measured with it since the last good calibration is listed for review. Clause 7.1.5.2 requires this and it is the most commonly missed requirement in the standard.</p>
-                <div class="chip-list">
-                    <span class="chip">L-87902, 640 pc, shipped</span>
-                    <span class="chip">L-88044, 220 pc, in stock</span>
-                    <span class="chip">L-88102, 96 pc, NCR-0135</span>
-                    <span class="chip">L-88190, 88 pc, on hold</span>
-                </div>
             </div>
         </div>
     </section>
