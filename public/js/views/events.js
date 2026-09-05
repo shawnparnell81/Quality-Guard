@@ -171,8 +171,108 @@ export async function renderRegister(type) {
             overdueNote.textContent = overdue === 1 ? "1 overdue" : overdue + " overdue";
             overdueNote.hidden = overdue === 0;
         }
+
+        if (type === "risk") renderRiskMatrix(records);
     } catch (error) {
         errorRow(tbody, config.columns.length, error);
+    }
+}
+
+/* ============================================================
+   Risk matrix - severity x occurrence, the standard FMEA heat map.
+   Detection is deliberately left out of the grid itself (it already
+   factors into RPN, shown in the register below); severity x
+   occurrence is what a risk matrix conventionally plots.
+   ============================================================ */
+
+let riskRecordsCache = [];
+
+function riskLevel(score) {
+    if (score >= 50) return "crit";
+    if (score >= 20) return "warn";
+    return "ok";
+}
+
+function renderRiskMatrix(records) {
+    const container = document.getElementById("risk-matrix");
+    if (!container) return;
+
+    riskRecordsCache = records;
+
+    const counts = {};
+    for (const record of records) {
+        const sev = record.data?.severity;
+        const occ = record.data?.occurrence;
+        /* Opportunities and anything scored outside 1-10 do not plot
+           on a risk matrix - skipped rather than forced into a cell
+           that would misrepresent them. */
+        if (!Number.isInteger(sev) || !Number.isInteger(occ)) continue;
+        if (sev < 1 || sev > 10 || occ < 1 || occ > 10) continue;
+
+        const key = sev + "," + occ;
+        counts[key] = (counts[key] || 0) + 1;
+    }
+
+    const grid = el("div", { class: "risk-matrix-grid" });
+
+    grid.append(el("div", { class: "rm-corner", text: "Sev \\ Occ" }));
+    for (let occ = 1; occ <= 10; occ++) {
+        grid.append(el("div", { class: "rm-axis-label", text: String(occ) }));
+    }
+
+    for (let sev = 10; sev >= 1; sev--) {
+        grid.append(el("div", { class: "rm-axis-label", text: String(sev) }));
+
+        for (let occ = 1; occ <= 10; occ++) {
+            const n = counts[sev + "," + occ] || 0;
+            const level = riskLevel(sev * occ);
+
+            const cell = el("button", {
+                type: "button",
+                class: "rm-cell rm-" + level + (n === 0 ? " rm-empty" : ""),
+                title: "Severity " + sev + " × occurrence " + occ + ": " + n + " risk(s)"
+            }, n > 0 ? String(n) : "");
+
+            if (n > 0) {
+                cell.addEventListener("click", () => filterRiskMatrixCell(sev, occ));
+            }
+
+            grid.append(cell);
+        }
+    }
+
+    container.replaceChildren(
+        grid,
+        el("div", { class: "risk-matrix-legend" }, [
+            el("span", { class: "rm-legend-item" }, [el("span", { class: "rm-swatch rm-ok" }), "Low"]),
+            el("span", { class: "rm-legend-item" }, [el("span", { class: "rm-swatch rm-warn" }), "Medium"]),
+            el("span", { class: "rm-legend-item" }, [el("span", { class: "rm-swatch rm-crit" }), "High"])
+        ])
+    );
+}
+
+/* Filters the already-fetched list client-side rather than adding a
+   backend query param nothing else needs - clicking a cell is asking
+   "which of what I already have sits here," not a new search. */
+function filterRiskMatrixCell(severity, occurrence) {
+    const config = REGISTERS.risk;
+    const tbody = document.getElementById(config.tbody);
+    if (!tbody) return;
+
+    const matching = riskRecordsCache.filter((r) =>
+        r.data?.severity === severity && r.data?.occurrence === occurrence);
+
+    fillTable(tbody, matching, config.columns, "No records match this cell");
+
+    tbody.querySelectorAll("tr").forEach((tr, index) => {
+        if (!matching[index]) return;
+        tr.dataset.number = matching[index].number;
+        tr.classList.add("row-clickable");
+    });
+
+    if (matching.length > 0) {
+        selectRow(tbody, matching[0].number);
+        renderRecordDetail("risk", matching[0].number);
     }
 }
 
@@ -186,10 +286,12 @@ function clearDetail(type) {
     const heading = document.getElementById(type + "-detail-number");
     const statusSlot = document.getElementById(type + "-detail-status");
     const panel = document.getElementById(type + "-detail");
+    const pdfButton = document.getElementById(type + "-pdf");
 
     if (heading) heading.textContent = "Select a record";
     if (statusSlot) statusSlot.replaceChildren();
     if (panel) panel.replaceChildren();
+    if (pdfButton) delete pdfButton.dataset.number;
 }
 
 /* One listener per register, attached once when this module loads.
@@ -212,6 +314,18 @@ export function wireRegisterClicks() {
         if (printButton) {
             printButton.addEventListener("click", () => {
                 printElement(document.getElementById(type + "-detail-panel"));
+            });
+        }
+
+        /* The PDF button has no href of its own - renderRecordDetail
+           stamps the currently-shown record's number onto it via
+           dataset each time the detail panel changes, so this always
+           downloads whatever is actually on screen. */
+        const pdfButton = document.getElementById(type + "-pdf");
+        if (pdfButton) {
+            pdfButton.addEventListener("click", () => {
+                const number = pdfButton.dataset.number;
+                if (number) window.location.href = "/api/records/" + encodeURIComponent(number) + "/pdf";
             });
         }
     }
@@ -305,6 +419,10 @@ export async function renderRecordDetail(type, number) {
         const { record, links, history, transitions } = await api.record(number);
 
         if (heading) heading.textContent = record.number;
+
+        const pdfButton = document.getElementById(type + "-pdf");
+        if (pdfButton) pdfButton.dataset.number = record.number;
+
         if (statusSlot) {
             statusSlot.replaceChildren(
                 pill(humanize(record.status), statusKind(record.status))

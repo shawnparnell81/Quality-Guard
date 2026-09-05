@@ -7,6 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
+import PDFDocument from "pdfkit";
 import { query, withTransaction } from "../db.js";
 import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
 
@@ -110,6 +111,38 @@ records.get("/", async (request, response, next) => {
     }
 });
 
+/* ---------- search, for the command palette ----------
+   GET /api/records/search?q=bore
+
+   Registered before /:number on purpose - Express matches routes in
+   the order they are declared, and "search" would otherwise be read
+   as a record number and 404 against /:number instead of ever
+   reaching here.
+
+   Matches against the number and the title only, not the JSONB data
+   payload - a query into arbitrary keys per record type is a
+   reasonable future step, but number/title already covers "type an
+   NCR number, jump to it" and "type a word from the title." */
+records.get("/search", async (request, response, next) => {
+    try {
+        const q = (request.query.q || "").trim();
+        if (q.length < 2) return response.json({ records: [] });
+
+        const result = await query(
+            SELECT_RECORD + `
+               and (r.number ilike $2 or r.title ilike $2)
+             order by r.opened_at desc
+             limit 8
+            `,
+            [request.user.org_id, "%" + q + "%"]
+        );
+
+        response.json({ records: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- one record, with its graph and history ----------
    GET /api/records/NCR-2026-0142 */
 records.get("/:number", async (request, response, next) => {
@@ -199,6 +232,160 @@ records.get("/:number", async (request, response, next) => {
             history: history.rows,
             transitions
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- PDF export ----------
+   GET /api/records/NCR-2026-0142/pdf
+
+   A real, downloadable, branded file - not a browser print-to-PDF.
+   Built with pdfkit: pure JS, no native binary, no headless browser,
+   so this needed nothing heavier than what the project already
+   depends on. Generic across every record type, the same way the
+   detail panel is: it lists whatever is actually in data rather than
+   knowing NCR has a disposition and CAPA has a root cause. */
+
+const BRAND = "#0D4F49";
+const BRASS = "#A8703A";
+const INK = "#12201E";
+const INK_2 = "#4C5C59";
+const HAIRLINE = "#D8E1DF";
+
+function humanizeKey(key) {
+    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/* The same mountain-and-baseline mark used in the app's own header,
+   redrawn in pdfkit's vector primitives rather than embedded as an
+   image - the whole mark is four strokes and a dot. */
+function drawLetterhead(doc, orgName) {
+    const x = doc.page.margins.left;
+    const y = doc.y;
+    const size = 26;
+
+    doc.roundedRect(x, y, size, size, 5).lineWidth(1.3).stroke(BRAND);
+    doc.moveTo(x + 6, y + 19).lineTo(x + 13, y + 6).lineTo(x + 20, y + 19)
+        .lineWidth(1.6).stroke(INK);
+    doc.moveTo(x + 5, y + 19).lineTo(x + 21, y + 19).lineWidth(1.6).stroke(BRASS);
+    doc.circle(x + 13, y + 19, 1.8).fill(BRASS);
+
+    doc.fontSize(14).fillColor(INK).font("Helvetica-Bold")
+        .text("QualityGuard", x + size + 10, y + 1);
+    doc.fontSize(8.5).fillColor(INK_2).font("Helvetica")
+        .text(orgName, x + size + 10, y + 17);
+
+    doc.y = y + size + 12;
+    doc.moveTo(x, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y)
+        .lineWidth(0.75).stroke(HAIRLINE);
+    doc.moveDown(1.2);
+}
+
+function drawRecordHeader(doc, record) {
+    doc.fontSize(19).fillColor(INK).font("Helvetica-Bold").text(record.number);
+    doc.fontSize(12.5).fillColor(INK_2).font("Helvetica").text(record.title);
+    doc.moveDown(0.4);
+
+    doc.fontSize(9).fillColor(INK_2).font("Helvetica").text(
+        "Type: " + (record.type_name || record.type)
+        + "    Status: " + humanizeKey(record.status)
+        + "    Severity: " + String(record.severity).toUpperCase()
+    );
+
+    const facts = [];
+    if (record.owner) facts.push("Owner: " + record.owner);
+    if (record.opened_at) facts.push("Opened: " + new Date(record.opened_at).toLocaleDateString());
+    if (record.due_at) facts.push("Due: " + new Date(record.due_at).toLocaleDateString());
+    if (record.closed_at) facts.push("Closed: " + new Date(record.closed_at).toLocaleDateString());
+    if (facts.length > 0) doc.text(facts.join("    "));
+
+    doc.moveDown(1);
+}
+
+function drawFields(doc, data) {
+    const entries = Object.entries(data || {})
+        .filter(([, value]) => value !== null && value !== undefined && value !== "");
+
+    if (entries.length === 0) return;
+
+    doc.fontSize(11).fillColor(INK).font("Helvetica-Bold").text("Details");
+    doc.moveDown(0.2);
+
+    for (const [key, value] of entries) {
+        doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
+            .text(humanizeKey(key) + ":  ", { continued: true })
+            .font("Helvetica").fillColor(INK)
+            .text(String(value));
+    }
+
+    doc.moveDown(1);
+}
+
+function drawHistory(doc, rows) {
+    if (rows.length === 0) return;
+
+    doc.fontSize(11).fillColor(INK).font("Helvetica-Bold").text("Audit trail");
+    doc.moveDown(0.2);
+
+    for (const row of rows) {
+        const when = new Date(row.changed_at).toLocaleString();
+        const who = row.changed_by || "System";
+        const what = humanizeKey(row.field) + (row.new_value ? " -> " + row.new_value : "");
+
+        doc.fontSize(8.5).font("Helvetica").fillColor(INK_2).text(when + "   " + who + "   " + what);
+    }
+}
+
+function drawFooter(doc, orgName) {
+    doc.fontSize(7.5).fillColor(INK_2).text(
+        "Generated by QualityGuard for " + orgName + " on " + new Date().toLocaleString(),
+        doc.page.margins.left,
+        doc.page.height - doc.page.margins.bottom + 12,
+        { width: doc.page.width - doc.page.margins.left - doc.page.margins.right, align: "center" }
+    );
+}
+
+records.get("/:number/pdf", async (request, response, next) => {
+    try {
+        const found = await query(
+            SELECT_RECORD + " and r.number = $2",
+            [request.user.org_id, request.params.number]
+        );
+
+        if (found.rowCount === 0) {
+            return response.status(404).json({ error: "Record not found" });
+        }
+
+        const record = found.rows[0];
+
+        const [org, history] = await Promise.all([
+            query("select name from organizations where id = $1", [request.user.org_id]),
+            query(`
+                select a.field, a.new_value, a.changed_at, u.full_name as changed_by
+                  from audit_log a
+             left join users u on u.id = a.changed_by
+                 where a.record_id = $1
+                 order by a.changed_at desc
+                 limit 15
+            `, [record.id])
+        ]);
+
+        const orgName = org.rows[0]?.name || "";
+
+        response.setHeader("Content-Type", "application/pdf");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + record.number + ".pdf\"");
+
+        const doc = new PDFDocument({ size: "letter", margin: 54 });
+        doc.pipe(response);
+
+        drawLetterhead(doc, orgName);
+        drawRecordHeader(doc, record);
+        drawFields(doc, record.data);
+        drawHistory(doc, history.rows);
+        drawFooter(doc, orgName);
+
+        doc.end();
     } catch (error) {
         next(error);
     }

@@ -30,6 +30,7 @@ import {
     renderCalibration, renderTraining, renderDocuments,
     renderVendors, renderWarehouse, wireDocuments
 } from "./views/resources.js";
+import { wirePalette } from "./palette.js";
 
 /* view name -> the function that populates it */
 const LOADERS = {
@@ -63,7 +64,14 @@ const views = document.querySelectorAll(".view");
 const navItems = document.querySelectorAll(".nav-item");
 const sidebar = document.querySelector(".sidebar");
 
-async function show(name) {
+/* Exported so the command palette can await a view switch finishing
+   before it deep-selects a specific record - the "navigate" custom
+   event every other caller uses is fire-and-forget, which would race
+   against the view's own default "select the first record" load.
+   Safe despite the import cycle this creates with palette.js: show is
+   a hoisted function declaration, so the live binding exists before
+   either module's top-level code has finished running. */
+export async function show(name) {
     const target = document.getElementById("view-" + name);
     if (!target) return;
 
@@ -336,6 +344,7 @@ async function start() {
     wireEvaluate();
     wireForms();
     wireDocuments();
+    wirePalette();
     checkConnection();
     fillHeader();
     showReadinessBadge();

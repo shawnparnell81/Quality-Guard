@@ -134,6 +134,49 @@ export function toast(message, kind = "ok") {
     }, 3200);
 }
 
+/* ---------- sparklines ----------
+   A tiny real trend, not decoration: values is real history (weekly
+   counts from opened_at, computed server-side - nothing invented on
+   the client). Draws into an existing inline <svg viewBox="0 0 100
+   28">, sized in CSS like any other element; stroke uses currentColor
+   so a tile's own text colour (is-crit / is-warn) controls it without
+   this needing to know about severity at all. */
+export function drawSparkline(svgId, values) {
+    const svg = document.getElementById(svgId);
+    if (!svg || !values || values.length === 0) return;
+
+    const width = 100, height = 28, pad = 3;
+    const max = Math.max(...values, 1);
+    const stepX = values.length > 1 ? width / (values.length - 1) : 0;
+
+    const points = values.map((value, index) => {
+        const x = index * stepX;
+        const y = height - pad - (value / max) * (height - pad * 2);
+        return [x, y];
+    });
+
+    svg.replaceChildren();
+
+    const ns = "http://www.w3.org/2000/svg";
+
+    const polyline = document.createElementNS(ns, "polyline");
+    polyline.setAttribute("points", points.map(([x, y]) => x + "," + y).join(" "));
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", "currentColor");
+    polyline.setAttribute("stroke-width", "2");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    svg.append(polyline);
+
+    const [lastX, lastY] = points[points.length - 1];
+    const dot = document.createElementNS(ns, "circle");
+    dot.setAttribute("cx", lastX);
+    dot.setAttribute("cy", lastY);
+    dot.setAttribute("r", "2.3");
+    dot.setAttribute("fill", "currentColor");
+    svg.append(dot);
+}
+
 /* ---------- printing ---------- */
 
 /* Prints one element in isolation, using the .print-area rule in
