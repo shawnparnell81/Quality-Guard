@@ -7,11 +7,16 @@
    the whole promise of the configurable layer is that what you see
    here is what the server enforces.
 
-   Editing is not built yet, and the screen says so rather than
-   offering controls that do nothing.
+   Editing publishes a NEW form_versions row rather than changing one
+   in place - a record captured under the old field list keeps
+   pointing at it, so it still renders the fields it was actually
+   raised with. Conditional rules are not editable here yet; they are
+   carried forward untouched by the server whenever fields are saved.
    ============================================================ */
 
 import { api } from "../api.js";
+import { can } from "../session.js";
+import { ensureDialog } from "../forms.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize
 } from "../dom.js";
@@ -28,7 +33,17 @@ const TYPE_LABEL = {
     user:      ["USR", "Person"]
 };
 
+/* Where a "link" field's options come from. The server enforces this
+   list for real (LINK_SOURCES in masterdata.js); this copy only has
+   to be good enough to build a sensible dropdown. */
+const LINK_TARGETS = [
+    ["parts", "Parts"],
+    ["gages", "Gages"],
+    ["lots",  "Lots"]
+];
+
 let selectedType = null;
+let currentDefinition = null;
 
 export async function renderForms() {
     const tbody = document.getElementById("record-type-table");
@@ -82,6 +97,7 @@ async function renderSchema(typeKey) {
 
     try {
         const definition = await api.recordForm(typeKey);
+        currentDefinition = definition;
 
         if (heading) heading.textContent = definition.name + " form";
         if (note) {
@@ -129,6 +145,7 @@ async function renderSchema(typeKey) {
             );
         }
     } catch (error) {
+        currentDefinition = null;
         errorRow(fieldBody, 4, error);
     }
 }
@@ -141,12 +158,210 @@ function mark(tbody, typeKey) {
 
 export function wireForms() {
     const tbody = document.getElementById("record-type-table");
-    if (!tbody) return;
+    if (tbody) {
+        tbody.addEventListener("click", (event) => {
+            const row = event.target.closest("tr[data-type]");
+            if (!row) return;
+            mark(tbody, row.dataset.type);
+            renderSchema(row.dataset.type);
+        });
+    }
 
-    tbody.addEventListener("click", (event) => {
-        const row = event.target.closest("tr[data-type]");
-        if (!row) return;
-        mark(tbody, row.dataset.type);
-        renderSchema(row.dataset.type);
+    const editButton = document.getElementById("edit-fields");
+    if (editButton) {
+        editButton.addEventListener("click", () => {
+            if (!currentDefinition || !can("forms.manage")) return;
+            openFieldEditor(currentDefinition);
+        });
+    }
+}
+
+/* ============================================================
+   Field editor
+   ============================================================ */
+
+function slugify(label, taken) {
+    let base = String(label || "")
+        .trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+
+    if (!base) base = "field";
+
+    let key = base;
+    let n = 2;
+    while (taken.has(key)) key = base + "_" + (n++);
+    taken.add(key);
+    return key;
+}
+
+/* One row = one field, built as a small self-contained block. Order
+   is read back from DOM order at save time rather than kept in a
+   parallel array, so the up/down buttons only ever have to move a
+   node, never resynchronise two copies of the same list. */
+function buildFieldRow(field) {
+    const row = el("div", { class: "field-row", dataset: { key: field.key || "" } });
+
+    const label = el("input", { type: "text", value: field.label || "", placeholder: "Field label" });
+
+    const type = el("select", {}, Object.entries(TYPE_LABEL).map(([value, [, name]]) =>
+        el("option", { value, text: name, selected: value === field.type ? "selected" : undefined })
+    ));
+
+    const required = el("input", { type: "checkbox", checked: field.required ? "checked" : undefined });
+
+    const up = el("button", { type: "button", class: "btn", title: "Move up" }, "↑");
+    const down = el("button", { type: "button", class: "btn", title: "Move down" }, "↓");
+    const remove = el("button", { type: "button", class: "btn", title: "Remove field" }, "✕");
+
+    up.addEventListener("click", () => {
+        const prev = row.previousElementSibling;
+        if (prev) row.parentNode.insertBefore(row, prev);
     });
+    down.addEventListener("click", () => {
+        const next = row.nextElementSibling;
+        if (next) row.parentNode.insertBefore(next, row);
+    });
+    remove.addEventListener("click", () => row.remove());
+
+    const extra = el("div", { class: "field-row-extra" });
+
+    function paintExtra() {
+        extra.replaceChildren();
+
+        if (type.value === "select") {
+            extra.append(el("input", {
+                type: "text", class: "field-options", placeholder: "Options, comma separated",
+                value: (field.options || []).join(", ")
+            }));
+        } else if (type.value === "link") {
+            extra.append(el("select", { class: "field-target" }, LINK_TARGETS.map(([value, name]) =>
+                el("option", { value, text: name, selected: value === field.target ? "selected" : undefined })
+            )));
+        } else if (type.value === "number") {
+            extra.append(el("input", {
+                type: "number", class: "field-min", placeholder: "Minimum (optional)",
+                value: field.min !== undefined ? field.min : ""
+            }));
+        }
+    }
+
+    type.addEventListener("change", paintExtra);
+    paintExtra();
+
+    row.append(
+        el("div", { class: "field-row-move" }, [up, down]),
+        el("div", { class: "field-row-main" }, [
+            label,
+            type,
+            el("label", { class: "field-row-required" }, [required, " Required"]),
+            remove
+        ]),
+        extra
+    );
+
+    return row;
+}
+
+/* Reads one row back into the field shape the server expects,
+   assigning a key only the first time a field is ever saved - an
+   existing field keeps the key it was created with even if its label
+   changes later, so records already captured under it stay matched
+   up to it. */
+function readFieldRow(row, takenKeys) {
+    const label = row.querySelector(".field-row-main input[type=text]").value.trim();
+    const type = row.querySelector(".field-row-main select").value;
+    const required = row.querySelector(".field-row-required input").checked;
+
+    const field = {
+        key: row.dataset.key || slugify(label, takenKeys),
+        label,
+        type
+    };
+    if (required) field.required = true;
+
+    if (type === "select") {
+        const raw = row.querySelector(".field-options")?.value || "";
+        field.options = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (type === "link") {
+        field.target = row.querySelector(".field-target")?.value;
+    } else if (type === "number") {
+        const raw = row.querySelector(".field-min")?.value;
+        if (raw !== "" && raw !== undefined) field.min = Number(raw);
+    }
+
+    return field;
+}
+
+function openFieldEditor(definition) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+    const list = el("div", { class: "field-row-list" });
+
+    for (const field of definition.fields) {
+        list.append(buildFieldRow(field));
+    }
+
+    const addButton = el("button", { class: "btn", type: "button" }, "+ Add field");
+    addButton.addEventListener("click", () => {
+        list.append(buildFieldRow({ type: "text" }));
+        list.lastElementChild.querySelector("input[type=text]").focus();
+    });
+
+    const save = el("button", { class: "btn btn-primary", type: "button" }, "Save and publish");
+    const cancel = el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel");
+
+    save.addEventListener("click", async () => {
+        errorBox.hidden = true;
+
+        const takenKeys = new Set(
+            [...list.children].map((row) => row.dataset.key).filter(Boolean)
+        );
+
+        const fields = [...list.children].map((row) => readFieldRow(row, takenKeys));
+        const missingLabel = fields.some((f) => !f.label);
+
+        if (fields.length === 0) {
+            errorBox.textContent = "At least one field is required.";
+            errorBox.hidden = false;
+            return;
+        }
+        if (missingLabel) {
+            errorBox.textContent = "Every field needs a label.";
+            errorBox.hidden = false;
+            return;
+        }
+        const badSelect = fields.find((f) => f.type === "select" && f.options.length === 0);
+        if (badSelect) {
+            errorBox.textContent = "\"" + badSelect.label + "\" needs at least one option.";
+            errorBox.hidden = false;
+            return;
+        }
+
+        save.disabled = true;
+        save.textContent = "Saving...";
+
+        try {
+            await api.updateRecordForm(definition.key, fields);
+            node.close();
+            await renderForms();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Save and publish";
+        }
+    });
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, [
+            el("h2", { class: "modal-title", text: "Edit " + definition.name + " fields" }),
+            el("span", { class: "panel-note", text: "Saving publishes a new version. Existing records keep the version they were raised under." })
+        ]),
+        el("div", { class: "modal-body" }, [errorBox, list, addButton]),
+        el("div", { class: "modal-foot" }, [cancel, save])
+    );
+
+    node.showModal();
 }

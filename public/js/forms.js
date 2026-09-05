@@ -19,7 +19,7 @@ import { el } from "./dom.js";
 
 let dialog = null;
 
-function ensureDialog() {
+export function ensureDialog() {
     if (dialog) return dialog;
 
     dialog = el("dialog", { class: "modal" });

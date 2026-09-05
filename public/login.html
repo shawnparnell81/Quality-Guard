@@ -87,7 +87,7 @@ form.addEventListener("submit", async (event) => {
            that replaces it. */
         window.location.href = payload.must_change_password
             ? "/change-password.html"
-            : "/";
+            : "/app";
     } catch {
         showError("Cannot reach the server. Is it running on port 3001?");
     } finally {
