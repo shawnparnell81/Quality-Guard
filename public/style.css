@@ -590,6 +590,14 @@ tr.row-selected:hover {
     :root:not([data-theme="light"]) .btn-primary { color: #08201D; }
 }
 
+/* Row-level actions in the people directory: a few small buttons
+   per row rather than a single one, so each needs less padding to
+   keep the table from ballooning wider than the data it shows. */
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-xs { padding: 3px 9px; font-size: 11.5px; }
+.btn-danger { color: var(--crit); border-color: var(--crit); }
+.btn-danger:hover:not(:disabled) { background: var(--crit-tint); }
+
 .scaffold {
     border: 1px dashed var(--hairline);
     border-radius: var(--radius);

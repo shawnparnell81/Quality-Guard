@@ -17,7 +17,7 @@ import {
 } from "./session.js";
 import { renderDashboard, renderReadiness, wireReadiness } from "./views/dashboard.js";
 import { renderRegister, wireRegisterClicks } from "./views/events.js";
-import { renderRoles, renderPeople, wireMatrixEditing } from "./views/access.js";
+import { renderRoles, renderPeople, wireMatrixEditing, wirePeopleActions } from "./views/access.js";
 import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
 import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
@@ -338,6 +338,7 @@ async function start() {
     wireRegisterClicks();
     wireReadiness();
     wireMatrixEditing();
+    wirePeopleActions();
     wireProduction();
     wireChangeScreens();
     wireOperations();
