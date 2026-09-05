@@ -1,5 +1,5 @@
 /* ============================================================
-   QUALITYGUARD - design tokens
+   QUALITYGUARD - 
    Light palette is defined in full on bare :root, then redefined
    for the two dark states. Components read tokens only, never raw
    hex, so both themes stay in sync.
@@ -563,6 +563,18 @@ tr.row-selected:hover {
     color: var(--ink);
     cursor: pointer;
 }
+.filter-severity {
+    font: inherit; font-size: 12.5px; font-weight: 500;
+    padding: 5px 8px 5px 10px; border-radius: 5px;
+    border: 1px solid var(--hairline); background: var(--surface); color: var(--ink);
+    cursor: pointer;
+}
+.filter-open {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 12.5px; color: var(--ink-2); white-space: nowrap; cursor: pointer;
+}
+.filter-open input { cursor: pointer; }
+
 .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 :root[data-theme="dark"] .btn-primary { color: #08201D; }
 @media (prefers-color-scheme: dark) {
@@ -1141,10 +1153,113 @@ th.col-you { color: var(--brand); }
 
 /* ---------- responsive ---------- */
 
+/* ---------- mobile nav ---------- */
+
+/* Hidden entirely above the breakpoint - three bars drawn with plain
+   divs rather than an icon font or SVG, since it is only ever three
+   identical rectangles. */
+.nav-toggle {
+    display: none;
+    flex: none;
+    width: 34px; height: 34px;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    background: var(--surface);
+    cursor: pointer;
+    padding: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+.nav-toggle span {
+    display: block;
+    width: 16px; height: 2px;
+    background: var(--ink);
+    border-radius: 1px;
+}
+
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.45);
+    z-index: 45;
+}
+
 @media (max-width: 1000px) {
     .app { grid-template-columns: 1fr; }
-    .sidebar { position: static; max-height: none; }
+
+    /* Off canvas rather than static: static was pushing the whole
+       page down behind roughly twenty-five nav buttons, so reaching
+       actual content on a phone meant scrolling past the entire menu
+       first. This slides in as an overlay instead, the way a mobile
+       nav is expected to behave. */
+    .sidebar {
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        width: min(280px, 84vw);
+        max-height: none;
+        z-index: 46;
+        transform: translateX(-100%);
+        transition: transform .22s ease;
+        box-shadow: 8px 0 24px rgba(0,0,0,.25);
+    }
+    .sidebar.open { transform: translateX(0); }
+
+    .nav-toggle { display: flex; }
+    .sidebar.open ~ .sidebar-backdrop,
+    body:has(.sidebar.open) .sidebar-backdrop { display: block; }
+
     .grid-2 { grid-template-columns: 1fr; }
     .builder { grid-template-columns: 1fr; }
     .obj-row { grid-template-columns: 1fr 70px 70px; }
+}
+
+/* ---------- toasts ---------- */
+
+.toast-container {
+    position: fixed;
+    right: 20px; bottom: 20px;
+    z-index: 80;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 11px 16px;
+    border-radius: 8px;
+    background: var(--ink);
+    color: var(--ground);
+    box-shadow: 0 10px 28px rgba(0,0,0,.28);
+    max-width: 340px;
+    opacity: 1;
+    transform: none;
+    transition: opacity .18s ease, transform .18s ease;
+}
+.toast-out { opacity: 0; transform: translateY(6px); }
+
+.toast-ok    { background: var(--ok);   color: #fff; }
+.toast-error { background: var(--crit); color: #fff; }
+.toast-info  { background: var(--ink);  color: var(--ground); }
+
+/* ---------- printing ---------- */
+
+/* Print exactly one thing: whatever element printElement() (dom.js)
+   marked with .print-area, laid out from the top of the page as if
+   it were the only content, regardless of where it sat on screen.
+   .no-print hides controls that make no sense on paper - a Print
+   button included - even though they sit inside the printed node. */
+@media print {
+    body * { visibility: hidden; }
+    .print-area, .print-area * { visibility: visible; }
+    .print-area {
+        position: absolute; top: 0; left: 0; right: 0;
+        padding: 0; margin: 0; border: none; box-shadow: none;
+    }
+    .print-area .no-print { display: none !important; }
 }

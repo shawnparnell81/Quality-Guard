@@ -8,7 +8,7 @@
    ============================================================ */
 
 import { api } from "../api.js";
-import { confirmStep } from "../forms.js";
+import { confirmStep, editDueDate } from "../forms.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind
@@ -244,6 +244,22 @@ async function renderChangeDetail(number) {
         ], "No impact assessment recorded");
 
         /* ---- side ---- */
+        const changeEffectivity = el("button", {
+            class: "btn no-print", type: "button",
+            style: "margin-left:8px;padding:1px 8px;font-size:11px"
+        }, record.due_at ? "Change" : "Set");
+
+        changeEffectivity.addEventListener("click", () => {
+            editDueDate({
+                title: "Effectivity date for " + record.number,
+                currentValue: record.due_at,
+                onSave: async (value) => {
+                    await api.updateRecord(record.number, { due_at: value });
+                    await renderChangeDetail(record.number);
+                }
+            });
+        });
+
         const children = [
             el("dl", { class: "kv" }, [
                 el("dt", { text: "Part" }),
@@ -254,7 +270,10 @@ async function renderChangeDetail(number) {
                 el("dt", { text: "Reason" }),
                 el("dd", { text: record.data.reason || "-" }),
                 el("dt", { text: "Effectivity" }),
-                el("dd", { class: "mono", text: formatDate(record.due_at) }),
+                el("dd", {}, [
+                    el("span", { class: "mono", text: formatDate(record.due_at) }),
+                    changeEffectivity
+                ]),
                 el("dt", { text: "Raised by" }),
                 el("dd", { text: record.owner || "-" })
             ])

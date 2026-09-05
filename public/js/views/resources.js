@@ -7,7 +7,7 @@
 
 import { api } from "../api.js";
 import {
-    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize
+    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement
 } from "../dom.js";
 
 /* ---------- calibration ---------- */
@@ -131,12 +131,16 @@ const DOC_STATUS = {
     obsolete:    ["Obsolete",    "hold"]
 };
 
+let selectedDocument = null;
+let documentsCache = [];
+
 export async function renderDocuments() {
     const tbody = document.getElementById("documents-table");
     loadingRow(tbody, 6);
 
     try {
         const { documents } = await api.documents();
+        documentsCache = documents;
 
         fillTable(tbody, documents, [
             { className: "mono sm", render: (row) => row.doc_number },
@@ -148,9 +152,113 @@ export async function renderDocuments() {
                 const [label, kind] = DOC_STATUS[row.status] || ["Unknown", "hold"];
                 return pill(label, kind);
             } }
-        ]);
+        ], "No documents");
+
+        tbody.querySelectorAll("tr").forEach((tr, index) => {
+            const row = documents[index];
+            if (!row) return;
+            tr.dataset.doc = row.doc_number;
+            tr.classList.add("row-clickable");
+        });
+
+        const target = documents.some((d) => d.doc_number === selectedDocument)
+            ? selectedDocument
+            : (documents[0] && documents[0].doc_number);
+
+        if (target) {
+            markDocument(tbody, target);
+            await renderDocumentDetail(target);
+        } else {
+            clearDocumentDetail();
+        }
     } catch (error) {
         errorRow(tbody, 6, error);
+    }
+}
+
+function markDocument(tbody, docNumber) {
+    tbody.querySelectorAll("tr").forEach((tr) => {
+        tr.classList.toggle("row-selected", tr.dataset.doc === docNumber);
+    });
+}
+
+function clearDocumentDetail() {
+    const heading = document.getElementById("document-detail-number");
+    const statusSlot = document.getElementById("document-detail-status");
+    const summary = document.getElementById("document-summary");
+    const revisions = document.getElementById("document-revisions");
+
+    if (heading) heading.textContent = "Select a document";
+    if (statusSlot) statusSlot.replaceChildren();
+    if (summary) summary.replaceChildren();
+    if (revisions) revisions.replaceChildren();
+}
+
+/* Revision history, real this time. The summary card and the table
+   below it both come from the document actually clicked, not a
+   single example frozen in the markup regardless of what you pick. */
+async function renderDocumentDetail(docNumber) {
+    selectedDocument = docNumber;
+
+    const heading = document.getElementById("document-detail-number");
+    const statusSlot = document.getElementById("document-detail-status");
+    const summary = document.getElementById("document-summary");
+    const revisionsBody = document.getElementById("document-revisions");
+
+    if (revisionsBody) loadingRow(revisionsBody, 5);
+
+    const doc = documentsCache.find((d) => d.doc_number === docNumber);
+
+    if (heading) heading.textContent = docNumber;
+
+    if (statusSlot && doc) {
+        const [label, kind] = DOC_STATUS[doc.status] || ["Unknown", "hold"];
+        statusSlot.replaceChildren(pill(label, kind));
+    }
+
+    if (summary && doc) {
+        summary.replaceChildren(el("dl", { class: "kv" }, [
+            el("dt", { text: "Title" }),
+            el("dd", { text: doc.title }),
+            el("dt", { text: "Owner" }),
+            el("dd", { text: doc.owner || "-" }),
+            el("dt", { text: "Current revision" }),
+            el("dd", { class: "mono", text: doc.current_revision || "-" })
+        ]));
+    }
+
+    try {
+        const { revisions } = await api.revisions(docNumber);
+
+        fillTable(revisionsBody, revisions, [
+            { className: "mono sm", render: (row) => row.revision },
+            { className: "sm", render: (row) => row.change_summary },
+            { className: "sm", render: (row) => row.author || "-" },
+            { className: "sm dim", render: (row) => row.approved_by || "pending" },
+            { className: "mono sm", render: (row) =>
+                row.effective_date ? formatDate(row.effective_date) : "-" }
+        ], "No revision history recorded");
+    } catch (error) {
+        errorRow(revisionsBody, 5, error);
+    }
+}
+
+export function wireDocuments() {
+    const tbody = document.getElementById("documents-table");
+    if (tbody) {
+        tbody.addEventListener("click", (event) => {
+            const row = event.target.closest("tr[data-doc]");
+            if (!row) return;
+            markDocument(tbody, row.dataset.doc);
+            renderDocumentDetail(row.dataset.doc);
+        });
+    }
+
+    const printButton = document.getElementById("document-print");
+    if (printButton) {
+        printButton.addEventListener("click", () => {
+            printElement(document.getElementById("document-detail-panel"));
+        });
     }
 }
 

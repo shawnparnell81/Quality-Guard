@@ -16,7 +16,7 @@
 <div class="app">
 
 <!-- ==================== SIDEBAR ==================== -->
-<aside class="sidebar">
+<aside class="sidebar" id="main-sidebar">
     <div class="brand">
         <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="29" height="29" rx="4" stroke="#A8703A" stroke-width="1.5"/>
@@ -34,15 +34,15 @@
     <button class="nav-item" data-view="dashboard" aria-current="true"><span>Quality Dashboard</span></button>
 
     <div class="nav-group">Quality Events</div>
-    <button class="nav-item" data-view="ncr"><span>Nonconformance</span><span class="nav-count hot">14</span></button>
-    <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count">6</span></button>
-    <button class="nav-item" data-view="d8"><span>8D Investigations</span><span class="nav-count">2</span></button>
-    <button class="nav-item" data-view="complaints"><span>Customer Complaints</span><span class="nav-count">3</span></button>
+    <button class="nav-item" data-view="ncr"><span>Nonconformance</span><span class="nav-count hot" data-nav-count="ncr" hidden></span></button>
+    <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count" data-nav-count="capa" hidden></span></button>
+    <button class="nav-item" data-view="d8"><span>8D Investigations</span><span class="nav-count" data-nav-count="eightd" hidden></span></button>
+    <button class="nav-item" data-view="complaints"><span>Customer Complaints</span><span class="nav-count" data-nav-count="complaint" hidden></span></button>
 
     <div class="nav-group">Control</div>
     <button class="nav-item" data-view="documents"><span>Document Control</span></button>
     <button class="nav-item" data-view="drawings"><span>Engineering Drawings</span></button>
-    <button class="nav-item" data-view="change"><span>Change Control</span><span class="nav-count">4</span></button>
+    <button class="nav-item" data-view="change"><span>Change Control</span><span class="nav-count" data-nav-count="ecn" hidden></span></button>
 
     <div class="nav-group">Operations</div>
     <button class="nav-item" data-view="production"><span>Production</span></button>
@@ -52,15 +52,15 @@
 
     <div class="nav-group">Resources</div>
     <button class="nav-item" data-view="training"><span>Training &amp; Competence</span></button>
-    <button class="nav-item" data-view="calibration"><span>Calibration</span><span class="nav-count">7</span></button>
+    <button class="nav-item" data-view="calibration"><span>Calibration</span><span class="nav-count" data-nav-count="calibration_due" hidden></span></button>
 
     <div class="nav-group">Supply Chain</div>
     <button class="nav-item" data-view="avl"><span>Approved Vendor List</span></button>
-    <button class="nav-item" data-view="onboarding"><span>Vendor Onboarding</span><span class="nav-count">2</span></button>
+    <button class="nav-item" data-view="onboarding"><span>Vendor Onboarding</span></button>
 
     <div class="nav-group">Evaluate</div>
     <button class="nav-item" data-view="readiness"><span>Audit Readiness</span><span class="nav-count hot" id="nav-readiness-count">-</span></button>
-    <button class="nav-item" data-view="audit"><span>Internal Audit</span><span class="nav-count hot">2</span></button>
+    <button class="nav-item" data-view="audit"><span>Internal Audit</span><span class="nav-count hot" data-nav-count="audit" hidden></span></button>
     <button class="nav-item" data-view="review"><span>Management Review</span></button>
     <button class="nav-item" data-view="risk"><span>Risk Register</span></button>
     <button class="nav-item" data-view="scorecards"><span>Scorecards &amp; KPIs</span></button>
@@ -71,12 +71,19 @@
     <button class="nav-item" data-view="workflows"><span>Roles &amp; Permissions</span></button>
 </aside>
 
+<!-- Only rendered visible below the mobile breakpoint (style.css), and
+     only present in the DOM at all so there is something for the
+     sidebar's open state to dim behind - clicking it closes the menu. -->
+<div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
+
 <!-- ==================== MAIN ==================== -->
 <div class="main">
     <header class="topbar">
+        <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="main-sidebar">
+            <span></span><span></span><span></span>
+        </button>
         <div class="crumb" id="org-crumb"></div>
         <div class="topbar-right">
-            <span class="demo-flag">Prototype</span>
             <span class="site-pill" id="audit-countdown"></span>
             <button class="icon-btn" id="themeToggle" type="button">Dark</button>
             <div class="who">
@@ -326,7 +333,16 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2 class="panel-title">NCR register</h2>
-                    <div class="row"><button class="btn">Filter</button><button class="btn btn-primary" data-requires="ncr.create" data-new-record="ncr">New NCR</button></div>
+                    <div class="row">
+                        <select class="filter-severity" data-type="ncr" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="ncr"> Open only</label>
+                        <button class="btn btn-primary" data-requires="ncr.create" data-new-record="ncr">New NCR</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -336,10 +352,11 @@
                 </div>
             </div>
 
-            <div class="panel">
+            <div class="panel" id="ncr-detail-panel">
                 <div class="panel-head">
                     <h2 class="panel-title" id="ncr-detail-number">Select a record</h2>
                     <span id="ncr-detail-status"></span>
+                    <button type="button" class="btn no-print" id="ncr-print">Print</button>
                 </div>
                 <div class="panel-body" id="ncr-detail"></div>
             </div>
@@ -357,7 +374,16 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2 class="panel-title">CAPA register</h2>
-                    <div class="row"><button class="btn">Filter</button><button class="btn btn-primary" data-requires="capa.create" data-new-record="capa">New CAPA</button></div>
+                    <div class="row">
+                        <select class="filter-severity" data-type="capa" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="capa"> Open only</label>
+                        <button class="btn btn-primary" data-requires="capa.create" data-new-record="capa">New CAPA</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -367,48 +393,13 @@
                 </div>
             </div>
 
-            <div class="stack">
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">CAPA-2026-0031</h2><span class="pill pill-prog">Root cause</span></div>
-                    <div class="panel-body">
-                        <dl class="kv">
-                            <dt>Type</dt><dd>Corrective</dd>
-                            <dt>Source</dt><dd>Trend, 4 NCRs in 60 days</dd>
-                            <dt>Problem</dt><dd>Thread ring gage rejects on 1/2-13 UNC without a matching CMM failure</dd>
-                            <dt>Method</dt><dd>5-why plus gage R and R study</dd>
-                            <dt>Root cause</dt><dd class="dim">Pending, R and R results due 8 Sep</dd>
-                            <dt>Owner</dt><dd>S. Parnell</dd>
-                            <dt>Opened</dt><dd class="mono">16 Aug 2026</dd>
-                            <dt>Due</dt><dd class="mono" style="color:var(--crit)">28 Aug 2026, 19 d overdue</dd>
-                        </dl>
-                    </div>
+            <div class="panel" id="capa-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="capa-detail-number">Select a record</h2>
+                    <span id="capa-detail-status"></span>
+                    <button type="button" class="btn no-print" id="capa-print">Print</button>
                 </div>
-
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Action plan</h2><span class="panel-note">2 of 4 complete</span></div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead><tr><th>Action</th><th>Owner</th><th>Status</th></tr></thead>
-                            <tbody>
-                                <tr><td class="sm">Pull all 1/2-13 gages for verification</td><td class="sm">D. Whitfield</td><td><span class="pill pill-done">Done</span></td></tr>
-                                <tr><td class="sm">Run gage R and R, 3 operators x 10 parts</td><td class="sm">M. Okonkwo</td><td><span class="pill pill-done">Done</span></td></tr>
-                                <tr><td class="sm">Revise SOP-0220 cal interval for thread gages</td><td class="sm">D. Whitfield</td><td><span class="pill pill-prog">In progress</span></td></tr>
-                                <tr><td class="sm">Retrain inspectors on gage handling</td><td class="sm">S. Parnell</td><td><span class="pill pill-hold">Not started</span></td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Effectiveness check</h2><span class="panel-note">required to close</span></div>
-                    <div class="panel-body">
-                        <dl class="kv">
-                            <dt>Criterion</dt><dd>Zero thread gage NCRs for 90 days after implementation</dd>
-                            <dt>Check date</dt><dd class="mono">Implementation plus 90 d</dd>
-                            <dt>Verified by</dt><dd class="dim">Not yet assigned</dd>
-                        </dl>
-                    </div>
-                </div>
+                <div class="panel-body" id="capa-detail"></div>
             </div>
         </div>
     </section>
@@ -426,7 +417,16 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2 class="panel-title">Complaint register</h2>
-                    <div class="row"><button class="btn">Filter</button><button class="btn btn-primary" data-requires="complaint.create" data-new-record="complaint">Log complaint</button></div>
+                    <div class="row">
+                        <select class="filter-severity" data-type="complaint" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="complaint"> Open only</label>
+                        <button class="btn btn-primary" data-requires="complaint.create" data-new-record="complaint">Log complaint</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -436,33 +436,13 @@
                 </div>
             </div>
 
-            <div class="stack">
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">COMP-2026-0009</h2><span class="pill pill-open">Investigating</span></div>
-                    <div class="panel-body">
-                        <dl class="kv">
-                            <dt>Customer</dt><dd>Voss Automotive, Tier 1</dd>
-                            <dt>Contact</dt><dd>A. Brandt, SQE</dd>
-                            <dt>Received</dt><dd class="mono">28 Aug 2026</dd>
-                            <dt>Part</dt><dd class="mono">RP-9004-B rev C</dd>
-                            <dt>Lot</dt><dd class="mono">L-87944</dd>
-                            <dt>Shipment</dt><dd class="mono">SHIP-20260821-04</dd>
-                            <dt>Claim</dt><dd>Two distinct lots found on one pallet, traceability broken</dd>
-                            <dt>Containment</dt><dd>100% sort at customer site, Ridgeline funded</dd>
-                            <dt>Investigation</dt><dd><span class="rec-id">8D-2026-0004</span></dd>
-                            <dt>Cost to date</dt><dd class="mono">14,280 USD</dd>
-                        </dl>
-                    </div>
+            <div class="panel" id="complaint-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="complaint-detail-number">Select a record</h2>
+                    <span id="complaint-detail-status"></span>
+                    <button type="button" class="btn no-print" id="complaint-print">Print</button>
                 </div>
-                <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Satisfaction trend</h2><span class="panel-note">clause 9.1.2</span></div>
-                    <div class="panel-body" style="padding-top:8px">
-                        <div class="clause-row"><span class="clause-num">Q1</span><span class="clause-name">Voss Automotive</span><span class="bar bar-ok"><span style="width:92%"></span></span><span class="clause-pct">92</span></div>
-                        <div class="clause-row"><span class="clause-num">Q2</span><span class="clause-name">Voss Automotive</span><span class="bar bar-ok"><span style="width:89%"></span></span><span class="clause-pct">89</span></div>
-                        <div class="clause-row"><span class="clause-num">Q3</span><span class="clause-name">Voss Automotive</span><span class="bar bar-warn"><span style="width:74%"></span></span><span class="clause-pct">74</span></div>
-                        <div class="clause-row"><span class="clause-num">Q3</span><span class="clause-name">Kestrel Aerospace</span><span class="bar bar-ok"><span style="width:95%"></span></span><span class="clause-pct">95</span></div>
-                    </div>
-                </div>
+                <div class="panel-body" id="complaint-detail"></div>
             </div>
         </div>
     </section>
@@ -473,28 +453,30 @@
             <h1 class="view-title">Document Control<span class="clause-ref">7.5</span></h1>
             <p class="view-sub">Controlled copies, revision history, approval routing, and read-and-understood acknowledgement.</p>
         </div>
-        <div class="panel">
-            <div class="panel-head"><h2 class="panel-title">Controlled documents</h2><span class="panel-note">1,204 active / 38 pending approval</span></div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Doc</th><th>Title</th><th>Rev</th><th>Owner</th><th>Effective</th><th class="num">Ack</th><th>Status</th></tr></thead>
-                    <tbody id="documents-table"></tbody>
-                </table>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Controlled documents</h2></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Doc</th><th>Title</th><th>Rev</th><th>Owner</th><th class="num">Revisions</th><th>Status</th></tr></thead>
+                        <tbody id="documents-table"></tbody>
+                    </table>
+                </div>
             </div>
-        </div>
 
-        <div class="section-label">Revision history, WI-0412</div>
-        <div class="panel">
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Rev</th><th>Change</th><th>Author</th><th>Approved by</th><th>Date</th></tr></thead>
-                    <tbody>
-                        <tr><td class="mono sm">D</td><td class="sm">Require new traveler on any partial lot merge</td><td class="sm">K. Reyes</td><td class="sm dim">pending</td><td class="mono sm">02 Sep 2026</td></tr>
-                        <tr><td class="mono sm">C</td><td class="sm">Added label revision check at pack-out</td><td class="sm">K. Reyes</td><td class="sm">S. Parnell</td><td class="mono sm">18 Apr 2026</td></tr>
-                        <tr><td class="mono sm">B</td><td class="sm">Clarified pallet stacking limits</td><td class="sm">K. Reyes</td><td class="sm">S. Parnell</td><td class="mono sm">07 Nov 2025</td></tr>
-                        <tr><td class="mono sm">A</td><td class="sm">Initial release</td><td class="sm">K. Reyes</td><td class="sm">S. Parnell</td><td class="mono sm">15 Feb 2025</td></tr>
-                    </tbody>
-                </table>
+            <div class="panel" id="document-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="document-detail-number">Select a document</h2>
+                    <span id="document-detail-status"></span>
+                    <button type="button" class="btn no-print" id="document-print">Print</button>
+                </div>
+                <div class="panel-body" id="document-summary"></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Rev</th><th>Change</th><th>Author</th><th>Approved by</th><th>Effective</th></tr></thead>
+                        <tbody id="document-revisions"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </section>
@@ -901,7 +883,16 @@
         <div class="grid-2">
             <div class="stack">
                 <div class="panel">
-                    <div class="panel-head"><h2 class="panel-title">Audit schedule 2026</h2><span class="panel-note">2 overdue</span></div>
+                    <div class="panel-head">
+                        <h2 class="panel-title">Audit schedule 2026</h2>
+                        <span class="panel-note" id="audit-overdue-note"></span>
+                        <select class="filter-severity" data-type="audit" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                    </div>
                     <div class="table-wrap">
                         <table>
                             <thead><tr><th>Audit</th><th>Scope</th><th>Auditor</th><th>Planned</th><th>Status</th></tr></thead>
@@ -911,36 +902,13 @@
                 </div>
             </div>
 
-            <div>
-                <div class="panel" style="margin-bottom:16px">
-                    <div class="panel-head"><h2 class="panel-title">Findings, AUD-2026-009</h2><span class="panel-note">1 major / 1 minor / 1 OFI</span></div>
+            <div class="panel" id="audit-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="audit-detail-number">Select a record</h2>
+                    <span id="audit-detail-status"></span>
+                    <button type="button" class="btn no-print" id="audit-print">Print</button>
                 </div>
-
-                <div class="finding major">
-                    <div class="finding-head">
-                        <h3 class="finding-title">Major nonconformity</h3>
-                        <span class="pill pill-open">Clause 8.5.2</span>
-                    </div>
-                    <p class="finding-body">Partial lot merges observed at op 70 with no re-identification. Traceability cannot be reconstructed for merged lots.</p>
-                    <div class="chip-list"><span class="chip">CAPA-2026-0029</span><span class="chip">WI-0412 rev D</span></div>
-                </div>
-
-                <div class="finding minor">
-                    <div class="finding-head">
-                        <h3 class="finding-title">Minor nonconformity</h3>
-                        <span class="pill pill-prog">Clause 7.2</span>
-                    </div>
-                    <p class="finding-body">Three operators running work instructions they are not recorded as trained on. Training matrix not updated after rev C release.</p>
-                    <div class="chip-list"><span class="chip">CAPA-2026-0030</span></div>
-                </div>
-
-                <div class="finding ofi">
-                    <div class="finding-head">
-                        <h3 class="finding-title">Opportunity for improvement</h3>
-                        <span class="pill pill-hold">Clause 8.5.1</span>
-                    </div>
-                    <p class="finding-body">Traveler sign-offs are legible but handwritten. Electronic sign-off would reduce transcription risk and speed release.</p>
-                </div>
+                <div class="panel-body" id="audit-detail"></div>
             </div>
         </div>
     </section>
@@ -989,13 +957,32 @@
             <p class="view-sub">Actions to address risks and opportunities. Severity times likelihood times detection gives the priority number that drives action.</p>
         </div>
 
-        <div class="panel">
-            <div class="panel-head"><h2 class="panel-title">Risks and opportunities</h2><span class="panel-note">17 tracked / 2 unmitigated</span></div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>ID</th><th>Risk or opportunity</th><th>Process</th><th class="num">Sev</th><th class="num">Occ</th><th class="num">Det</th><th class="num">RPN</th><th>Action</th><th>Status</th></tr></thead>
-                    <tbody id="risk-table"></tbody>
-                </table>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Risks and opportunities</h2>
+                    <select class="filter-severity" data-type="risk" title="Filter by severity">
+                        <option value="">All severities</option>
+                        <option value="crit">Critical</option>
+                        <option value="warn">Warning</option>
+                        <option value="ok">OK</option>
+                    </select>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>ID</th><th>Risk or opportunity</th><th>Process</th><th class="num">Sev</th><th class="num">Occ</th><th class="num">Det</th><th class="num">RPN</th><th>Action</th><th>Status</th></tr></thead>
+                        <tbody id="risk-table"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" id="risk-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="risk-detail-number">Select a record</h2>
+                    <span id="risk-detail-status"></span>
+                    <button type="button" class="btn no-print" id="risk-print">Print</button>
+                </div>
+                <div class="panel-body" id="risk-detail"></div>
             </div>
         </div>
     </section>
@@ -1178,6 +1165,8 @@
     </div>
 </div>
 </div>
+
+<div id="toast-container" class="toast-container no-print" aria-live="polite"></div>
 
 <script type="module" src="js/app.js"></script>
 </body>

@@ -13,7 +13,7 @@
 
 import { api } from "./api.js";
 import { currentUser } from "./session.js";
-import { el } from "./dom.js";
+import { el, toast } from "./dom.js";
 
 /* ---------- one dialog, reused ---------- */
 
@@ -213,11 +213,24 @@ export async function openRecordForm(typeKey, { onSaved } = {}) {
         el("span", { class: "field-hint", text: "This is what appears in the register." })
     ]);
 
+    /* Due date lives on the record itself (records.due_at), not in the
+       type-specific data payload, so it is asked for here once rather
+       than as a per-type field every form has to remember to declare -
+       every register's overdue colouring reads this same column. */
+    const dueInput = el("input", { type: "date", id: "field-due-at", name: "due_at" });
+
+    const dueGroup = el("div", { class: "field-group" }, [
+        el("label", { for: "field-due-at", text: "Due date" }),
+        dueInput,
+        el("span", { class: "field-hint", text: "Optional. Drives the overdue colouring in the register." })
+    ]);
+
     const save = el("button", { class: "btn btn-primary", type: "submit" }, "Raise " + definition.name);
 
     const form = el("form", { method: "dialog" }, [
         errorBox,
         titleGroup,
+        dueGroup,
         ...entries.map((entry) => entry.wrapper)
     ]);
 
@@ -264,10 +277,12 @@ export async function openRecordForm(typeKey, { onSaved } = {}) {
                 title: titleInput.value.trim(),
                 owner: me ? me.initials : undefined,
                 severity: "warn",
+                due_at: dueInput.value || undefined,
                 data
             });
 
             node.close();
+            toast(created.number + " created");
             if (onSaved) onSaved(created);
         } catch (error) {
             /* The server validates everything again. When it disagrees,
@@ -321,12 +336,62 @@ export function confirmStep({ title, body, confirmLabel, onConfirm }) {
         try {
             await onConfirm(reason.value.trim() || null);
             node.close();
+            toast(title);
         } catch (error) {
             errorBox.textContent = error.message;
             errorBox.hidden = false;
         } finally {
             go.disabled = false;
             go.textContent = confirmLabel;
+        }
+    });
+
+    node.showModal();
+}
+
+/* ---------- setting or changing a due date ---------- */
+
+export function editDueDate({ title, currentValue, onSave }) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const dateInput = el("input", {
+        type: "date",
+        value: currentValue ? currentValue.slice(0, 10) : ""
+    });
+
+    const go = el("button", { class: "btn btn-primary", type: "button" }, "Save");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: title })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("div", { class: "field-group" }, [
+                el("label", { for: "due-date-input", text: "Due date" }),
+                dateInput,
+                el("span", { class: "field-hint", text: "Leave blank to clear it." })
+            ])
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            go
+        ])
+    );
+
+    go.addEventListener("click", async () => {
+        go.disabled = true;
+        go.textContent = "Saving...";
+
+        try {
+            await onSave(dateInput.value || null);
+            node.close();
+            toast(dateInput.value ? "Due date set" : "Due date cleared");
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            go.disabled = false;
+            go.textContent = "Save";
         }
     });
 

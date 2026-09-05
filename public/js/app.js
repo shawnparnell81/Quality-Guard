@@ -28,7 +28,7 @@ import { renderForms, wireForms } from "./views/formbuilder.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
-    renderVendors, renderWarehouse
+    renderVendors, renderWarehouse, wireDocuments
 } from "./views/resources.js";
 
 /* view name -> the function that populates it */
@@ -108,6 +108,7 @@ sidebar.addEventListener("click", (event) => {
     if (!button) return;
 
     show(button.dataset.view);
+    closeMobileNav();
 });
 
 /* Anything on a screen can ask to navigate by firing this event, so a
@@ -115,6 +116,36 @@ sidebar.addEventListener("click", (event) => {
    jump to the module holding a clause's evidence. */
 document.addEventListener("navigate", (event) => {
     show(event.detail.view);
+    closeMobileNav();
+});
+
+/* ---------- mobile nav ----------
+   Below the breakpoint (style.css) the sidebar is an off-canvas
+   overlay rather than part of the page flow, so it needs an explicit
+   open/close rather than just being there. Above the breakpoint none
+   of this does anything: the toggle button is display:none and the
+   sidebar is never given the "open" class. */
+const navToggle = document.getElementById("nav-toggle");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+
+function openMobileNav() {
+    sidebar.classList.add("open");
+    navToggle?.setAttribute("aria-expanded", "true");
+}
+
+function closeMobileNav() {
+    sidebar.classList.remove("open");
+    navToggle?.setAttribute("aria-expanded", "false");
+}
+
+navToggle?.addEventListener("click", () => {
+    sidebar.classList.contains("open") ? closeMobileNav() : openMobileNav();
+});
+
+sidebarBackdrop?.addEventListener("click", closeMobileNav);
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeMobileNav();
 });
 
 /* ---------- connection banner ----------
@@ -168,6 +199,36 @@ async function showReadinessBadge() {
         badge.hidden = summary.clauses_flagged === 0;
     } catch {
         badge.hidden = true;
+    }
+}
+
+/* Every other sidebar badge, the same way: real counts or no badge at
+   all, never a number frozen in the markup regardless of what is
+   actually open. One fetch already returns everything these need. */
+async function updateNavCounts() {
+    const badges = document.querySelectorAll("[data-nav-count]");
+    if (badges.length === 0) return;
+
+    try {
+        const summary = await (await fetch("/api/dashboard")).json();
+
+        const counts = {
+            ncr: summary.events.ncr?.open,
+            capa: summary.events.capa?.open,
+            eightd: summary.events.eightd?.open,
+            complaint: summary.events.complaint?.open,
+            ecn: summary.events.ecn?.open,
+            audit: summary.events.audit?.overdue,
+            calibration_due: summary.calibration?.due_soon
+        };
+
+        badges.forEach((badge) => {
+            const n = Number(counts[badge.dataset.navCount]) || 0;
+            badge.textContent = n;
+            badge.hidden = n === 0;
+        });
+    } catch {
+        badges.forEach((badge) => { badge.hidden = true; });
     }
 }
 
@@ -274,9 +335,11 @@ async function start() {
     wireOperations();
     wireEvaluate();
     wireForms();
+    wireDocuments();
     checkConnection();
     fillHeader();
     showReadinessBadge();
+    updateNavCounts();
     show("dashboard");
 }
 

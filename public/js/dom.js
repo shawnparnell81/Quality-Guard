@@ -112,6 +112,51 @@ export function errorRow(tbody, columnCount, error) {
     );
 }
 
+/* ---------- toasts ---------- */
+
+/* A brief, dismissable confirmation - "NCR-2026-0151 created", "Moved
+   to Containment", "Published version 3" - for actions that used to
+   have no feedback beyond the screen quietly updating. aria-live on
+   the container (index.html) means a screen reader announces these
+   without needing anything added here. */
+export function toast(message, kind = "ok") {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+
+    const node = el("div", { class: "toast toast-" + kind }, message);
+    container.append(node);
+
+    /* Removed by its own timeout, not a click - a toast that requires
+       action to dismiss is a dialog, not a toast. */
+    setTimeout(() => {
+        node.classList.add("toast-out");
+        node.addEventListener("transitionend", () => node.remove(), { once: true });
+    }, 3200);
+}
+
+/* ---------- printing ---------- */
+
+/* Prints one element in isolation, using the .print-area rule in
+   style.css: everything else on the page is hidden for the duration
+   of the print, and put back the moment the print dialog closes
+   (afterprint fires whether the person printed or cancelled). A
+   button or other control inside the printed node still needs its
+   own "no-print" class - marking the container alone is not enough,
+   since .print-area makes everything under it visible again. */
+export function printElement(node) {
+    if (!node) return;
+
+    node.classList.add("print-area");
+
+    function cleanup() {
+        node.classList.remove("print-area");
+        window.removeEventListener("afterprint", cleanup);
+    }
+
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+}
+
 /* ---------- formatting ---------- */
 
 export function setText(id, value) {

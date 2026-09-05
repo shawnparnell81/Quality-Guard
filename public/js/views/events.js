@@ -4,15 +4,17 @@
    NCR, CAPA, complaint, audit and risk all render through the same
    function, because on the server they are all rows in the records
    table. Only the column list differs, so only the column list is
-   written out per module.
+   written out per module - and the same is true of the detail panel
+   below the register: one function, driven by whichever type it was
+   asked for, rather than a screen written per type.
    ============================================================ */
 
 import { api } from "../api.js";
 import { can } from "../session.js";
-import { openRecordForm, confirmStep } from "../forms.js";
+import { openRecordForm, confirmStep, editDueDate } from "../forms.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize, statusKind
+    formatDate, humanize, statusKind, printElement
 } from "../dom.js";
 
 /* Shared first column: severity stripe plus record number. */
@@ -111,6 +113,25 @@ function rpnCell(rpn) {
     return colour ? el("span", { style: "color:" + colour, text: rpn }) : String(rpn);
 }
 
+/* Severity and open-only, per type. The server already understood
+   these query params (records.js) - nothing here needed a backend
+   change, only a control to actually send them. */
+const activeFilters = {};
+
+function currentFilterParams(type) {
+    const filter = activeFilters[type] || {};
+    return {
+        type,
+        severity: filter.severity || undefined,
+        open: filter.open ? "true" : undefined
+    };
+}
+
+function hasActiveFilter(type) {
+    const filter = activeFilters[type] || {};
+    return Boolean(filter.severity || filter.open);
+}
+
 export async function renderRegister(type) {
     const config = REGISTERS[type];
     if (!config) return;
@@ -119,8 +140,9 @@ export async function renderRegister(type) {
     loadingRow(tbody, config.columns.length);
 
     try {
-        const { records } = await api.records({ type });
-        fillTable(tbody, records, config.columns, "No records of this type yet");
+        const { records } = await api.records(currentFilterParams(type));
+        fillTable(tbody, records, config.columns,
+            hasActiveFilter(type) ? "No records match this filter" : "No records of this type yet");
 
         /* Tag each row with its record number so one delegated listener
            can work out what was clicked. fillTable emits rows in the
@@ -131,10 +153,23 @@ export async function renderRegister(type) {
             tr.classList.add("row-clickable");
         });
 
-        /* The NCR screen also shows one record in full. */
-        if (type === "ncr" && records.length > 0) {
+        /* Every register shows one record in full, not only NCR. */
+        if (records.length > 0) {
             selectRow(tbody, records[0].number);
-            await renderRecordDetail(records[0].number);
+            await renderRecordDetail(type, records[0].number);
+        } else {
+            clearDetail(type);
+        }
+
+        /* Computed from exactly what is on screen right now (so it
+           tracks whatever filter is active), the same overdue rule
+           every other module uses: still open, and past its due date. */
+        const overdueNote = document.getElementById(type + "-overdue-note");
+        if (overdueNote) {
+            const overdue = records.filter((r) =>
+                !r.closed_at && r.due_at && new Date(r.due_at) < new Date()).length;
+            overdueNote.textContent = overdue === 1 ? "1 overdue" : overdue + " overdue";
+            overdueNote.hidden = overdue === 0;
         }
     } catch (error) {
         errorRow(tbody, config.columns.length, error);
@@ -147,21 +182,60 @@ function selectRow(tbody, number) {
     });
 }
 
-/* One listener for the whole register, attached once when this module
-   loads. Rows are replaced on every fetch, so a listener per row would
-   have to be rebuilt each time; this one never is. */
-export function wireRegisterClicks() {
-    const tbody = document.getElementById("ncr-register");
+function clearDetail(type) {
+    const heading = document.getElementById(type + "-detail-number");
+    const statusSlot = document.getElementById(type + "-detail-status");
+    const panel = document.getElementById(type + "-detail");
 
-    if (tbody) {
+    if (heading) heading.textContent = "Select a record";
+    if (statusSlot) statusSlot.replaceChildren();
+    if (panel) panel.replaceChildren();
+}
+
+/* One listener per register, attached once when this module loads.
+   Rows are replaced on every fetch, so a listener per row would have
+   to be rebuilt each time; these never are. */
+export function wireRegisterClicks() {
+    for (const [type, config] of Object.entries(REGISTERS)) {
+        const tbody = document.getElementById(config.tbody);
+        if (!tbody) continue;
+
         tbody.addEventListener("click", (event) => {
             const row = event.target.closest("tr[data-number]");
             if (!row) return;
 
             selectRow(tbody, row.dataset.number);
-            renderRecordDetail(row.dataset.number);
+            renderRecordDetail(type, row.dataset.number);
         });
+
+        const printButton = document.getElementById(type + "-print");
+        if (printButton) {
+            printButton.addEventListener("click", () => {
+                printElement(document.getElementById(type + "-detail-panel"));
+            });
+        }
     }
+
+    /* One delegated listener for every severity dropdown and every
+       "open only" checkbox, across every register - each element
+       says which type it belongs to, so this never needs to know how
+       many registers exist. */
+    document.addEventListener("change", (event) => {
+        const severitySelect = event.target.closest(".filter-severity");
+        if (severitySelect) {
+            const type = severitySelect.dataset.type;
+            activeFilters[type] = { ...activeFilters[type], severity: severitySelect.value };
+            renderRegister(type);
+            return;
+        }
+
+        const openCheckbox = event.target.closest(".filter-open input");
+        if (openCheckbox) {
+            const type = openCheckbox.dataset.type;
+            activeFilters[type] = { ...activeFilters[type], open: openCheckbox.checked };
+            renderRegister(type);
+        }
+    });
 
     /* Every "raise a record" button on every screen, through one
        listener. The button says which type it opens. */
@@ -173,15 +247,13 @@ export function wireRegisterClicks() {
 
         openRecordForm(type, {
             onSaved: async (created) => {
-                await renderRegister(type === "complaint" ? "complaint" : type);
+                await renderRegister(type);
 
                 /* Land on the thing that was just created rather than
                    leaving somebody to hunt for it in the register. */
-                if (type === "ncr") {
-                    const register = document.getElementById("ncr-register");
-                    if (register) selectRow(register, created.number);
-                    await renderRecordDetail(created.number);
-                }
+                const register = document.getElementById(REGISTERS[type]?.tbody);
+                if (register) selectRow(register, created.number);
+                await renderRecordDetail(type, created.number);
             }
         });
     });
@@ -190,23 +262,40 @@ export function wireRegisterClicks() {
 /* ---------- detail panel ---------- */
 
 const DETAIL_FIELDS = [
-    ["Part",           (d) => d.part_number],
-    ["Lot / serial",   (d) => d.lot_number],
-    ["Work order",     (d) => d.work_order],
-    ["Operation",      (d) => d.operation],
-    ["Characteristic", (d) => d.characteristic],
-    ["Measured",       (d) => d.measured],
-    ["Gage",           (d) => d.gage_id],
-    ["Detected at",    (d) => d.detected_at],
-    ["Qty affected",   (d) => d.qty_affected],
-    ["Disposition",    (d) => d.disposition],
-    ["Containment",    (d) => d.containment]
+    ["Customer",              (d) => d.customer],
+    ["Contact",               (d) => d.contact],
+    ["Part",                  (d) => d.part_number],
+    ["Lot / serial",          (d) => d.lot_number],
+    ["Work order",            (d) => d.work_order],
+    ["Operation",             (d) => d.operation],
+    ["Characteristic",        (d) => d.characteristic],
+    ["Measured",              (d) => d.measured],
+    ["Gage",                  (d) => d.gage_id],
+    ["Detected at",           (d) => d.detected_at],
+    ["Qty affected",          (d) => d.qty_affected],
+    ["Quantity",              (d) => d.qty],
+    ["Disposition",           (d) => d.disposition],
+    ["Containment",           (d) => d.containment],
+    ["Source",                (d) => d.source],
+    ["Problem statement",     (d) => d.problem_statement],
+    ["Root cause",            (d) => d.root_cause],
+    ["Corrective action",     (d) => d.corrective_action],
+    ["Effectiveness criterion", (d) => d.effectiveness_criterion],
+    ["Description",           (d) => d.description],
+    ["Scope",                 (d) => d.scope],
+    ["Auditor",                (d) => d.auditor],
+    ["Planned",               (d) => d.planned],
+    ["Process",               (d) => d.process],
+    ["Severity",              (d) => d.severity],
+    ["Occurrence",            (d) => d.occurrence],
+    ["Detection",             (d) => d.detection],
+    ["Action",                (d) => d.action]
 ];
 
-export async function renderRecordDetail(number) {
-    const panel = document.getElementById("ncr-detail");
-    const heading = document.getElementById("ncr-detail-number");
-    const statusSlot = document.getElementById("ncr-detail-status");
+export async function renderRecordDetail(type, number) {
+    const panel = document.getElementById(type + "-detail");
+    const heading = document.getElementById(type + "-detail-number");
+    const statusSlot = document.getElementById(type + "-detail-status");
 
     if (!panel) return;
 
@@ -224,6 +313,47 @@ export async function renderRecordDetail(number) {
 
         const list = el("dl", { class: "kv" });
 
+        /* due_at lives on the record itself, not in the type-specific
+           data payload, so it is not one of DETAIL_FIELDS below - it
+           gets its own row, always shown, with the same overdue rule
+           the register colouring and the dashboard both use. */
+        const isOverdue = !record.closed_at && record.due_at && new Date(record.due_at) < new Date();
+        const changeDue = el("button", {
+            class: "btn no-print", type: "button",
+            style: "margin-left:8px;padding:1px 8px;font-size:11px"
+        }, record.due_at ? "Change" : "Set");
+
+        changeDue.addEventListener("click", () => {
+            editDueDate({
+                title: "Due date for " + record.number,
+                currentValue: record.due_at,
+                onSave: async (value) => {
+                    await api.updateRecord(record.number, { due_at: value });
+
+                    /* renderRegister re-selects its own first row, so
+                       the just-edited record - not necessarily first -
+                       has to be re-selected and re-rendered after it,
+                       not before, or this screen would silently jump
+                       back to whatever record happens to sort first. */
+                    await renderRegister(type);
+                    const tbody = document.getElementById(REGISTERS[type].tbody);
+                    if (tbody) selectRow(tbody, record.number);
+                    await renderRecordDetail(type, record.number);
+                }
+            });
+        });
+
+        list.append(el("dt", { text: "Due date" }));
+        list.append(el("dd", {}, [
+            record.due_at
+                ? el("span", {
+                    style: isOverdue ? "color:var(--crit)" : null,
+                    text: formatDate(record.due_at) + (isOverdue ? " (overdue)" : "")
+                  })
+                : el("span", { class: "dim", text: "Not set" }),
+            changeDue
+        ]));
+
         for (const [label, read] of DETAIL_FIELDS) {
             const value = read(record.data);
             if (value === undefined || value === null || value === "") continue;
@@ -240,11 +370,12 @@ export async function renderRecordDetail(number) {
 
         /* Workflow. Every legal next step is shown, including the ones
            this person may not take, because "you cannot, the quality
-           manager can" is more useful than a missing button. */
+           manager can" is more useful than a missing button. Buttons
+           that only make sense on screen, not on paper. */
         if (transitions && transitions.length > 0) {
-            children.push(el("div", { class: "section-label", text: "Move this forward" }));
+            children.push(el("div", { class: "section-label no-print", text: "Move this forward" }));
 
-            children.push(el("div", { class: "row" }, transitions.map((step) => {
+            children.push(el("div", { class: "row no-print" }, transitions.map((step) => {
                 const button = el("button", {
                     class: "btn" + (step.allowed ? " btn-primary" : " not-permitted"),
                     type: "button",
@@ -266,7 +397,7 @@ export async function renderRecordDetail(number) {
                         confirmLabel: "Move to " + step.label,
                         onConfirm: async (reason) => {
                             await api.transition(record.number, { to: step.to, reason });
-                            await renderRegister("ncr");
+                            await renderRegister(type);
                         }
                     });
                 });
@@ -277,7 +408,7 @@ export async function renderRecordDetail(number) {
             const blocked = transitions.filter((step) => !step.allowed);
             if (blocked.length > 0) {
                 children.push(el("p", {
-                    class: "sm dim",
+                    class: "sm dim no-print",
                     style: "margin:8px 0 0",
                     text: blocked[0].blocked_because
                 }));
