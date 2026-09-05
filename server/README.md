@@ -2,6 +2,15 @@
 
 Node plus PostgreSQL. No ORM, no build step, no framework beyond Express.
 
+Requires **Node 20.6 or later** (the scripts here use `--env-file`,
+which does not exist before that) and **PostgreSQL 13 or later**
+(`schema.sql` calls `gen_random_uuid()`, built into Postgres core
+only from v13 on - an older server needs the `pgcrypto` extension
+instead, which nothing here installs for you).
+
+There is no `package.json` at the repository root. Everything below
+runs from inside this `server/` folder, not the repo root.
+
 ## Setup
 
 Four steps. The whole thing takes about five minutes.
@@ -15,7 +24,7 @@ at the default.
 ### 2. Configure your connection
 
 Copy `.env.example` to `.env`, then edit `.env` and put in the password
-I set when Iinstalled PostgreSQL:
+you set when you installed PostgreSQL:
 
 ```
 cd server
