@@ -13,7 +13,7 @@ export const dashboard = Router();
 
 dashboard.get("/", async (request, response, next) => {
     try {
-        const [events, gages, training, vendors, audits] = await Promise.all([
+        const [events, gages, training, vendors] = await Promise.all([
             query(`
                 select rt.key as type,
                        count(*) filter (where r.closed_at is null) as open,
@@ -53,13 +53,6 @@ dashboard.get("/", async (request, response, next) => {
                        round(avg(ppm))                              as avg_ppm,
                        count(*)                                     as total
                   from vendors where org_id = $1 and status <> 'onboarding'
-            `, [request.user.org_id]),
-
-            query(`
-                select count(*) filter (where r.status = 'overdue') as overdue
-                  from records r
-                  join record_types rt on rt.id = r.record_type_id
-                 where r.org_id = $1 and rt.key = 'audit'
             `, [request.user.org_id])
         ]);
 
@@ -87,7 +80,12 @@ dashboard.get("/", async (request, response, next) => {
                 avg_ppm: Number(vendors.rows[0].avg_ppm),
                 total: Number(vendors.rows[0].total)
             },
-            audits: { overdue: Number(audits.rows[0].overdue) }
+            /* Computed the same way every other type's overdue count is
+               (closed_at is null and due_at has passed) - not from a
+               manually-set 'overdue' status, which used to let this
+               figure disagree with clause 9.2's finding on the
+               Readiness screen. One definition of overdue, not two. */
+            audits: { overdue: byType.audit?.overdue ?? 0 }
         });
     } catch (error) {
         next(error);
