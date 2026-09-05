@@ -25,6 +25,7 @@ import {
     renderDrawings, renderOnboarding, renderReview, renderScorecards, wireEvaluate
 } from "./views/evaluate.js";
 import { renderForms, wireForms } from "./views/formbuilder.js";
+import { wireRecordEditor } from "./forms.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -339,6 +340,7 @@ async function start() {
     wireReadiness();
     wireMatrixEditing();
     wirePeopleActions();
+    wireRecordEditor();
     wireProduction();
     wireChangeScreens();
     wireOperations();

@@ -31,7 +31,12 @@ const DISCIPLINES = [
 
 let selectedEightD = null;
 
-export async function renderEightD() {
+/* preferNumber wins over whatever was selected before - used right
+   after creating or editing one, so the screen lands on that record
+   rather than wherever it happens to sort in the register. */
+export async function renderEightD(preferNumber) {
+    if (preferNumber) selectedEightD = preferNumber;
+
     const tbody = document.getElementById("eightd-register");
     loadingRow(tbody, 5);
 
@@ -71,6 +76,7 @@ async function renderEightDDetail(number) {
     const heading = document.getElementById("eightd-number");
     const track = document.getElementById("eightd-track");
     const side = document.getElementById("eightd-side");
+    const editButton = document.getElementById("eightd-edit");
 
     if (track) track.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
@@ -78,6 +84,7 @@ async function renderEightDDetail(number) {
         const { record, links, transitions } = await api.record(number);
 
         if (heading) heading.textContent = record.number;
+        if (editButton) editButton.dataset.number = record.number;
 
         /* The disciplines are workflow states, so "done" is simply
            everything before the one the record is sitting on. */
@@ -151,7 +158,9 @@ async function renderEightDDetail(number) {
 
 let selectedChange = null;
 
-export async function renderChange() {
+export async function renderChange(preferNumber) {
+    if (preferNumber) selectedChange = preferNumber;
+
     const tbody = document.getElementById("ecn-register");
     loadingRow(tbody, 5);
 
@@ -192,6 +201,7 @@ async function renderChangeDetail(number) {
     const note = document.getElementById("ecn-note");
     const body = document.getElementById("impact-table");
     const side = document.getElementById("ecn-side");
+    const editButton = document.getElementById("ecn-edit");
 
     if (body) loadingRow(body, 4);
 
@@ -200,6 +210,8 @@ async function renderChangeDetail(number) {
             api.record(number),
             api.changeImpact(number)
         ]);
+
+        if (editButton) editButton.dataset.number = record.number;
 
         if (heading) heading.textContent = record.number;
 
