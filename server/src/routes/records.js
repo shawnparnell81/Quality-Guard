@@ -12,6 +12,25 @@ import { requirePermission, createPermissionFor, closePermissionFor } from "../a
 
 export const records = Router();
 
+/* due_at could not be set through this API at all before - it only
+   ever got a value from seed data, which is why every overdue count
+   in the app was silently correct for the demo and silently useless
+   for anything actually raised through the UI.
+
+   Undefined, null or "" all mean "no due date" and are left alone
+   rather than treated as an error, since not every record needs one.
+   Anything else has to parse as a real date. */
+function parseDueAt(value) {
+    if (value === undefined || value === null || value === "") {
+        return { ok: true, value: null };
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return { ok: false, value: null };
+
+    return { ok: true, value: parsed.toISOString() };
+}
+
 /* Which authority an edit needs depends on what is being changed.
    Selecting "Rework" and selecting "Use-as-is" travel through the same
    endpoint but are not the same decision: use-as-is ships a known
@@ -194,12 +213,17 @@ records.get("/:number", async (request, response, next) => {
    accepts without touching this file. */
 records.post("/", requirePermission(createPermissionFor), async (request, response, next) => {
     try {
-        const { type, title, owner, data = {}, severity = "ok" } = request.body || {};
+        const { type, title, owner, data = {}, severity = "ok", due_at } = request.body || {};
 
         if (!type || !title) {
             return response.status(400).json({
                 error: "type and title are required"
             });
+        }
+
+        const dueAt = parseDueAt(due_at);
+        if (!dueAt.ok) {
+            return response.status(400).json({ error: "due_at is not a valid date" });
         }
 
         const typeRow = await query(
@@ -280,11 +304,11 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             const inserted = await client.query(`
                 insert into records
                     (org_id, record_type_id, number, title, status, severity,
-                     owner_id, data, form_version, created_by)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                     owner_id, data, form_version, created_by, due_at)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 returning id, number, status
             `, [request.user.org_id, recordType.id, number, title, initialStatus,
-                severity, ownerId, data, formVersion, request.user.id]);
+                severity, ownerId, data, formVersion, request.user.id, dueAt.value]);
 
             await client.query(`
                 insert into audit_log
@@ -310,11 +334,22 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
    leaving a trace. */
 records.patch("/:number", requirePermission(editPermissionFor), async (request, response, next) => {
     try {
-        const { data = {}, severity, reason } = request.body || {};
+        const { data = {}, severity, reason, due_at } = request.body || {};
+
+        /* Distinct from due_at being sent as null or "" (which means
+           "clear it"): a PATCH that never mentions due_at at all - the
+           common case, editing an ordinary data field - must leave the
+           existing due date exactly alone rather than wiping it out. */
+        const dueAtProvided = Object.prototype.hasOwnProperty.call(request.body || {}, "due_at");
+
+        const dueAt = dueAtProvided ? parseDueAt(due_at) : { ok: true, value: undefined };
+        if (!dueAt.ok) {
+            return response.status(400).json({ error: "due_at is not a valid date" });
+        }
 
         const updated = await withTransaction(async (client) => {
             const current = await client.query(
-                "select id, data, severity from records where org_id = $1 and number = $2 for update",
+                "select id, data, severity, due_at from records where org_id = $1 and number = $2 for update",
                 [request.user.org_id, request.params.number]
             );
 
@@ -343,13 +378,32 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
             const merged = { ...record.data, ...data };
 
+            /* Unchanged (undefined) when the caller never mentioned
+               due_at at all; otherwise the new value, parsed above,
+               which is legitimately null when the intent was to clear
+               a date that was set before. */
+            const nextDueAt = dueAtProvided ? dueAt.value : record.due_at;
+
+            if (dueAtProvided) {
+                const beforeIso = record.due_at ? new Date(record.due_at).toISOString() : null;
+                if (beforeIso !== dueAt.value) {
+                    await client.query(`
+                        insert into audit_log
+                            (org_id, record_id, entity, entity_id, field,
+                             old_value, new_value, reason, changed_by)
+                        values ($1, $2, 'records', $2, 'due_at', $3, $4, $5, $6)
+                    `, [request.user.org_id, record.id, beforeIso, dueAt.value, reason || null, actorId]);
+                }
+            }
+
             const result = await client.query(`
                 update records
                    set data = $2,
-                       severity = coalesce($3, severity)
+                       severity = coalesce($3, severity),
+                       due_at = $4
                  where id = $1
-                returning id, number, status, severity, data
-            `, [record.id, merged, severity || null]);
+                returning id, number, status, severity, data, due_at
+            `, [record.id, merged, severity || null, nextDueAt]);
 
             return result.rows[0];
         });
