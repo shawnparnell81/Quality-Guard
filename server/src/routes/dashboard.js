@@ -159,6 +159,54 @@ dashboard.get("/open-events", async (request, response, next) => {
     }
 });
 
+/* GET /api/dashboard/escalations?days=7
+   Every open record with a real owner and a due date landing inside
+   the window - overdue ones included, since "already late" is the
+   most urgent case a warning exists for, not a separate one. This is
+   the computation half of due-date escalation: who would get a
+   warning, and about what. It does not send anything - there is no
+   email provider wired up yet, so the honest thing is to expose the
+   answer to "who needs telling" and stop there, rather than pretend
+   to notify anyone. */
+dashboard.get("/escalations", async (request, response, next) => {
+    try {
+        const days = Math.min(Math.max(Number(request.query.days) || 7, 1), 90);
+
+        const result = await query(`
+            select r.number, r.title, r.status, r.severity, r.due_at,
+                   rt.key as type, rt.name as type_name,
+                   u.id as owner_id, u.full_name as owner_name, u.email as owner_email,
+                   ceil(extract(epoch from (r.due_at - now())) / 86400.0)::int as days_until_due
+              from records r
+              join record_types rt on rt.id = r.record_type_id
+         left join users u        on u.id = r.owner_id
+             where r.org_id = $1
+               and r.closed_at is null
+               and r.due_at is not null
+               and r.due_at <= now() + ($2 || ' days')::interval
+             order by r.due_at
+        `, [request.user.org_id, days]);
+
+        const escalations = result.rows.map((row) => ({
+            ...row,
+            overdue: row.days_until_due < 0,
+            /* No owner on the record at all is its own kind of finding -
+               a warning nobody would actually receive - surfaced rather
+               than silently dropped from the list. */
+            owner_name: row.owner_name || null,
+            owner_email: row.owner_email || null
+        }));
+
+        response.json({
+            count: escalations.length,
+            unowned: escalations.filter((e) => !e.owner_email).length,
+            escalations
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- ISO 9001 clause coverage ----------
    The pitch screen, and the one an auditor is walked through.
 

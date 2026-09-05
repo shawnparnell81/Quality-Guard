@@ -15,17 +15,20 @@ import {
 
 export async function renderDashboard() {
     const events = document.getElementById("dashboard-events");
+    const escalations = document.getElementById("dashboard-escalations");
     const calibration = document.getElementById("dashboard-cal");
     const training = document.getElementById("dashboard-training");
 
     loadingRow(events, 5);
+    loadingRow(escalations, 4);
     loadingRow(calibration, 3);
     loadingRow(training, 2);
 
     try {
-        const [summary, feed, gages, gaps] = await Promise.all([
+        const [summary, feed, dueSoonRecords, gages, gaps] = await Promise.all([
             api.dashboard(),
             api.openEvents(),
+            api.escalations(14),
             api.gages(),
             api.trainingGaps()
         ]);
@@ -62,6 +65,27 @@ export async function renderDashboard() {
             { className: "mono sm", render: (row) => row.age_days + " d" },
             { render: (row) => pill(humanize(row.status), statusKind(row.status)) }
         ], "No open quality events");
+
+        /* ---- coming due ----
+           Who would get a warning, and about what, computed live -
+           there is no email provider wired up yet, so this is the
+           honest version: the answer to "who needs telling," visible,
+           rather than a notification nobody can actually send. */
+        const note = document.getElementById("escalations-note");
+        if (note) {
+            note.textContent = dueSoonRecords.count + " in the next 14 d"
+                + (dueSoonRecords.unowned > 0 ? ", " + dueSoonRecords.unowned + " unowned" : "");
+        }
+
+        fillTable(escalations, dueSoonRecords.escalations, [
+            { className: "mono sm", render: (row) => row.number },
+            { className: "sm dim", render: (row) => humanize(row.type) },
+            { className: "sm", render: (row) => row.owner_name
+                || el("span", { class: "dim", text: "Unowned" }) },
+            { className: "mono sm", render: (row) => row.overdue
+                ? el("span", { style: "color:var(--crit)", text: formatDate(row.due_at) + " overdue" })
+                : formatDate(row.due_at) }
+        ], "Nothing coming due");
 
         /* ---- calibration due ---- */
         const dueSoon = gages.gages.filter((gage) => gage.status !== "current").slice(0, 5);

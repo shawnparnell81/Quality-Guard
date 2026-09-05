@@ -92,6 +92,7 @@ export const api = {
 
     dashboard:    ()        => get("/dashboard"),
     openEvents:   ()        => get("/dashboard/open-events"),
+    escalations:  (days)    => get(withQuery("/dashboard/escalations", { days })),
     readiness:    ()        => get("/dashboard/readiness"),
 
     recordTypes:  ()        => get("/record-types"),
