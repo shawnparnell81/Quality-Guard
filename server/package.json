@@ -18,7 +18,8 @@
     "provision-org": "node --env-file=.env scripts/provision-org.js",
     "db:backup": "node --env-file=.env scripts/backup.js",
     "db:restore": "node --env-file=.env scripts/restore.js",
-    "db:reset": "node --env-file=.env scripts/reset.js"
+    "db:reset": "node --env-file=.env scripts/reset.js",
+    "test": "node --env-file=.env --test"
   },
   "dependencies": {
     "express": "^4.21.2",
