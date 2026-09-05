@@ -99,6 +99,7 @@ export const api = {
     updateRecordForm: (typeKey, fields) =>
         request("PUT", "/record-types/" + encodeURIComponent(typeKey) + "/form", { fields }),
     records:      (params)  => get(withQuery("/records", params)),
+    searchRecords: (q)      => get(withQuery("/records/search", { q })),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),
     createRecord: (payload) => request("POST", "/records", payload),
     updateRecord: (number, payload) =>

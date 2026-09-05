@@ -18,7 +18,7 @@ import { api } from "../api.js";
 import { can } from "../session.js";
 import { ensureDialog } from "../forms.js";
 import {
-    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize
+    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, toast
 } from "../dom.js";
 
 const TYPE_LABEL = {
@@ -210,9 +210,20 @@ function buildFieldRow(field) {
 
     const required = el("input", { type: "checkbox", checked: field.required ? "checked" : undefined });
 
-    const up = el("button", { type: "button", class: "btn", title: "Move up" }, "↑");
-    const down = el("button", { type: "button", class: "btn", title: "Move down" }, "↓");
-    const remove = el("button", { type: "button", class: "btn", title: "Remove field" }, "✕");
+    /* title and aria-label both, not one or the other: title covers
+       the mouse tooltip, aria-label is what a screen reader actually
+       announces for a button with no readable text content - support
+       for reading title as a fallback is inconsistent enough not to
+       rely on it alone for an icon-only control. */
+    const up = el("button", {
+        type: "button", class: "btn", title: "Move up", "aria-label": "Move field up"
+    }, "↑");
+    const down = el("button", {
+        type: "button", class: "btn", title: "Move down", "aria-label": "Move field down"
+    }, "↓");
+    const remove = el("button", {
+        type: "button", class: "btn", title: "Remove field", "aria-label": "Remove field"
+    }, "✕");
 
     up.addEventListener("click", () => {
         const prev = row.previousElementSibling;
@@ -342,8 +353,9 @@ function openFieldEditor(definition) {
         save.textContent = "Saving...";
 
         try {
-            await api.updateRecordForm(definition.key, fields);
+            const result = await api.updateRecordForm(definition.key, fields);
             node.close();
+            toast("Published version " + result.version + " of the " + definition.name + " form");
             await renderForms();
         } catch (error) {
             errorBox.textContent = error.message;

@@ -54,9 +54,14 @@ const COMPUTED = {
             on tr.user_id = u.id and tr.document_id = d.id
          where u.org_id = $1 and u.active`,
 
+    /* "On time" mirrors the overdue definition every other module
+       uses (closed_at is null and due_at has passed), not the
+       manually-set 'overdue' status - so this can never disagree
+       with the dashboard or the readiness screen's own count. */
     audits_on_time: `
         select coalesce(round(
-                 100.0 * count(*) filter (where r.status <> 'overdue')
+                 100.0 * count(*) filter (
+                   where not (r.closed_at is null and r.due_at < now()))
                  / nullif(count(*), 0), 1), 0) as value
           from records r join record_types rt on rt.id = r.record_type_id
          where r.org_id = $1 and rt.key = 'audit'`

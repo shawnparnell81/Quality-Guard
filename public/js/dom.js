@@ -112,6 +112,94 @@ export function errorRow(tbody, columnCount, error) {
     );
 }
 
+/* ---------- toasts ---------- */
+
+/* A brief, dismissable confirmation - "NCR-2026-0151 created", "Moved
+   to Containment", "Published version 3" - for actions that used to
+   have no feedback beyond the screen quietly updating. aria-live on
+   the container (index.html) means a screen reader announces these
+   without needing anything added here. */
+export function toast(message, kind = "ok") {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+
+    const node = el("div", { class: "toast toast-" + kind }, message);
+    container.append(node);
+
+    /* Removed by its own timeout, not a click - a toast that requires
+       action to dismiss is a dialog, not a toast. */
+    setTimeout(() => {
+        node.classList.add("toast-out");
+        node.addEventListener("transitionend", () => node.remove(), { once: true });
+    }, 3200);
+}
+
+/* ---------- sparklines ----------
+   A tiny real trend, not decoration: values is real history (weekly
+   counts from opened_at, computed server-side - nothing invented on
+   the client). Draws into an existing inline <svg viewBox="0 0 100
+   28">, sized in CSS like any other element; stroke uses currentColor
+   so a tile's own text colour (is-crit / is-warn) controls it without
+   this needing to know about severity at all. */
+export function drawSparkline(svgId, values) {
+    const svg = document.getElementById(svgId);
+    if (!svg || !values || values.length === 0) return;
+
+    const width = 100, height = 28, pad = 3;
+    const max = Math.max(...values, 1);
+    const stepX = values.length > 1 ? width / (values.length - 1) : 0;
+
+    const points = values.map((value, index) => {
+        const x = index * stepX;
+        const y = height - pad - (value / max) * (height - pad * 2);
+        return [x, y];
+    });
+
+    svg.replaceChildren();
+
+    const ns = "http://www.w3.org/2000/svg";
+
+    const polyline = document.createElementNS(ns, "polyline");
+    polyline.setAttribute("points", points.map(([x, y]) => x + "," + y).join(" "));
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", "currentColor");
+    polyline.setAttribute("stroke-width", "2");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("stroke-linejoin", "round");
+    svg.append(polyline);
+
+    const [lastX, lastY] = points[points.length - 1];
+    const dot = document.createElementNS(ns, "circle");
+    dot.setAttribute("cx", lastX);
+    dot.setAttribute("cy", lastY);
+    dot.setAttribute("r", "2.3");
+    dot.setAttribute("fill", "currentColor");
+    svg.append(dot);
+}
+
+/* ---------- printing ---------- */
+
+/* Prints one element in isolation, using the .print-area rule in
+   style.css: everything else on the page is hidden for the duration
+   of the print, and put back the moment the print dialog closes
+   (afterprint fires whether the person printed or cancelled). A
+   button or other control inside the printed node still needs its
+   own "no-print" class - marking the container alone is not enough,
+   since .print-area makes everything under it visible again. */
+export function printElement(node) {
+    if (!node) return;
+
+    node.classList.add("print-area");
+
+    function cleanup() {
+        node.classList.remove("print-area");
+        window.removeEventListener("afterprint", cleanup);
+    }
+
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+}
+
 /* ---------- formatting ---------- */
 
 export function setText(id, value) {

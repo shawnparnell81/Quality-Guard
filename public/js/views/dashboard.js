@@ -10,7 +10,7 @@ import { api } from "../api.js";
 import { getOrganization, describeCountdown } from "../org.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    setText, formatDate, humanize, statusKind
+    setText, formatDate, humanize, statusKind, drawSparkline
 } from "../dom.js";
 
 export async function renderDashboard() {
@@ -44,6 +44,12 @@ export async function renderDashboard() {
         setText("kpi-ppm-foot",      summary.suppliers.total + " active vendors");
         setText("kpi-training-foot", "clause 7.2");
         setText("kpi-audits-foot",   "clause 9.2");
+
+        /* Real history (opened_at, bucketed by week server-side), not
+           a decoration - eight weeks, oldest to newest. */
+        drawSparkline("kpi-ncr-spark",    summary.trends?.ncr);
+        drawSparkline("kpi-capa-spark",   summary.trends?.capa);
+        drawSparkline("kpi-audits-spark", summary.trends?.audit);
 
         /* ---- open events ----
            Five columns, not seven. Part, lot and quantity belong on the
