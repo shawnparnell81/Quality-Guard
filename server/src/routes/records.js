@@ -400,12 +400,27 @@ records.get("/:number/pdf", async (request, response, next) => {
    accepts without touching this file. */
 records.post("/", requirePermission(createPermissionFor), async (request, response, next) => {
     try {
-        const { type, title, owner, data = {}, severity = "ok", due_at } = request.body || {};
+        const { type, title, owner, data = {}, severity = "ok", due_at, idempotency_key } = request.body || {};
 
         if (!type || !title) {
             return response.status(400).json({
                 error: "type and title are required"
             });
+        }
+
+        /* A record queued offline and synced later carries a key it
+           generated at creation time, not at sync time. If that key is
+           already on a record in this org, the first attempt actually
+           landed and only the confirmation was lost - hand back what
+           already exists rather than raising a duplicate. */
+        if (idempotency_key) {
+            const existing = await query(
+                "select id, number, status from records where org_id = $1 and idempotency_key = $2",
+                [request.user.org_id, idempotency_key]
+            );
+            if (existing.rowCount > 0) {
+                return response.status(200).json(existing.rows[0]);
+            }
         }
 
         const dueAt = parseDueAt(due_at);
@@ -491,11 +506,12 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             const inserted = await client.query(`
                 insert into records
                     (org_id, record_type_id, number, title, status, severity,
-                     owner_id, data, form_version, created_by, due_at)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                     owner_id, data, form_version, created_by, due_at, idempotency_key)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 returning id, number, status
             `, [request.user.org_id, recordType.id, number, title, initialStatus,
-                severity, ownerId, data, formVersion, request.user.id, dueAt.value]);
+                severity, ownerId, data, formVersion, request.user.id, dueAt.value,
+                idempotency_key || null]);
 
             await client.query(`
                 insert into audit_log
@@ -504,7 +520,23 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             `, [request.user.org_id, inserted.rows[0].id, number, request.user.id]);
 
             return inserted.rows[0];
+        }).catch(async (error) => {
+            /* Lost a race to a concurrent identical retry - the unique
+               index caught what the check above could not. Hand back
+               the winner's record instead of failing the request. */
+            if (error.code === "23505" && idempotency_key) {
+                const winner = await query(
+                    "select id, number, status from records where org_id = $1 and idempotency_key = $2",
+                    [request.user.org_id, idempotency_key]
+                );
+                if (winner.rowCount > 0) return { row: winner.rows[0], alreadyExisted: true };
+            }
+            throw error;
         });
+
+        if (created.alreadyExisted) {
+            return response.status(200).json(created.row);
+        }
 
         response.status(201).json(created);
     } catch (error) {

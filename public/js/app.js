@@ -26,6 +26,7 @@ import {
 } from "./views/evaluate.js";
 import { renderForms, wireForms } from "./views/formbuilder.js";
 import { wireRecordEditor } from "./forms.js";
+import { renderFloorReport } from "./views/floorreport.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -40,6 +41,7 @@ const LOADERS = {
     ncr:         () => renderRegister("ncr"),
     capa:        () => renderRegister("capa"),
     complaints:  () => renderRegister("complaint"),
+    "floor-report": renderFloorReport,
     audit:       () => renderRegister("audit"),
     risk:        () => renderRegister("risk"),
     calibration: renderCalibration,
