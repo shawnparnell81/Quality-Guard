@@ -161,7 +161,20 @@ export function buildField(field, options, currentValue) {
         }));
     }
 
+    if (field.hint) appendHint(wrapper, field.hint);
+
     return { wrapper, input, field };
+}
+
+/* A form's own reference guidance, carried over verbatim rather than
+   dropped: the 8D workbook this mirrors put real instructional copy
+   next to several of its worksheets (what a "theory" is, how to
+   score one, the Kepner-Tregoe Givens/Wants definitions) - meant to
+   be read while filling the field in, not a data value itself. Any
+   field can carry one; every existing field.hint-shaped span already
+   used this same look and class. */
+function appendHint(wrapper, text) {
+    wrapper.append(el("span", { class: "field-hint", text }));
 }
 
 /* A "table" field: DFMEA, PFMEA, control plan, process flow diagram
@@ -259,6 +272,12 @@ function buildTableField(field, wrapper, currentValue) {
 
     if (Array.isArray(currentValue) && currentValue.length > 0) {
         currentValue.forEach((row) => addRow(row));
+    } else if (Array.isArray(field.defaultRows) && field.defaultRows.length > 0) {
+        /* A fixed starting framework (8D's ten Is/Is Not dimensions) -
+           only for a record that has no real saved data yet. Once a
+           row has actually been saved, that data is what loads here,
+           never the default again. */
+        field.defaultRows.forEach((row) => addRow(row));
     } else {
         addRow(null);
     }
@@ -267,6 +286,8 @@ function buildTableField(field, wrapper, currentValue) {
     addButton.addEventListener("click", () => addRow(null));
 
     wrapper.append(el("div", { class: "field-table-wrap table-wrap" }, table), addButton);
+
+    if (field.hint) appendHint(wrapper, field.hint);
 
     return { wrapper, input: table, field };
 }

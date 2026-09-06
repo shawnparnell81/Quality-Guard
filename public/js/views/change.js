@@ -13,6 +13,7 @@ import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind
 } from "../dom.js";
+import { DETAIL_FIELDS, renderTableValue } from "./events.js";
 
 /* ============================================================
    8D
@@ -110,25 +111,32 @@ async function renderEightDDetail(number) {
             ]);
         }));
 
-        /* ---- side panel: five why, links, and the next step ---- */
+        /* ---- side panel: the full workbook, links, and the next step ----
+           Every real field the 8D form defines - team, problem
+           statement, containment/root-cause/corrective-action tables,
+           the Is/Is Not analysis, the decision and risk-analysis
+           worksheets, the prevention plan - the same generic list
+           every other record type's detail panel already reads from
+           (events.js's DETAIL_FIELDS), not a hand-picked subset. The
+           d8-step rail above already shows which discipline this
+           investigation is on; this is what each one actually says. */
         const children = [];
 
-        const fiveWhy = record.data.five_why || [];
+        const list = el("dl", { class: "kv", style: "margin-top:0" });
+        let hasAnyField = false;
 
-        if (fiveWhy.length > 0) {
-            children.push(el("div", { class: "section-label", style: "margin-top:0", text: "Five why, D4" }));
+        for (const [label, read] of DETAIL_FIELDS) {
+            const value = read(record.data);
+            const empty = value === undefined || value === null || value === ""
+                || (Array.isArray(value) && value.length === 0);
+            if (empty) continue;
 
-            const list = el("dl", { class: "kv" });
-            fiveWhy.forEach((why, index) => {
-                list.append(el("dt", { text: "Why " + (index + 1) }));
-                list.append(el("dd", {
-                    class: index === fiveWhy.length - 1 ? "mono" : null,
-                    style: index === fiveWhy.length - 1 ? "color:var(--crit)" : null,
-                    text: why
-                }));
-            });
-            children.push(list);
+            hasAnyField = true;
+            list.append(el("dt", { text: label }));
+            list.append(el("dd", {}, Array.isArray(value) ? renderTableValue(value) : String(value)));
         }
+
+        if (hasAnyField) children.push(list);
 
         if (links.length > 0) {
             children.push(el("div", { class: "section-label", text: "Linked records" }));

@@ -516,7 +516,7 @@ export function wireRegisterClicks() {
    whatever the first row happens to have, on the assumption every
    row in one table shares the same shape, which every table this
    app writes (forms.js's buildTableField) already guarantees. */
-function renderTableValue(rows) {
+export function renderTableValue(rows) {
     const columns = Object.keys(rows[0] || {});
 
     return el("table", { class: "sm", style: "margin:4px 0" }, [
@@ -527,7 +527,7 @@ function renderTableValue(rows) {
     ]);
 }
 
-const DETAIL_FIELDS = [
+export const DETAIL_FIELDS = [
     ["Customer",              (d) => d.customer],
     ["Contact",               (d) => d.contact],
     ["Part",                  (d) => d.part_number],
@@ -587,7 +587,36 @@ const DETAIL_FIELDS = [
     ["Process Flow",          (d) => d.process_flow_table],
     ["Submitted date",        (d) => d.submitted_date],
     ["Submitted by",          (d) => d.submitted_by],
-    ["Customer disposition notes", (d) => d.customer_disposition]
+    ["Customer disposition notes", (d) => d.customer_disposition],
+
+    // 8D
+    ["Address",               (d) => d.address],
+    ["Location",              (d) => d.location],
+    ["Part No. / Code",       (d) => d.part_no_code],
+    ["Product Name",          (d) => d.product_name],
+    ["Customer Complaint No.", (d) => d.customer_complaint_no],
+    ["Initial Response",      (d) => d.initial_response_date],
+    ["Target Close Date",     (d) => d.target_close_date],
+    ["Revision Date(s)",      (d) => d.revision_dates],
+    ["8D Initiator",          (d) => d.initiator],
+    ["8D Initiator's Supervisor", (d) => d.initiator_supervisor],
+    ["Champion",              (d) => d.champion],
+    ["Team Leader",           (d) => d.team_leader],
+    ["Team Members",          (d) => d.team_members],
+    ["Problem Statement / Description", (d) => d.problem_statement],
+    ["Interim Containment Action(s) (ICA)", (d) => d.icas],
+    ["Verified Root Cause(s)", (d) => d.root_causes],
+    ["Is / Is Not Analysis",  (d) => d.is_is_not],
+    ["Change-How Theories",   (d) => d.theories],
+    ["Testing Possible Causes", (d) => d.testing_possible_causes_notes],
+    ["End Result",            (d) => d.decision_end_result],
+    ["Criteria and Choices",  (d) => d.decision_criteria],
+    ["Risk Analysis",         (d) => d.decision_risks],
+    ["Permanent Corrective Action(s) (PCA)", (d) => d.pcas],
+    ["Implement and Validate PCA", (d) => d.pca_implementation],
+    ["Systemic Prevention Actions", (d) => d.prevention_actions],
+    ["Plan and Problem Prevention Worksheet", (d) => d.prevention_plan],
+    ["Team and Individual Recognition", (d) => d.recognition]
 ];
 
 export async function renderRecordDetail(type, number) {
