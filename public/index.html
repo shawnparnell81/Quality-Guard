@@ -38,6 +38,7 @@
     <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count" data-nav-count="capa" hidden></span></button>
     <button class="nav-item" data-view="d8"><span>8D Investigations</span><span class="nav-count" data-nav-count="eightd" hidden></span></button>
     <button class="nav-item" data-view="complaints"><span>Customer Complaints</span><span class="nav-count" data-nav-count="complaint" hidden></span></button>
+    <button class="nav-item" data-view="floor-report"><span>Floor Report</span></button>
 
     <div class="nav-group">Control</div>
     <button class="nav-item" data-view="documents"><span>Document Control</span></button>
@@ -453,6 +454,23 @@
                 </div>
                 <div class="panel-body" id="complaint-detail"></div>
             </div>
+        </div>
+    </section>
+
+    <!-- ============ FLOOR REPORT ============
+         Built for a phone or a tablet at a workstation, not a desk -
+         big touch targets, barcode-scanner-friendly, works offline.
+         See public/js/offline-queue.js and views/floorreport.js. -->
+    <section class="view" id="view-floor-report" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Floor Report<span class="clause-ref">8.7</span></h1>
+            <p class="view-sub">Report a nonconformance from the floor. Scan a part or lot to fill it in - this keeps working without a connection and syncs automatically once one comes back.</p>
+        </div>
+
+        <p class="floor-status" id="floor-report-status" hidden></p>
+
+        <div class="panel floor-panel">
+            <div class="panel-body" id="floor-report-body"></div>
         </div>
     </section>
 

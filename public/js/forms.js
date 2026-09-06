@@ -39,7 +39,7 @@ export function ensureDialog() {
 /* currentValue is undefined when raising a new record, and whatever
    is already stored under field.key when editing one - the only
    difference between the two forms is which values arrive filled in. */
-function buildField(field, options, currentValue) {
+export function buildField(field, options, currentValue) {
     const id = "field-" + field.key;
     const wrapper = el("div", { class: "field-group" });
 
@@ -157,7 +157,7 @@ function describePattern(pattern) {
     return pattern;
 }
 
-function readValue(entry) {
+export function readValue(entry) {
     const raw = entry.input.value;
 
     if (raw === "" || raw === null) return undefined;
@@ -166,7 +166,7 @@ function readValue(entry) {
     return raw;
 }
 
-function validate(entries) {
+export function validate(entries) {
     const problems = [];
 
     for (const entry of entries) {
