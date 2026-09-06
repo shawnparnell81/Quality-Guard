@@ -1570,3 +1570,90 @@ th.col-you { color: var(--brand); }
 @media (max-width: 480px) {
     .content:has(.floor-panel) { padding: 16px; }
 }
+
+/* ---------- document viewer windows ----------
+   A real, if small, window manager: several can be open over
+   whatever screen is showing, each positioned and closed on its own.
+   #doc-windows itself is pointer-events:none so it never blocks a
+   click on the app underneath in the empty space around whatever
+   windows happen to be open - only the windows themselves, and their
+   contents, re-enable pointer events. */
+#doc-windows {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+}
+
+.doc-window {
+    position: absolute;
+    pointer-events: auto;
+    width: 460px;
+    max-width: calc(100vw - 32px);
+    height: 340px;
+    max-height: calc(100vh - 64px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.28);
+}
+
+.doc-window-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 8px 10px 14px;
+    border-bottom: 1px solid var(--hairline-2);
+    background: var(--surface-2);
+    cursor: move;
+    user-select: none;
+}
+
+.doc-window-title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.doc-window-close {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ink-2);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.doc-window-close:hover { background: var(--hairline-2); color: var(--crit); }
+
+.doc-window-body {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+}
+
+.doc-window-body iframe {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.doc-window-placeholder {
+    margin: auto;
+    padding: 24px;
+    text-align: center;
+    display: grid;
+    gap: 8px;
+    justify-items: center;
+}

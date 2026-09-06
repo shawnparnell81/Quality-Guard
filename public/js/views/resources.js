@@ -8,6 +8,7 @@
 import { api } from "../api.js";
 import { can, applyPermissions } from "../session.js";
 import { ensureDialog } from "../forms.js";
+import { openDocumentWindow } from "../doc-windows.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement, toast
 } from "../dom.js";
@@ -353,21 +354,24 @@ async function renderDocumentDetail(docNumber) {
     }
 }
 
-/* Download - the entire reason this app opens the real file instead
-   of an in-page editor - and Release, shown only on a revision still
-   waiting (no approved_by yet) and only to someone who can actually
-   do it. Uploading a revision was deliberately never enough to make
-   it current (see the upload endpoint's own comment); this is where
-   that finishes. */
+/* View - opens a real, trackable window for this revision
+   (doc-windows.js): a PDF or image shows right there, anything else
+   (Excel, Word) opens for real in its own application, same as
+   Download always did, but now something you can see is still open
+   rather than a link that fires once and leaves no trace. Release,
+   shown only on a revision still waiting (no approved_by yet) and
+   only to someone who can actually do it. Uploading a revision was
+   deliberately never enough to make it current (see the upload
+   endpoint's own comment); this is where that finishes. */
 function revisionActions(docNumber, row) {
     const nodes = [];
 
     if (row.has_file) {
-        nodes.push(el("a", {
-            class: "btn btn-xs no-print",
-            href: api.documentDownloadUrl(docNumber, row.revision),
-            text: "Download"
-        }));
+        const view = el("button", { class: "btn btn-xs no-print", type: "button", text: "View" });
+        view.addEventListener("click", () => {
+            openDocumentWindow(docNumber, row.revision, docNumber + " rev " + row.revision);
+        });
+        nodes.push(view);
     }
 
     if (!row.approved_by) {
@@ -597,19 +601,25 @@ export async function renderDocumentsPanel(recordNumber, containerId) {
             : documents.map((doc) => {
                 const [label, kind] = DOC_STATUS[doc.status] || ["Unknown", "hold"];
 
+                let action = el("span", { class: "sm dim", text: "No released revision yet" });
+
+                if (doc.current_revision) {
+                    action = el("button", {
+                        class: "btn btn-xs no-print", type: "button",
+                        text: "View " + doc.current_revision
+                    });
+                    action.addEventListener("click", () => {
+                        openDocumentWindow(doc.doc_number, doc.current_revision, doc.doc_number + " - " + doc.title);
+                    });
+                }
+
                 return el("div", { class: "row", style: "justify-content:space-between;gap:8px" }, [
                     el("div", {}, [
                         el("span", { class: "mono sm", text: doc.doc_number }),
                         el("span", { class: "sm", text: "  " + doc.title + "  " }),
                         pill(label, kind)
                     ]),
-                    doc.current_revision
-                        ? el("a", {
-                            class: "btn btn-xs no-print",
-                            href: api.documentDownloadUrl(doc.doc_number, "current"),
-                            text: "Download " + doc.current_revision
-                        })
-                        : el("span", { class: "sm dim", text: "No released revision yet" })
+                    action
                 ]);
             });
 

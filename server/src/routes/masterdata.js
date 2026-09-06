@@ -525,7 +525,7 @@ masterdata.get("/documents/:docNumber/revisions", async (request, response, next
     try {
         const result = await query(`
             select dr.revision, dr.change_summary, dr.effective_date, dr.created_at,
-                   dr.original_filename, (dr.storage_path is not null) as has_file,
+                   dr.original_filename, dr.mime_type, (dr.storage_path is not null) as has_file,
                    author.full_name   as author,
                    approver.full_name as approved_by
               from document_revisions dr
@@ -744,13 +744,31 @@ masterdata.post("/documents/:docNumber/revisions/:revision/release", async (requ
     }
 });
 
+/* A browser can only ever display a handful of formats on its own -
+   nothing renders an actual spreadsheet, but a PDF, an image, or
+   plain text/CSV all show natively. Everything else - Excel, Word -
+   is exactly as viewable as it ever was: opened in the real
+   application that made it, just downloaded through a real, tracked
+   window instead of a bare link. */
+function canRenderInline(mimeType) {
+    if (!mimeType) return false;
+    return mimeType === "application/pdf"
+        || mimeType.startsWith("image/")
+        || mimeType === "text/plain"
+        || mimeType === "text/csv";
+}
+
 /* GET /api/documents/FMEA-2026-0014/revisions/B/download
    GET /api/documents/FMEA-2026-0014/revisions/current/download
-   Streams the real file back - Excel, or the OS's own PDF viewer for
-   a PDF, and printing after that is just that application's own
-   print function. No extra permission beyond being signed in, the
-   same as the two read-only routes above already allow: viewing a
-   controlled document is not gated the way authoring one is. */
+   Streams the real file back. Content-Disposition depends on what
+   the browser can actually do with it: inline for the formats above,
+   so a document window's own <iframe> can show a PDF/image right on
+   the page - attachment for everything else, which is exactly what
+   makes clicking "Open" actually save-and-launch Excel/Word rather
+   than the browser trying and failing to display it. No extra
+   permission beyond being signed in, the same as the two read-only
+   routes above already allow: viewing a controlled document is not
+   gated the way authoring one is. */
 masterdata.get("/documents/:docNumber/revisions/:revision/download", async (request, response, next) => {
     try {
         const revisionKey = request.params.revision;
@@ -769,9 +787,10 @@ masterdata.get("/documents/:docNumber/revisions/:revision/download", async (requ
 
         const { original_filename, mime_type, storage_path } = result.rows[0];
         const buffer = await readDocumentFile(storage_path);
+        const disposition = canRenderInline(mime_type) ? "inline" : "attachment";
 
         response.setHeader("Content-Type", mime_type || "application/octet-stream");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + original_filename + "\"");
+        response.setHeader("Content-Disposition", disposition + "; filename=\"" + original_filename + "\"");
         response.send(buffer);
     } catch (error) {
         next(error);
