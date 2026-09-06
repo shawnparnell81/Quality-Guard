@@ -20,6 +20,16 @@ export const auth = Router();
 const MAX_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
 
+/* "Remember me" - a dev-only convenience, not meant to survive to a
+   real launch: a long-lived session instead of the usual 12 hours,
+   so sign-in doesn't have to happen over and over while building.
+   Never stores the password anywhere - still just an httpOnly
+   session cookie, still revocable the same way any session already
+   is (GET /auth/sessions, a password change). Ignored outside
+   development on purpose, so forgetting to remove the checkbox
+   before a real launch does not also forget to remove what it does. */
+const REMEMBER_ME_HOURS = 24 * 30;
+
 /* Logging a failure must never say which half was wrong. "No such
    account" tells an attacker the email is worth attacking; "wrong
    password" confirms an account exists. Both get the same sentence. */
@@ -41,7 +51,7 @@ async function recordAuthEvent(orgId, field, userId, detail) {
 /* POST /api/auth/login  { email, password } */
 auth.post("/login", async (request, response, next) => {
     try {
-        const { email, password } = request.body || {};
+        const { email, password, remember } = request.body || {};
 
         if (!email || !password) {
             return response.status(400).json({ error: "Email and password are required" });
@@ -110,13 +120,17 @@ auth.post("/login", async (request, response, next) => {
             return response.status(401).json({ error: REJECTED });
         }
 
+        const sessionHours = (remember && process.env.NODE_ENV !== "production")
+            ? REMEMBER_ME_HOURS
+            : SESSION_HOURS;
+
         /* Success. A fresh session id, and the counter reset. */
         const session = await withTransaction(async (client) => {
             const created = await client.query(`
                 insert into sessions (user_id, expires_at, ip, user_agent)
                 values ($1, now() + ($2 || ' hours')::interval, $3, $4)
                 returning id, expires_at
-            `, [user.id, String(SESSION_HOURS),
+            `, [user.id, String(sessionHours),
                 request.ip || null,
                 (request.get("user-agent") || "").slice(0, 300)]);
 
@@ -131,7 +145,7 @@ auth.post("/login", async (request, response, next) => {
 
         await recordAuthEvent(user.org_id, "login", user.id, null);
 
-        setSessionCookie(response, session.id);
+        setSessionCookie(response, session.id, sessionHours);
 
         response.json({
             name: user.full_name,

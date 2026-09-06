@@ -41,13 +41,13 @@ function readCookie(request, name) {
     return null;
 }
 
-export function setSessionCookie(response, sessionId) {
+export function setSessionCookie(response, sessionId, hours = SESSION_HOURS) {
     const parts = [
         SESSION_COOKIE + "=" + sessionId,
         "Path=/",
         "HttpOnly",                       /* JavaScript cannot read it, so XSS cannot steal it */
         "SameSite=Lax",                   /* not sent on cross-site POSTs, which blunts CSRF */
-        "Max-Age=" + SESSION_HOURS * 3600
+        "Max-Age=" + hours * 3600
     ];
 
     /* Secure would stop the cookie working over plain http in
