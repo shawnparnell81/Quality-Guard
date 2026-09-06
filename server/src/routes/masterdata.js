@@ -10,6 +10,7 @@
 import { Router } from "express";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
+import { scoredVendors } from "../vendor-scoring.js";
 
 export const masterdata = Router();
 
@@ -267,20 +268,20 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
     });
 
 /* ---------- vendors ---------- */
+/* ppm and grade are computed here, not read straight off the row -
+   see vendor-scoring.js for what "computed" actually means (real
+   receiving history where there is enough of it, the entered figure
+   otherwise, an open SCAR always capping the grade). */
 masterdata.get("/vendors", async (request, response, next) => {
     try {
-        const result = await query(`
-            select name, scope, cert_type, cert_expires,
-                   otd_pct, ppm, grade, status
-              from vendors
-             where org_id = $1
-             order by case status when 'scar_open' then 0
-                                  when 'on_watch'  then 1
-                                  else 2 end,
-                      name
-        `, [request.user.org_id]);
+        const vendors = await scoredVendors(request.user.org_id);
 
-        response.json({ count: result.rowCount, vendors: result.rows });
+        vendors.sort((a, b) => {
+            const rank = (v) => v.status === "scar_open" ? 0 : v.status === "on_watch" ? 1 : 2;
+            return rank(a) - rank(b) || a.name.localeCompare(b.name);
+        });
+
+        response.json({ count: vendors.length, vendors });
     } catch (error) {
         next(error);
     }
