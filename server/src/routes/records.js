@@ -68,6 +68,14 @@ function withComputedTopLevelRpn(typeKey, data) {
    (does it carry all three columns), not by which record type this
    is, so any current or future table field with these three column
    names benefits, not only apqp's. */
+/* Generalized for the closed-loop fmea table, which scores twice per
+   row: severity/occurrence/detection -> rpn before an action, and
+   result_severity/result_occurrence/result_detection -> result_rpn
+   after one. Detected by column-name prefix (everything before
+   "severity"/"occurrence"/"detection"), not hard-coded to those two
+   specific triplets, so a future table with its own differently-
+   prefixed S/O/D columns is picked up the same way with no change
+   here. */
 function withComputedTableRowRpn(data) {
     if (!data || typeof data !== "object") return data;
 
@@ -84,48 +92,32 @@ function withComputedTableRowRpn(data) {
         computed[key] = value.map((row) => {
             if (!row || typeof row !== "object") return row;
 
-            const [s, o, d] = [score(row.severity), score(row.occurrence), score(row.detection)];
-            if (s === null || o === null || d === null) return row;
+            let nextRow = row;
 
-            return { ...row, rpn: s * o * d };
+            for (const column of Object.keys(row)) {
+                if (!column.endsWith("severity")) continue;
+
+                const prefix = column.slice(0, column.length - "severity".length);
+                const [s, o, d] = [
+                    score(row[prefix + "severity"]),
+                    score(row[prefix + "occurrence"]),
+                    score(row[prefix + "detection"])
+                ];
+                if (s === null || o === null || d === null) continue;
+
+                if (nextRow === row) nextRow = { ...row };
+                nextRow[prefix + "rpn"] = s * o * d;
+            }
+
+            return nextRow;
         });
     }
 
     return computed;
 }
 
-/* "Highest RPN identified" used to be typed in by hand next to the
-   very table whose rows already say what it is - the same drift
-   every other hand-typed derived number in this app has already been
-   caught having (vendor ppm, quality-objective fill rates, receiving
-   sample sizes). Keyed by which table backs which summary field, so
-   this stays a plain, auditable mapping rather than a guess at every
-   array field's intent. A table with no scoreable rows yet leaves the
-   summary field exactly as entered - there is nothing to derive it
-   from until a row has all three scores. */
-const TABLE_RPN_SUMMARY_FIELDS = {
-    dfmea_table: "dfmea_highest_rpn",
-    pfmea_table: "pfmea_highest_rpn"
-};
-
-function withComputedTableSummaries(data) {
-    if (!data || typeof data !== "object") return data;
-
-    const computed = { ...data };
-
-    for (const [tableKey, summaryKey] of Object.entries(TABLE_RPN_SUMMARY_FIELDS)) {
-        const rows = computed[tableKey];
-        if (!Array.isArray(rows)) continue;
-
-        const rpns = rows.map((row) => row?.rpn).filter((value) => typeof value === "number");
-        if (rpns.length > 0) computed[summaryKey] = Math.max(...rpns);
-    }
-
-    return computed;
-}
-
 function withComputedRpn(typeKey, data) {
-    return withComputedTableSummaries(withComputedTableRowRpn(withComputedTopLevelRpn(typeKey, data)));
+    return withComputedTableRowRpn(withComputedTopLevelRpn(typeKey, data));
 }
 
 /* audit_log.old_value/new_value are text columns - every scalar field
@@ -172,6 +164,29 @@ async function hasAttachment(runQuery, recordId) {
     return found.rowCount > 0;
 }
 
+/* Every record_links row (child_of) pointing at this program whose
+   target is of the given type - optionally narrowed by a field on
+   that record's own data (e.g. discipline = "Design" picks out the
+   DFMEA among an APQP program's fmea children, discipline =
+   "Process" the PFMEA). Used by the phase gates below instead of a
+   flat status field: a linked fmea's own status (governed by its own
+   workflow and its own fmea.approve permission) is something nobody
+   can just type "Approved" into, unlike a select field on the
+   program itself ever was. */
+async function linkedRecordsOfType(runQuery, programId, typeKey, dataFilter) {
+    const result = await runQuery(`
+        select r.status, r.data
+          from record_links l
+          join records r      on r.id = l.to_record_id
+          join record_types rt on rt.id = r.record_type_id
+         where l.from_record_id = $1 and l.link_type = 'child_of' and rt.key = $2
+    `, [programId, typeKey]);
+
+    if (!dataFilter) return result.rows;
+    return result.rows.filter((row) =>
+        Object.entries(dataFilter).every(([key, value]) => row.data?.[key] === value));
+}
+
 /* IATF 16949 8.3.4: design and development planning must include
    reviews at planned stages, against defined exit criteria, before
    the next stage begins. An APQP program's five states are its five
@@ -185,61 +200,54 @@ async function hasAttachment(runQuery, recordId) {
 
    Keyed by the phase being left, not the one being entered - nothing
    gates draft -> plan_define, since Phase 1's own work has not
-   started yet. oneOf on a status field means "not started" or
-   "draft" does not count as done, even though the field itself is
-   non-empty. A criterion never names a "file"-type field: that field
-   type renders as a disabled placeholder in forms.js today (nothing
-   loads or saves a value for it, the same pre-existing gap NCR's own
-   "photos" field has) - a gate no real user could ever satisfy
-   through the app is worse than no gate. Where a deliverable's real
-   evidence matters, the criterion is the same hasAttachment() check
-   CAPA's own closure gate already uses, since that is the one
-   evidence mechanism that actually works end to end. */
-const APQP_PHASE_EXIT_CRITERIA = {
-    plan_define: [
-        { key: "voc_customer_requirements", label: "Voice of customer" },
-        { key: "feasibility_status", label: "Feasibility review", oneOf: ["Feasible", "Feasible with conditions"] },
-        { key: "program_risk_summary", label: "Risk assessment" },
-        { key: "charter_approved_by", label: "Program charter sign-off" }
-    ],
-    product_design: [
-        { key: "dfmea_status", label: "DFMEA", oneOf: ["Approved"] },
-        { key: "dfmea_approved_by", label: "DFMEA sign-off" },
-        { attachment: true, label: "Supporting evidence attached (drawing, DFMEA, or other design record)" }
-    ],
-    process_design: [
-        { key: "pfmea_status", label: "PFMEA", oneOf: ["Approved"] },
-        { key: "control_plan_status", label: "Control plan", oneOf: ["Approved"] },
-        { key: "control_plan_approved_by", label: "Control plan sign-off" }
-    ],
-    validation: [
-        { key: "psw_status", label: "PPAP / PSW status", oneOf: ["Approved", "Interim Approval"] },
-        { key: "run_at_rate_status", label: "Run-at-rate", oneOf: ["Passed"] }
-    ],
-    production: [
-        { key: "lessons_learned", label: "Lessons learned" },
-        { key: "launch_metrics_summary", label: "Launch metrics" }
-    ]
-};
-
+   started yet. DFMEA/PFMEA/control plan/PPAP are no longer flat
+   status fields on the program - each is checked by looking for a
+   real linked record of that type whose own workflow has actually
+   reached "approved" (or, for PPAP, "approved"/"interim_approval"),
+   the same real gate every other controlled document in this app
+   enforces through its own *.approve permission, not a dropdown
+   anyone with apqp.manage could set by hand. */
 async function apqpPhaseGaps(runQuery, fromState, data, recordId) {
-    const criteria = APQP_PHASE_EXIT_CRITERIA[fromState];
-    if (!criteria) return [];
-
     const gaps = [];
 
-    for (const criterion of criteria) {
-        if (criterion.attachment) {
-            if (!await hasAttachment(runQuery, recordId)) gaps.push(criterion.label);
-            continue;
+    if (fromState === "plan_define") {
+        if (!data?.voc_customer_requirements) gaps.push("Voice of customer");
+        if (!["Feasible", "Feasible with conditions"].includes(data?.feasibility_status)) {
+            gaps.push("Feasibility review");
         }
+        if (!data?.charter_approved_by) gaps.push("Program charter sign-off");
 
-        const value = data?.[criterion.key];
-        const empty = value === undefined || value === null || value === "";
+        const risks = await linkedRecordsOfType(runQuery, recordId, "risk");
+        if (risks.length === 0) gaps.push("Risk assessment (link at least one risk record)");
+    }
 
-        if (empty || (criterion.oneOf && !criterion.oneOf.includes(value))) {
-            gaps.push(criterion.label);
+    if (fromState === "product_design") {
+        const dfmeas = await linkedRecordsOfType(runQuery, recordId, "fmea", { discipline: "Design" });
+        if (!dfmeas.some((r) => r.status === "approved")) gaps.push("DFMEA approved");
+    }
+
+    if (fromState === "process_design") {
+        const pfmeas = await linkedRecordsOfType(runQuery, recordId, "fmea", { discipline: "Process" });
+        if (!pfmeas.some((r) => r.status === "approved")) gaps.push("PFMEA approved");
+
+        const controlPlans = await linkedRecordsOfType(runQuery, recordId, "control_plan");
+        if (!controlPlans.some((r) => r.status === "approved")) gaps.push("Control plan approved");
+    }
+
+    if (fromState === "validation") {
+        const ppaps = await linkedRecordsOfType(runQuery, recordId, "ppap");
+        if (!ppaps.some((r) => ["approved", "interim_approval"].includes(r.status))) {
+            gaps.push("PPAP approved");
         }
+        if (data?.run_at_rate_status !== "Passed") gaps.push("Run-at-rate");
+    }
+
+    if (fromState === "production") {
+        if (!data?.lessons_learned) gaps.push("Lessons learned");
+        if (!data?.launch_metrics_summary) gaps.push("Launch metrics");
+
+        const capas = await linkedRecordsOfType(runQuery, recordId, "capa");
+        if (capas.some((r) => r.status !== "closed")) gaps.push("All linked corrective actions closed");
     }
 
     return gaps;
@@ -1168,6 +1176,59 @@ records.post("/:number/attachments", async (request, response, next) => {
     }
 });
 
+/* ---------- links ----------
+   POST /api/records/APQP-2026-0002/links
+   { "to": "FMEA-2026-0014", "link_type": "child_of" }
+
+   record_links has existed since migration 004 (a complaint links to
+   its 8D) but nothing has ever been able to create one outside seed
+   data - every real feature that wants a real link (an APQP program
+   to its FMEA/control plan/process flow/PPAP, a new FMEA revision to
+   the one it supersedes, an 8D to the documents its D7 checklist
+   reviewed) needed this first. Both records must exist in the
+   caller's own org - link_type is exactly the set record_links'
+   own check constraint already allows, not a client-invented value. */
+const LINK_TYPES = new Set(["related", "caused_by", "corrects", "supersedes", "child_of"]);
+
+records.post("/:number/links", async (request, response, next) => {
+    try {
+        if (!request.user) return response.status(401).json({ error: "Not signed in" });
+
+        const { to, link_type = "related" } = request.body || {};
+        if (!to) return response.status(400).json({ error: "to is required" });
+        if (!LINK_TYPES.has(link_type)) {
+            return response.status(400).json({ error: "Unknown link_type: " + link_type });
+        }
+
+        const [fromResult, toResult] = await Promise.all([
+            query("select id, number from records where org_id = $1 and number = $2",
+                [request.user.org_id, request.params.number]),
+            query("select id, number from records where org_id = $1 and number = $2",
+                [request.user.org_id, to])
+        ]);
+
+        if (fromResult.rowCount === 0) return response.status(404).json({ error: "Record not found" });
+        if (toResult.rowCount === 0) return response.status(404).json({ error: "Linked record not found: " + to });
+
+        const fromRecord = fromResult.rows[0];
+        const toRecord = toResult.rows[0];
+
+        if (fromRecord.id === toRecord.id) {
+            return response.status(400).json({ error: "A record cannot link to itself" });
+        }
+
+        await query(`
+            insert into record_links (from_record_id, to_record_id, link_type)
+            values ($1, $2, $3)
+            on conflict (from_record_id, to_record_id, link_type) do nothing
+        `, [fromRecord.id, toRecord.id, link_type]);
+
+        response.status(201).json({ from: fromRecord.number, to: toRecord.number, link_type });
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- workflow transition ----------
    POST /api/records/NCR-2026-0142/transition
    { "to": "mrb", "actor": "MO" }
@@ -1189,7 +1250,7 @@ records.post("/:number/transition", async (request, response, next) => {
 
         const outcome = await withTransaction(async (client) => {
             const current = await client.query(`
-                select r.id, r.status, r.record_type_id, r.data, rt.key as type
+                select r.id, r.number, r.status, r.record_type_id, r.data, rt.key as type
                   from records r
                   join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
@@ -1321,6 +1382,58 @@ records.post("/:number/transition", async (request, response, next) => {
                      old_value, new_value, reason, changed_by)
                 values ($1, $2, 'records', $2, 'status', $3, $4, $5, $6)
             `, [request.user.org_id, record.id, record.status, to, reason || null, actorId]);
+
+            /* A new fmea/control_plan/process_flow revision being
+               approved is the moment the revision it supersedes stops
+               being the live one - not an edit to that older record
+               (nothing about what it said when it was approved
+               changes), a status the newer record's own approval
+               causes. No workflow_transitions row exists for
+               approved -> superseded on purpose: this is the only way
+               into it, never a move a user picks from a list. */
+            if (to === "approved" && ["fmea", "control_plan", "process_flow"].includes(record.type)) {
+                const superseded = await client.query(`
+                    select r.id, r.status
+                      from record_links l
+                      join records r on r.id = l.to_record_id
+                     where l.from_record_id = $1 and l.link_type = 'supersedes'
+                `, [record.id]);
+
+                for (const old of superseded.rows) {
+                    if (old.status !== "superseded") {
+                        await client.query(
+                            "update records set status = 'superseded', closed_at = coalesce(closed_at, now()) where id = $1",
+                            [old.id]
+                        );
+                        await client.query(`
+                            insert into audit_log
+                                (org_id, record_id, entity, entity_id, field,
+                                 old_value, new_value, reason, changed_by)
+                            values ($1, $2, 'records', $2, 'status', $3, 'superseded', $4, $5)
+                        `, [request.user.org_id, old.id, old.status,
+                            "Superseded by " + record.number + "'s approval", actorId]);
+                    }
+
+                    /* Whatever the old revision was a child_of (an APQP
+                       program, most often) the new one now stands in
+                       for - carried forward automatically rather than
+                       relying on whoever approves a revision to
+                       remember a second link, or a phase gate quietly
+                       losing track of "the approved DFMEA" the moment
+                       a revision replaces the one it originally found. */
+                    const parents = await client.query(
+                        "select from_record_id from record_links where to_record_id = $1 and link_type = 'child_of'",
+                        [old.id]
+                    );
+                    for (const parent of parents.rows) {
+                        await client.query(`
+                            insert into record_links (from_record_id, to_record_id, link_type)
+                            values ($1, $2, 'child_of')
+                            on conflict (from_record_id, to_record_id, link_type) do nothing
+                        `, [parent.from_record_id, record.id]);
+                    }
+                }
+            }
 
             return { code: 200, body: moved.rows[0] };
         });

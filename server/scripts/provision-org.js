@@ -74,19 +74,21 @@ const GRANTS = {
         "production.read", "production.hold", "shipping.read",
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "risk.read", "risk.manage",
-        "vendor.read", "scar.issue", "apqp.manage", "receiving.log"],
+        "vendor.read", "scar.issue", "apqp.manage", "receiving.log",
+        "fmea.create", "control_plan.create", "process_flow.create", "ppap.create"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
         "document.read", "document.create",
         "drawing.read", "drawing.create", "drawing.edit",
-        "change.create", "production.read", "training.read"],
+        "change.create", "production.read", "training.read", "fmea.create"],
 
     manufacturing_engineer: [
         "ncr.read", "ncr.create", "capa.read", "capa.create",
         "document.read", "document.create", "drawing.read",
         "change.create", "production.read", "production.hold", "production.release",
-        "gage.read", "training.read", "training.record", "apqp.manage"],
+        "gage.read", "training.read", "training.record", "apqp.manage",
+        "fmea.create", "control_plan.create", "process_flow.create"],
 
     document_controller: [
         "ncr.read", "document.read", "document.create", "document.approve",
@@ -111,7 +113,9 @@ const GRANTS = {
         "drawing.read", "drawing.create", "drawing.edit", "drawing.release",
         "change.create", "change.approve",
         "production.read", "production.release", "training.read",
-        "audit.read", "risk.read", "risk.manage", "user.read", "apqp.manage"],
+        "audit.read", "risk.read", "risk.manage", "user.read", "apqp.manage",
+        "fmea.create", "fmea.approve", "control_plan.create", "control_plan.approve",
+        "process_flow.create", "process_flow.approve", "ppap.approve"],
 
     quality_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "ncr.use_as_is",
@@ -126,7 +130,9 @@ const GRANTS = {
         "gage.read", "gage.calibrate", "gage.retire",
         "training.read", "training.record",
         "audit.read", "audit.schedule", "audit.close",
-        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log"]
+        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
+        "fmea.create", "fmea.approve", "control_plan.create", "control_plan.approve",
+        "process_flow.create", "process_flow.approve", "ppap.create", "ppap.approve"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
@@ -149,8 +155,24 @@ const RECORD_TYPES = [
     { key: "audit",     name: "Internal Audit",      prefix: "AUD",  clause: "9.2" },
     { key: "ecn",       name: "Engineering Change",  prefix: "ECN",  clause: "8.5.6" },
     { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" },
-    { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" }
+    { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" },
+    { key: "fmea",         name: "FMEA",                 prefix: "FMEA", clause: "8.3.4" },
+    { key: "control_plan", name: "Control Plan",         prefix: "CP",   clause: "8.5.1.1" },
+    { key: "process_flow", name: "Process Flow Diagram", prefix: "PFD",  clause: "8.3.4" },
+    { key: "ppap",         name: "PPAP Submission",      prefix: "PPAP", clause: "8.3.4.4" }
 ];
+
+const FMEA_LIKE_STATES = [
+    ["draft", "Draft", 1, false], ["in_review", "In Review", 2, false],
+    ["approved", "Approved", 3, true], ["superseded", "Superseded", 4, true]
+];
+
+function fmeaLikeTransitions(typeKey) {
+    return [
+        ["draft", "in_review", typeKey + ".create"],
+        ["in_review", "approved", typeKey + ".approve"]
+    ];
+}
 
 const WORKFLOWS = {
     ncr: {
@@ -269,6 +291,30 @@ const WORKFLOWS = {
             ["validation", "production", "apqp.manage"],
             ["production", "closed", "apqp.manage"]
         ]
+    },
+    /* fmea/control_plan/process_flow share one shape: a real sign-off
+       (the *.approve permission on in_review -> approved) separate
+       from *.create, and a named "superseded" state reached only as
+       the side effect of a newer revision's own approval (records.js)
+       - never a move offered through this table, so it carries no
+       transition into it here. */
+    fmea:         { states: FMEA_LIKE_STATES, transitions: fmeaLikeTransitions("fmea") },
+    control_plan: { states: FMEA_LIKE_STATES, transitions: fmeaLikeTransitions("control_plan") },
+    process_flow: { states: FMEA_LIKE_STATES, transitions: fmeaLikeTransitions("process_flow") },
+    ppap: {
+        states: [
+            ["draft", "Draft", 1, false], ["submitted", "Submitted", 2, false],
+            ["interim_approval", "Interim Approval", 3, false],
+            ["approved", "Approved", 4, true], ["rejected", "Rejected", 5, true]
+        ],
+        transitions: [
+            ["draft", "submitted", "ppap.create"],
+            ["submitted", "interim_approval", "ppap.approve"],
+            ["submitted", "approved", "ppap.approve"],
+            ["submitted", "rejected", "ppap.approve"],
+            ["interim_approval", "approved", "ppap.approve"],
+            ["interim_approval", "rejected", "ppap.approve"]
+        ]
     }
 };
 
@@ -339,6 +385,90 @@ const FORMS = {
           options: ["Not submitted", "Submitted", "Interim Approval", "Approved", "Rejected"] },
         { key: "program_risk_summary", label: "Top program risks",           type: "memo" },
         { key: "lessons_learned",      label: "Lessons learned",             type: "memo" }
+    ],
+    /* fmea/control_plan/process_flow's columns are copied from the
+       org's own real templates (fmea.xlsx, Control-Plan-.xlsx,
+       Process-Flow-Diagram.xlsx), the same fields migration
+       023_fmea_control_plan_process_flow_ppap.sql publishes for
+       existing orgs - kept identical here so a newly-provisioned org
+       starts on the same form, not the generic AIAG guess this
+       project used before those templates existed. */
+    fmea: [
+        { key: "discipline", label: "Discipline", type: "select", required: true, options: ["Design", "Process"] },
+        { key: "process_product_name", label: "Process / Product Name", type: "text", required: true },
+        { key: "responsible", label: "Responsible", type: "user" },
+        { key: "prepared_by", label: "Prepared By", type: "signature" },
+        { key: "fmea_date", label: "FMEA Date (Orig.)", type: "date" },
+        { key: "revision", label: "Rev.", type: "text" },
+        { key: "fmea_table", label: "FMEA", type: "table", columns: [
+            { key: "process_step", label: "Process Step / Input", type: "text", width: 62 },
+            { key: "failure_mode", label: "Potential Failure Mode", type: "text", width: 55 },
+            { key: "effect", label: "Potential Failure Effects", type: "text", width: 55 },
+            { key: "severity", label: "Severity", type: "number", width: 28 },
+            { key: "cause", label: "Potential Causes", type: "text", width: 55 },
+            { key: "occurrence", label: "Occurrence", type: "number", width: 28 },
+            { key: "current_controls", label: "Current Controls", type: "text", width: 55 },
+            { key: "detection", label: "Detection", type: "number", width: 28 },
+            { key: "rpn", label: "RPN", type: "number", width: 26 },
+            { key: "action_recommended", label: "Action Recommended", type: "text", width: 55 },
+            { key: "responsible", label: "Resp.", type: "text", width: 40 },
+            { key: "actions_taken", label: "Actions Taken", type: "text", width: 55 },
+            { key: "result_severity", label: "Severity (Result)", type: "number", width: 28 },
+            { key: "result_occurrence", label: "Occurrence (Result)", type: "number", width: 28 },
+            { key: "result_detection", label: "Detection (Result)", type: "number", width: 28 },
+            { key: "result_rpn", label: "RPN (Result)", type: "number", width: 28 }
+        ] }
+    ],
+    control_plan: [
+        { key: "process", label: "Process", type: "text", required: true },
+        { key: "customer", label: "Customer", type: "text" },
+        { key: "stakeholder", label: "Stakeholder", type: "text" },
+        { key: "business", label: "Business", type: "text" },
+        { key: "preparer", label: "Preparer", type: "user" },
+        { key: "email", label: "Email", type: "text" },
+        { key: "phone", label: "Phone", type: "text" },
+        { key: "owner", label: "Owner", type: "user" },
+        { key: "reference_no", label: "Reference No.", type: "text" },
+        { key: "revision_date", label: "Revision Date", type: "date" },
+        { key: "approval", label: "Approval", type: "signature" },
+        { key: "control_plan_table", label: "Control Plan", type: "table", columns: [
+            { key: "process", label: "Process", type: "text", width: 60 },
+            { key: "process_step", label: "Process Step", type: "text", width: 60 },
+            { key: "ctq_metric", label: "CTQ / Metric", type: "text", width: 55 },
+            { key: "spec_lsl", label: "Spec. LSL", type: "text", width: 40 },
+            { key: "spec_usl", label: "Spec. USL", type: "text", width: 40 },
+            { key: "measurement_method", label: "Measurement Method", type: "text", width: 60 },
+            { key: "sample_size", label: "Sample Size", type: "text", width: 40 },
+            { key: "measure_frequency", label: "Measure Frequency", type: "text", width: 50 },
+            { key: "responsible_metric", label: "Responsible for Metric", type: "text", width: 55 },
+            { key: "corrective_action", label: "Corrective Action", type: "text", width: 60 },
+            { key: "responsible_action", label: "Responsible for Action", type: "text", width: 55 }
+        ] }
+    ],
+    process_flow: [
+        { key: "part_numbers", label: "Part Number/s", type: "text", required: true },
+        { key: "part_family_description", label: "Part / Family Description", type: "text" },
+        { key: "prepared_by", label: "Prepared By", type: "user" },
+        { key: "date", label: "Date", type: "date" },
+        { key: "eng_change_level", label: "Eng. Change Level", type: "text" },
+        { key: "process_flow_table", label: "Process Flow", type: "table", columns: [
+            { key: "step", label: "Step", type: "number", width: 35 },
+            { key: "operation_type", label: "Operation Type", type: "text", width: 90 },
+            { key: "operation_description", label: "Operation Description", type: "text", width: 110 },
+            { key: "key_product_characteristics", label: "Key Product Characteristics (Outputs)", type: "text", width: 110 },
+            { key: "key_control_characteristics", label: "Key Control Characteristics (Inputs)", type: "text", width: 110 },
+            { key: "control_methods", label: "Control Methods", type: "text", width: 105 }
+        ] }
+    ],
+    ppap: [
+        { key: "customer", label: "Customer", type: "text", required: true },
+        { key: "part_number", label: "Part number", type: "text" },
+        { key: "ppap_level", label: "PPAP submission level", type: "select",
+          options: ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] },
+        { key: "submitted_date", label: "Submitted date", type: "date" },
+        { key: "submitted_by", label: "Submitted by", type: "signature" },
+        { key: "customer_disposition", label: "Customer disposition notes", type: "memo" },
+        { key: "evidence", label: "PSW / package evidence", type: "file" }
     ]
 };
 

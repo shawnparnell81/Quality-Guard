@@ -137,7 +137,52 @@ const REGISTERS = {
             { className: "sm", render: (row) => row.title },
             { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
             { className: "mono sm", render: (row) => formatDate(row.data.target_sop) },
-            { className: "sm dim", render: (row) => row.data.psw_status || "-" },
+            statusColumn
+        ]
+    },
+
+    fmea: {
+        tbody: "fmea-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.discipline || "-" },
+            { className: "sm", render: (row) => row.data.process_product_name || row.title },
+            { className: "mono sm", render: (row) => row.data.revision || "-" },
+            { className: "sm dim", render: (row) => row.data.responsible || "-" },
+            statusColumn
+        ]
+    },
+
+    control_plan: {
+        tbody: "control_plan-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.process || row.title },
+            { className: "sm dim", render: (row) => row.data.customer || "-" },
+            { className: "mono sm", render: (row) => formatDate(row.data.revision_date) },
+            statusColumn
+        ]
+    },
+
+    process_flow: {
+        tbody: "process_flow-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.part_numbers || row.title },
+            { className: "sm dim", render: (row) => row.data.part_family_description || "-" },
+            { className: "mono sm", render: (row) => formatDate(row.data.date) },
+            statusColumn
+        ]
+    },
+
+    ppap: {
+        tbody: "ppap-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.customer || "-" },
+            { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
+            { className: "sm dim", render: (row) => row.data.ppap_level || "-" },
+            { className: "mono sm", render: (row) => formatDate(row.data.submitted_date) },
             statusColumn
         ]
     }
@@ -460,6 +505,28 @@ export function wireRegisterClicks() {
 
 /* ---------- detail panel ---------- */
 
+/* A "table" field's value in the read-only detail view - the editor
+   (forms.js buildTableField) and the PDF (records.js drawTableField)
+   both already know the field's real column labels from the schema;
+   this generic dl/dt/dd view only ever gets the bare row data
+   (DETAIL_FIELDS is a flat accessor list, not schema-aware), so
+   column headers here are humanized keys, not the precise label a
+   record's own form defines - close enough for a glance, not a
+   replacement for opening the record to edit it. Column order is
+   whatever the first row happens to have, on the assumption every
+   row in one table shares the same shape, which every table this
+   app writes (forms.js's buildTableField) already guarantees. */
+function renderTableValue(rows) {
+    const columns = Object.keys(rows[0] || {});
+
+    return el("table", { class: "sm", style: "margin:4px 0" }, [
+        el("thead", {}, el("tr", {}, columns.map((key) => el("th", { text: humanize(key) })))),
+        el("tbody", {}, rows.map((row) => el("tr", {},
+            columns.map((key) => el("td", { text: row[key] ?? "" }))
+        )))
+    ]);
+}
+
 const DETAIL_FIELDS = [
     ["Customer",              (d) => d.customer],
     ["Contact",               (d) => d.contact],
@@ -493,7 +560,34 @@ const DETAIL_FIELDS = [
     ["PPAP level",            (d) => d.ppap_level],
     ["PSW status",            (d) => d.psw_status],
     ["Top program risks",     (d) => d.program_risk_summary],
-    ["Lessons learned",       (d) => d.lessons_learned]
+    ["Lessons learned",       (d) => d.lessons_learned],
+
+    // fmea / control_plan / process_flow / ppap
+    ["Discipline",            (d) => d.discipline],
+    ["Process / Product Name", (d) => d.process_product_name],
+    ["Responsible",           (d) => d.responsible],
+    ["Prepared By",           (d) => d.prepared_by],
+    ["FMEA Date (Orig.)",     (d) => d.fmea_date],
+    ["Rev.",                  (d) => d.revision],
+    ["FMEA",                  (d) => d.fmea_table],
+    ["Stakeholder",           (d) => d.stakeholder],
+    ["Business",              (d) => d.business],
+    ["Preparer",              (d) => d.preparer],
+    ["Email",                 (d) => d.email],
+    ["Phone",                 (d) => d.phone],
+    ["Owner",                 (d) => d.owner],
+    ["Reference No.",         (d) => d.reference_no],
+    ["Revision Date",         (d) => d.revision_date],
+    ["Approval",              (d) => d.approval],
+    ["Control Plan",          (d) => d.control_plan_table],
+    ["Part Number/s",         (d) => d.part_numbers],
+    ["Part / Family Description", (d) => d.part_family_description],
+    ["Date",                  (d) => d.date],
+    ["Eng. Change Level",     (d) => d.eng_change_level],
+    ["Process Flow",          (d) => d.process_flow_table],
+    ["Submitted date",        (d) => d.submitted_date],
+    ["Submitted by",          (d) => d.submitted_by],
+    ["Customer disposition notes", (d) => d.customer_disposition]
 ];
 
 export async function renderRecordDetail(type, number) {
@@ -571,14 +665,15 @@ export async function renderRecordDetail(type, number) {
 
         for (const [label, read] of DETAIL_FIELDS) {
             const value = read(record.data);
-            if (value === undefined || value === null || value === "") continue;
+            const empty = value === undefined || value === null || value === ""
+                || (Array.isArray(value) && value.length === 0);
+            if (empty) continue;
 
             list.append(el("dt", { text: label }));
             list.append(el("dd", {
                 class: label === "Measured" ? "mono" : null,
-                style: label === "Measured" ? "color:var(--crit)" : null,
-                text: String(value)
-            }));
+                style: label === "Measured" ? "color:var(--crit)" : null
+            }, Array.isArray(value) ? renderTableValue(value) : String(value)));
         }
 
         const children = [list];

@@ -35,6 +35,10 @@
 
     <div class="nav-group">Programs</div>
     <button class="nav-item" data-view="apqp"><span>APQP Programs</span><span class="nav-count" data-nav-count="apqp" hidden></span></button>
+    <button class="nav-item" data-view="fmea"><span>FMEA</span><span class="nav-count" data-nav-count="fmea" hidden></span></button>
+    <button class="nav-item" data-view="control_plan"><span>Control Plans</span><span class="nav-count" data-nav-count="control_plan" hidden></span></button>
+    <button class="nav-item" data-view="process_flow"><span>Process Flow Diagrams</span><span class="nav-count" data-nav-count="process_flow" hidden></span></button>
+    <button class="nav-item" data-view="ppap"><span>PPAP Submissions</span><span class="nav-count" data-nav-count="ppap" hidden></span></button>
 
     <div class="nav-group">Quality Events</div>
     <button class="nav-item" data-view="ncr"><span>Nonconformance</span><span class="nav-count hot" data-nav-count="ncr" hidden></span></button>
@@ -1044,7 +1048,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Program</th><th>Customer</th><th>Name</th><th>Part</th><th>Target SOP</th><th>PSW</th><th>Phase</th></tr></thead>
+                    <thead><tr><th>Program</th><th>Customer</th><th>Name</th><th>Part</th><th>Target SOP</th><th>Phase</th></tr></thead>
                     <tbody id="apqp-register"></tbody>
                 </table>
             </div>
@@ -1059,6 +1063,142 @@
                     <button type="button" class="btn no-print" id="apqp-pdf">PDF</button>
                 </div>
                 <div class="panel-body" id="apqp-detail"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ FMEA ============ -->
+    <section class="view" id="view-fmea" hidden>
+        <div class="view-head">
+            <h1 class="view-title">FMEA<span class="clause-ref">8.3.4</span></h1>
+            <p class="view-sub">Design and process failure mode and effects analysis. One discipline, one form, one real sign-off &mdash; RPN is always computed from severity &times; occurrence &times; detection, never hand-typed.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">FMEAs</h2>
+                <button class="btn btn-primary" data-requires="fmea.create" data-new-record="fmea">New FMEA</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>FMEA</th><th>Discipline</th><th>Process / Product</th><th>Rev.</th><th>Responsible</th><th>Status</th></tr></thead>
+                    <tbody id="fmea-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel" id="fmea-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="fmea-detail-number">Select an FMEA</h2>
+                    <span id="fmea-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="fmea-edit" data-edit-record="fmea">Edit</button>
+                    <button type="button" class="btn no-print" id="fmea-print">Print</button>
+                    <button type="button" class="btn no-print" id="fmea-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="fmea-detail"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ CONTROL PLAN ============ -->
+    <section class="view" id="view-control_plan" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Control Plans<span class="clause-ref">8.5.1.1</span></h1>
+            <p class="view-sub">The document a shop-floor audit asks for first. Real revision history: a new control plan supersedes the one it replaces rather than editing it in place.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">Control Plans</h2>
+                <button class="btn btn-primary" data-requires="control_plan.create" data-new-record="control_plan">New Control Plan</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Control Plan</th><th>Process</th><th>Customer</th><th>Revision Date</th><th>Status</th></tr></thead>
+                    <tbody id="control_plan-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel" id="control_plan-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="control_plan-detail-number">Select a control plan</h2>
+                    <span id="control_plan-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="control_plan-edit" data-edit-record="control_plan">Edit</button>
+                    <button type="button" class="btn no-print" id="control_plan-print">Print</button>
+                    <button type="button" class="btn no-print" id="control_plan-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="control_plan-detail"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ PROCESS FLOW DIAGRAM ============ -->
+    <section class="view" id="view-process_flow" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Process Flow Diagrams<span class="clause-ref">8.3.4</span></h1>
+            <p class="view-sub">The step-by-step map a PFMEA and Control Plan are both built from.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">Process Flow Diagrams</h2>
+                <button class="btn btn-primary" data-requires="process_flow.create" data-new-record="process_flow">New Process Flow Diagram</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>PFD</th><th>Part Number/s</th><th>Description</th><th>Date</th><th>Status</th></tr></thead>
+                    <tbody id="process_flow-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel" id="process_flow-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="process_flow-detail-number">Select a process flow diagram</h2>
+                    <span id="process_flow-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="process_flow-edit" data-edit-record="process_flow">Edit</button>
+                    <button type="button" class="btn no-print" id="process_flow-print">Print</button>
+                    <button type="button" class="btn no-print" id="process_flow-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="process_flow-detail"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ PPAP ============ -->
+    <section class="view" id="view-ppap" hidden>
+        <div class="view-head">
+            <h1 class="view-title">PPAP Submissions<span class="clause-ref">8.3.4.4</span></h1>
+            <p class="view-sub">Bundles the specific approved FMEA, Control Plan and Process Flow revisions being submitted &mdash; see Linked records on each submission below.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">PPAP Submissions</h2>
+                <button class="btn btn-primary" data-requires="ppap.create" data-new-record="ppap">New PPAP Submission</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>PPAP</th><th>Customer</th><th>Part</th><th>Level</th><th>Submitted</th><th>Status</th></tr></thead>
+                    <tbody id="ppap-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel" id="ppap-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="ppap-detail-number">Select a PPAP submission</h2>
+                    <span id="ppap-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="ppap-edit" data-edit-record="ppap">Edit</button>
+                    <button type="button" class="btn no-print" id="ppap-print">Print</button>
+                    <button type="button" class="btn no-print" id="ppap-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="ppap-detail"></div>
             </div>
         </div>
     </section>

@@ -189,26 +189,37 @@ export function requirePermission(keyOrResolver) {
 
 /* Which permission a record type needs before someone may raise one. */
 const CREATE_PERMISSION = {
-    ncr:       "ncr.create",
-    capa:      "capa.create",
-    complaint: "complaint.create",
-    scar:      "scar.issue",
-    audit:     "audit.schedule",
-    risk:      "risk.manage",
-    eightd:    "capa.create",
-    ecn:       "change.create",
-    apqp:      "apqp.manage"
+    ncr:          "ncr.create",
+    capa:         "capa.create",
+    complaint:    "complaint.create",
+    scar:         "scar.issue",
+    audit:        "audit.schedule",
+    risk:         "risk.manage",
+    eightd:       "capa.create",
+    ecn:          "change.create",
+    apqp:         "apqp.manage",
+    fmea:         "fmea.create",
+    control_plan: "control_plan.create",
+    process_flow: "process_flow.create",
+    ppap:         "ppap.create"
 };
 
 export function createPermissionFor(request) {
     return CREATE_PERMISSION[request.body?.type] || null;
 }
 
-/* Closing a record is a different authority from opening one. */
+/* Closing a record is a different authority from opening one - true here
+   more than anywhere else: fmea/control_plan/process_flow/ppap's whole
+   point is that *.approve is a real sign-off nobody can grant themselves
+   just by holding *.create. */
 const CLOSE_PERMISSION = {
-    ncr:   "ncr.close",
-    capa:  "capa.close",
-    audit: "audit.close"
+    ncr:          "ncr.close",
+    capa:         "capa.close",
+    audit:        "audit.close",
+    fmea:         "fmea.approve",
+    control_plan: "control_plan.approve",
+    process_flow: "process_flow.approve",
+    ppap:         "ppap.approve"
 };
 
 export function closePermissionFor(type) {

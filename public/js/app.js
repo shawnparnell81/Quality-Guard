@@ -45,6 +45,10 @@ const LOADERS = {
     audit:       () => renderRegister("audit"),
     risk:        () => renderRegister("risk"),
     apqp:        () => renderRegister("apqp"),
+    fmea:         () => renderRegister("fmea"),
+    control_plan: () => renderRegister("control_plan"),
+    process_flow: () => renderRegister("process_flow"),
+    ppap:         () => renderRegister("ppap"),
     calibration: renderCalibration,
     training:    renderTraining,
     documents:   renderDocuments,
@@ -232,6 +236,10 @@ async function updateNavCounts() {
             ecn: summary.events.ecn?.open,
             audit: summary.events.audit?.overdue,
             apqp: summary.events.apqp?.open,
+            fmea: summary.events.fmea?.open,
+            control_plan: summary.events.control_plan?.open,
+            process_flow: summary.events.process_flow?.open,
+            ppap: summary.events.ppap?.open,
             calibration_due: summary.calibration?.due_soon
         };
 
