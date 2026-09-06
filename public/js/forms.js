@@ -142,6 +142,9 @@ export function buildField(field, options, currentValue) {
             }));
             return { wrapper, input, field };
 
+        case "table":
+            return buildTableField(field, wrapper, currentValue);
+
         default:
             input = el("input", { type: "text", id, name: field.key, value: currentValue ?? "" });
             if (field.pattern) input.pattern = field.pattern;
@@ -161,6 +164,140 @@ export function buildField(field, options, currentValue) {
     return { wrapper, input, field };
 }
 
+/* A "table" field: DFMEA, PFMEA, control plan, process flow diagram
+   - a real repeating-row grid instead of a memo standing in for one.
+   currentValue, when present, is the array of row objects already
+   stored under field.key; a brand-new record starts with one blank
+   row rather than none, so the table is never presented empty with
+   no visible way to begin.
+
+   The row-building logic lives here rather than being spread across
+   readValue/validate: a table field's "input" is the whole <table>,
+   not one control, so those two functions special-case field.type
+   === "table" and call back into rowsFrom() below instead of reading
+   a single element's .value. */
+function buildTableField(field, wrapper, currentValue) {
+    const columns = field.columns || [];
+    const table = el("table", { class: "field-table" });
+    const tbody = el("tbody");
+
+    table.append(
+        el("thead", {}, el("tr", {}, [
+            ...columns.map((column) => el("th", { text: column.label })),
+            el("th", { text: "" })
+        ])),
+        tbody
+    );
+
+    /* Severity x occurrence x detection = RPN is exactly the
+       computation already made real for the Risk record type
+       (withComputedRpn, server-side) - mirrored here only so a row
+       being typed shows its own number back immediately. The server
+       recomputes it again on save regardless, so a value typed
+       directly into a "computed" column here never actually sticks;
+       nothing but that recalculation is authoritative. */
+    function recomputeRpn(tr) {
+        const rpnInput = tr.querySelector('input[data-col="rpn"]');
+        if (!rpnInput) return;
+
+        const read = (key) => {
+            const cell = tr.querySelector('input[data-col="' + key + '"]');
+            const n = cell ? Number(cell.value) : NaN;
+            return Number.isFinite(n) && n >= 1 && n <= 10 ? n : null;
+        };
+
+        const [s, o, d] = [read("severity"), read("occurrence"), read("detection")];
+        rpnInput.value = (s !== null && o !== null && d !== null) ? String(s * o * d) : "";
+    }
+
+    function addRow(initial) {
+        const tr = el("tr");
+
+        for (const column of columns) {
+            const raw = initial ? initial[column.key] : undefined;
+            const computed = column.key === "rpn"
+                && columns.some((c) => c.key === "severity")
+                && columns.some((c) => c.key === "occurrence")
+                && columns.some((c) => c.key === "detection");
+
+            let cellInput;
+            if (column.type === "number") {
+                cellInput = el("input", {
+                    type: "number", step: "any", "data-col": column.key,
+                    value: raw ?? ""
+                });
+            } else if (column.type === "date") {
+                cellInput = el("input", {
+                    type: "date", "data-col": column.key,
+                    value: raw ? String(raw).slice(0, 10) : ""
+                });
+            } else {
+                cellInput = el("input", { type: "text", "data-col": column.key, value: raw ?? "" });
+            }
+
+            if (computed) {
+                cellInput.readOnly = true;
+                cellInput.classList.add("readonly");
+                cellInput.title = "Severity x occurrence x detection - recalculated on save";
+            } else {
+                cellInput.addEventListener("input", () => recomputeRpn(tr));
+            }
+
+            tr.append(el("td", {}, cellInput));
+        }
+
+        const remove = el("button", { type: "button", class: "btn btn-xs btn-danger", text: "Remove" });
+        remove.addEventListener("click", () => {
+            tr.remove();
+            if (tbody.children.length === 0) addRow(null);
+        });
+        tr.append(el("td", { class: "table-row-remove" }, remove));
+
+        tbody.append(tr);
+        recomputeRpn(tr);
+    }
+
+    if (Array.isArray(currentValue) && currentValue.length > 0) {
+        currentValue.forEach((row) => addRow(row));
+    } else {
+        addRow(null);
+    }
+
+    const addButton = el("button", { type: "button", class: "btn btn-xs", text: "+ Add row" });
+    addButton.addEventListener("click", () => addRow(null));
+
+    wrapper.append(el("div", { class: "field-table-wrap table-wrap" }, table), addButton);
+
+    return { wrapper, input: table, field };
+}
+
+/* Every non-empty cell in a row counts as "the row has something in
+   it" - a row where someone only typed a severity and nothing else
+   is still real, partial data, not yet worth discarding. A row where
+   every cell was left blank (the default extra row an empty table
+   starts with, if it is never used) is the one case actually meant
+   to be dropped rather than saved as an empty object. */
+function rowsFromTable(tableEl) {
+    const rows = [];
+
+    for (const tr of tableEl.querySelectorAll("tbody tr")) {
+        const row = {};
+        let hasValue = false;
+
+        for (const cellInput of tr.querySelectorAll("input[data-col]")) {
+            const value = cellInput.value;
+            if (value === "") continue;
+
+            row[cellInput.dataset.col] = cellInput.type === "number" ? Number(value) : value;
+            hasValue = true;
+        }
+
+        if (hasValue) rows.push(row);
+    }
+
+    return rows;
+}
+
 /* Turns the handful of patterns actually in use into something a
    person can act on. An unrecognised one is shown as written rather
    than guessed at. */
@@ -170,6 +307,11 @@ function describePattern(pattern) {
 }
 
 export function readValue(entry) {
+    if (entry.field.type === "table") {
+        const rows = rowsFromTable(entry.input);
+        return rows.length > 0 ? rows : undefined;
+    }
+
     const raw = entry.input.value;
 
     if (raw === "" || raw === null) return undefined;

@@ -18,6 +18,26 @@ import {
     formatDate, humanize, statusKind, printElement, toast
 } from "../dom.js";
 
+/* A "table" field's audit entry (records.js's auditText) is that
+   row array's real JSON, not "[object Object]" - correct, but a full
+   DFMEA's JSON is not what belongs in a one-line audit chip. Row
+   count is what changed at a glance; the rows themselves already
+   render in full under the field's own section. Anything that is
+   not JSON-array text - every ordinary field this has ever logged -
+   parses to nothing here and shows exactly as it always has. */
+function summarizeAuditValue(text) {
+    if (!text) return text;
+
+    try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return parsed.length + " row" + (parsed.length === 1 ? "" : "s");
+    } catch {
+        /* Not JSON - an ordinary scalar value, shown as it was written. */
+    }
+
+    return text;
+}
+
 /* 8D and ECN keep their own register + detail rendering (change.js) -
    the eight-discipline track and the impact sign-off table are not
    the generic key/value detail every other type shares - so creating
@@ -672,7 +692,7 @@ export async function renderRecordDetail(type, number) {
                     class: "chip",
                     text: formatDate(entry.changed_at) + "  " + entry.changed_by
                            + " set " + entry.field
-                           + (entry.new_value ? " to " + entry.new_value : "")
+                           + (entry.new_value ? " to " + summarizeAuditValue(entry.new_value) : "")
                 }))
             ));
         }

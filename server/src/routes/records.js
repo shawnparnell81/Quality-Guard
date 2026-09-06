@@ -40,9 +40,9 @@ function parseDueAt(value) {
    using its own severity/occurrence/detection, not the original
    risk's - a control that lowers occurrence does nothing for
    severity, and the two numbers should say so separately. Only
-   touches risk records; every other type's data passes through
-   untouched. */
-function withComputedRpn(typeKey, data) {
+   touches risk records; every other type's top-level data passes
+   through untouched. */
+function withComputedTopLevelRpn(typeKey, data) {
     if (typeKey !== "risk" || !data || typeof data !== "object") return data;
 
     const computed = { ...data };
@@ -58,6 +58,87 @@ function withComputedRpn(typeKey, data) {
     if (rs !== null && ro !== null && rd !== null) computed.residual_rpn = rs * ro * rd;
 
     return computed;
+}
+
+/* The same rpn = severity x occurrence x detection rule, applied
+   inside every row of every "table"-type field instead of at the
+   top level - a DFMEA or PFMEA line's RPN, computed from that same
+   line's own three scores, never the hand-typed number the row's
+   own inputs happen to show. Detects a scoreable row structurally
+   (does it carry all three columns), not by which record type this
+   is, so any current or future table field with these three column
+   names benefits, not only apqp's. */
+function withComputedTableRowRpn(data) {
+    if (!data || typeof data !== "object") return data;
+
+    const score = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 1 && n <= 10 ? n : null;
+    };
+
+    const computed = { ...data };
+
+    for (const [key, value] of Object.entries(data)) {
+        if (!Array.isArray(value)) continue;
+
+        computed[key] = value.map((row) => {
+            if (!row || typeof row !== "object") return row;
+
+            const [s, o, d] = [score(row.severity), score(row.occurrence), score(row.detection)];
+            if (s === null || o === null || d === null) return row;
+
+            return { ...row, rpn: s * o * d };
+        });
+    }
+
+    return computed;
+}
+
+/* "Highest RPN identified" used to be typed in by hand next to the
+   very table whose rows already say what it is - the same drift
+   every other hand-typed derived number in this app has already been
+   caught having (vendor ppm, quality-objective fill rates, receiving
+   sample sizes). Keyed by which table backs which summary field, so
+   this stays a plain, auditable mapping rather than a guess at every
+   array field's intent. A table with no scoreable rows yet leaves the
+   summary field exactly as entered - there is nothing to derive it
+   from until a row has all three scores. */
+const TABLE_RPN_SUMMARY_FIELDS = {
+    dfmea_table: "dfmea_highest_rpn",
+    pfmea_table: "pfmea_highest_rpn"
+};
+
+function withComputedTableSummaries(data) {
+    if (!data || typeof data !== "object") return data;
+
+    const computed = { ...data };
+
+    for (const [tableKey, summaryKey] of Object.entries(TABLE_RPN_SUMMARY_FIELDS)) {
+        const rows = computed[tableKey];
+        if (!Array.isArray(rows)) continue;
+
+        const rpns = rows.map((row) => row?.rpn).filter((value) => typeof value === "number");
+        if (rpns.length > 0) computed[summaryKey] = Math.max(...rpns);
+    }
+
+    return computed;
+}
+
+function withComputedRpn(typeKey, data) {
+    return withComputedTableSummaries(withComputedTableRowRpn(withComputedTopLevelRpn(typeKey, data)));
+}
+
+/* audit_log.old_value/new_value are text columns - every scalar field
+   this app has ever had was fine going through a bare String(), but
+   a "table" field's value is an array of row objects, and
+   String([{...}]) is "[object Object]" for any single-row table
+   regardless of what the row actually contains. JSON.stringify keeps
+   the row's real content both readable and, just as importantly,
+   distinct - two different tables no longer compare equal just
+   because they share a shape. */
+function auditText(value) {
+    if (value === null || value === undefined) return null;
+    return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 /* Clause 9.2: an auditor must be independent of the area under
@@ -481,6 +562,46 @@ function formatFieldValue(field, value, userNames) {
     return String(value);
 }
 
+/* DFMEA, PFMEA, control plan, process flow diagram: a real bordered
+   table via pdfkit's own table() - the same rows and columns the web
+   form's table field renders, never a shorter summary in one and a
+   fuller one in the other. A wide table (more columns than a
+   portrait letter page can hold at a readable size) gets its own
+   landscape page and hands the document straight back to portrait
+   afterward - the same convention a printed FMEA or control plan
+   sheet already uses on paper, not a workaround invented for this. */
+function drawTableField(doc, field, rows) {
+    const columns = field.columns || [];
+    if (columns.length === 0 || rows.length === 0) return;
+
+    const wide = columns.length > 6;
+    if (wide) doc.addPage({ size: "letter", layout: "landscape", margin: 54 });
+
+    doc.fontSize(10).font("Helvetica-Bold").fillColor(INK).text(field.label);
+    doc.moveDown(0.2);
+
+    const usable = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const widths = columns.map((column) => column.width || Math.floor(usable / columns.length));
+
+    doc.table({
+        columnStyles: widths,
+        defaultStyle: { padding: 4, fontSize: 7.5 },
+        data: [
+            columns.map((column) => ({ text: column.label, font: "Helvetica-Bold" })),
+            ...rows.map((row) => columns.map((column) => {
+                const value = row[column.key];
+                return (value === undefined || value === null || value === "")
+                    ? ""
+                    : formatFieldValue(column, value, null);
+            }))
+        ]
+    });
+
+    doc.moveDown(0.6);
+
+    if (wide) doc.addPage({ size: "letter", margin: 54 });
+}
+
 /* The whole point of this export: a PDF laid out like the form that
    was actually filled in, not an alphabetised key/value dump. Reads
    the exact form version the record was raised under - schema.fields
@@ -512,7 +633,9 @@ function drawFormFields(doc, data, schema, userNames) {
 
     for (const field of fields) {
         const value = values[field.key];
-        if (value === null || value === undefined || value === "") continue;
+        const empty = value === null || value === undefined || value === ""
+            || (Array.isArray(value) && value.length === 0);
+        if (empty) continue;
 
         shown.add(field.key);
 
@@ -524,24 +647,30 @@ function drawFormFields(doc, data, schema, userNames) {
         }
 
         const label = field.label || humanizeKey(field.key);
-        const text = formatFieldValue(field, value, userNames);
 
-        if (field.type === "memo") {
+        if (field.type === "table") {
+            drawTableField(doc, field, value);
+        } else if (field.type === "memo") {
+            const text = formatFieldValue(field, value, userNames);
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2).text(label + ":");
             doc.fontSize(9).font("Helvetica").fillColor(INK).text(text, {
                 width: doc.page.width - doc.page.margins.left - doc.page.margins.right
             });
             doc.moveDown(0.4);
         } else {
+            const text = formatFieldValue(field, value, userNames);
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
                 .text(label + ":  ", { continued: true })
                 .font("Helvetica").fillColor(INK).text(text);
         }
     }
 
-    const leftovers = Object.entries(values).filter(
-        ([key, value]) => !shown.has(key) && value !== null && value !== undefined && value !== ""
-    );
+    const leftovers = Object.entries(values).filter(([key, value]) => {
+        if (shown.has(key)) return false;
+        if (value === null || value === undefined || value === "") return false;
+        if (Array.isArray(value) && value.length === 0) return false;
+        return true;
+    });
 
     if (leftovers.length > 0) {
         drawSectionHeading(doc, "Additional details");
@@ -555,6 +684,29 @@ function drawFormFields(doc, data, schema, userNames) {
     doc.moveDown(1);
 }
 
+/* A table field's audit-log entry is now the row array's real JSON
+   (auditText, above) rather than "[object Object]" - correct, but
+   printing that whole blob inline in an audit trail line would trade
+   one unreadable value for a different one. Row count is what a
+   reader of this trail actually wants to know happened ("the DFMEA
+   went from 2 rows to 3"), not each row's full contents restated -
+   those already appear in full under the DFMEA section itself.
+   Anything that is not JSON-array text (every ordinary field this
+   has ever logged) parses to nothing here and prints exactly as
+   before. */
+function summarizeAuditValue(text) {
+    if (!text) return text;
+
+    try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return parsed.length + " row" + (parsed.length === 1 ? "" : "s");
+    } catch {
+        /* Not JSON - an ordinary scalar value, shown as it was written. */
+    }
+
+    return text;
+}
+
 function drawHistory(doc, rows) {
     if (rows.length === 0) return;
 
@@ -564,7 +716,8 @@ function drawHistory(doc, rows) {
     for (const row of rows) {
         const when = new Date(row.changed_at).toLocaleString();
         const who = row.changed_by || "System";
-        const what = humanizeKey(row.field) + (row.new_value ? " -> " + row.new_value : "");
+        const what = humanizeKey(row.field)
+            + (row.new_value ? " -> " + summarizeAuditValue(row.new_value) : "");
 
         doc.fontSize(8.5).font("Helvetica").fillColor(INK_2).text(when + "   " + who + "   " + what);
     }
@@ -856,16 +1009,27 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
             for (const [key, value] of Object.entries(auditAgainst)) {
                 const before = record.data[key];
-                if (String(before) === String(value)) continue;
+                const beforeText = auditText(before);
+                const afterText = auditText(value);
+
+                /* Two different table-field values (arrays of row
+                   objects) both used to stringify to the same
+                   "[object Object]" via a bare String() - not only
+                   unreadable, but meaning a real edit to a DFMEA's
+                   rows could leave no audit trail entry at all, since
+                   the before/after comparison itself used that same
+                   stringification. auditText's JSON.stringify keeps
+                   this comparison (and the row below) honest for a
+                   table field the same way it always already was for
+                   an ordinary one. */
+                if (beforeText === afterText) continue;
 
                 await client.query(`
                     insert into audit_log
                         (org_id, record_id, entity, entity_id, field,
                          old_value, new_value, reason, changed_by)
                     values ($1, $2, 'records', $2, $3, $4, $5, $6, $7)
-                `, [request.user.org_id, record.id, key,
-                    before === undefined ? null : String(before),
-                    String(value), reason || null, actorId]);
+                `, [request.user.org_id, record.id, key, beforeText, afterText, reason || null, actorId]);
             }
 
             /* Unchanged (undefined) when the caller never mentioned

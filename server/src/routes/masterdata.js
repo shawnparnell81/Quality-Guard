@@ -191,8 +191,40 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
 });
 
 const FIELD_TYPES = new Set([
-    "text", "memo", "number", "date", "select", "link", "file", "signature", "user"
+    "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table"
 ]);
+
+/* A "table" field's value is an array of row objects rather than a
+   scalar - the repeating-row shape a DFMEA, PFMEA, control plan or
+   process flow diagram actually is, real columns instead of a memo
+   pretending to be one. Column types are deliberately a small subset
+   (text, number, date): a column is one cell in a row, not a form
+   field in its own right, and does not need select/link/file's own
+   master-data or target wiring. */
+const TABLE_COLUMN_TYPES = new Set(["text", "number", "date"]);
+
+function problemWithColumns(field) {
+    if (!Array.isArray(field.columns) || field.columns.length === 0) {
+        return "\"" + field.label + "\" needs at least one column";
+    }
+
+    const seenColumnKeys = new Set();
+
+    for (const column of field.columns) {
+        if (!column || typeof column !== "object") return "\"" + field.label + "\": every column must be an object";
+        if (!column.key || typeof column.key !== "string") return "\"" + field.label + "\": every column needs a key";
+        if (!column.label || typeof column.label !== "string") return "\"" + field.label + "\": every column needs a label";
+        if (!TABLE_COLUMN_TYPES.has(column.type)) {
+            return "\"" + field.label + "\": unknown column type: " + column.type;
+        }
+        if (seenColumnKeys.has(column.key)) {
+            return "\"" + field.label + "\": two columns share the key \"" + column.key + "\"";
+        }
+        seenColumnKeys.add(column.key);
+    }
+
+    return null;
+}
 
 /* Never trust the client's own validation. The in-app editor already
    checks all of this before it ever sends a request, but the field
@@ -223,6 +255,10 @@ function problemWith(fields) {
         }
         if (field.type === "link" && !LINK_SOURCES[field.target]) {
             return "\"" + field.label + "\" needs a valid link target";
+        }
+        if (field.type === "table") {
+            const columnProblem = problemWithColumns(field);
+            if (columnProblem) return columnProblem;
         }
     }
 
