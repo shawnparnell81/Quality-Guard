@@ -8,8 +8,9 @@
    ============================================================ */
 
 import { api } from "../api.js";
-import { currentUser, can } from "../session.js";
-import { el, pill, fillTable, loadingRow, errorRow, humanize } from "../dom.js";
+import { currentUser, can, applyPermissions } from "../session.js";
+import { el, pill, fillTable, loadingRow, errorRow, humanize, toast } from "../dom.js";
+import { ensureDialog, confirmStep } from "../forms.js";
 
 export async function renderRoles() {
     const matrix = document.getElementById("roles-matrix");
@@ -223,20 +224,29 @@ function flashMatrixMessage(message) {
 
 /* ============================================================
    People and access
+
+   The directory used to be read-only: the server has always been
+   able to add a person, change their role, reset a forgotten
+   password or withdraw access, but nothing in the screen offered a
+   way to reach those endpoints. Every action below calls a route
+   that already existed and was already enforced - this only gives
+   an honest person a button instead of a terminal.
    ============================================================ */
+
+let peopleCache = [];
 
 export async function renderPeople() {
     const tbody = document.getElementById("people-table");
     if (!tbody) return;
 
-    loadingRow(tbody, 6);
+    loadingRow(tbody, 7);
 
     /* Reading the directory is itself a permission, so someone without
        it gets an explanation rather than an empty table. */
     if (!can("user.read")) {
         tbody.replaceChildren(
             el("tr", {}, el("td", {
-                colspan: 6,
+                colspan: 7,
                 class: "sm dim",
                 style: "text-align:center;padding:28px"
             }, [
@@ -255,6 +265,7 @@ export async function renderPeople() {
 
     try {
         const { users, count } = await api.users();
+        peopleCache = users;
 
         fillTable(tbody, users, [
             { render: (row) => {
@@ -270,16 +281,390 @@ export async function renderPeople() {
             { className: "num", render: (row) => row.permission_count },
             { render: (row) => row.active
                 ? pill("Active", "done")
-                : pill("Access removed", "hold") }
-        ]);
+                : pill("Access removed", "hold") },
+            { render: (row) => renderPeopleActions(row) }
+        ], "No one recorded yet");
+
+        applyPermissions(tbody);
+
+        /* Self-protection mirrors the server's own rule (POST
+           /users/:initials/deactivate refuses this too): applied after
+           applyPermissions so holding user.deactivate yourself cannot
+           re-enable the one row it must never allow. */
+        const me = currentUser();
+        if (me) {
+            const selfDeactivate = tbody.querySelector(
+                'button[data-action="deactivate"][data-initials="' + me.initials + '"]'
+            );
+            if (selfDeactivate) {
+                selfDeactivate.disabled = true;
+                selfDeactivate.classList.add("not-permitted");
+                selfDeactivate.title = "You cannot remove your own access";
+            }
+        }
 
         setPeopleNote(count + " people, " + users.filter((u) => u.active).length + " active");
     } catch (error) {
-        errorRow(tbody, 6, error);
+        errorRow(tbody, 7, error);
     }
+}
+
+function renderPeopleActions(row) {
+    /* Access is withdrawn, never deleted - there is no reactivate
+       route, and a deactivated login is refused outright, so nothing
+       here would do anything for them anyway. */
+    if (!row.active) {
+        return el("span", { class: "sm dim", text: "-" });
+    }
+
+    return el("div", { class: "row-actions" }, [
+        el("button", {
+            class: "btn btn-xs", type: "button", text: "Edit",
+            dataset: { requires: "user.edit", action: "edit", initials: row.initials }
+        }),
+        el("button", {
+            class: "btn btn-xs", type: "button", text: "Reset password",
+            dataset: { requires: "user.reset_password", action: "reset", initials: row.initials }
+        }),
+        el("button", {
+            class: "btn btn-xs btn-danger", type: "button", text: "Deactivate",
+            dataset: { requires: "user.deactivate", action: "deactivate", initials: row.initials }
+        })
+    ]);
 }
 
 function setPeopleNote(text) {
     const note = document.getElementById("people-note");
     if (note) note.textContent = text;
+}
+
+/* ---------- wiring ---------- */
+
+export function wirePeopleActions() {
+    const addButton = document.getElementById("add-person-btn");
+    if (addButton) {
+        addButton.addEventListener("click", () => {
+            if (addButton.disabled) return;
+            openCreateUserDialog(() => renderPeople());
+        });
+    }
+
+    const table = document.getElementById("people-table");
+    if (!table) return;
+
+    table.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button || button.disabled) return;
+
+        const user = peopleCache.find((row) => row.initials === button.dataset.initials);
+        if (!user) return;
+
+        if (button.dataset.action === "edit") {
+            openEditUserDialog(user, () => renderPeople());
+        } else if (button.dataset.action === "reset") {
+            openResetPasswordDialog(user, () => renderPeople());
+        } else if (button.dataset.action === "deactivate") {
+            confirmDeactivate(user, () => renderPeople());
+        }
+    });
+}
+
+async function loadRoleOptions() {
+    const { roles } = await api.roles();
+    return roles;
+}
+
+function field(id, labelText, input, required, hint) {
+    return el("div", { class: "field-group" }, [
+        el("label", { for: id }, [labelText, required ? el("span", { class: "req", text: " *" }) : null]),
+        input,
+        hint ? el("span", { class: "field-hint", text: hint }) : null
+    ]);
+}
+
+function showLoadFailure(node, error) {
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { text: "Could not open the form" })),
+        el("div", { class: "modal-body" },
+            el("p", { class: "sm", style: "color:var(--crit)", text: error.message })),
+        el("div", { class: "modal-foot" },
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Close"))
+    );
+}
+
+/* ---------- add a person ---------- */
+
+function openCreateUserDialog(onDone) {
+    const node = ensureDialog();
+    node.replaceChildren(el("p", { class: "sm dim", text: "Loading roles..." }));
+    node.showModal();
+
+    loadRoleOptions()
+        .then((roles) => buildCreateForm(node, roles, onDone))
+        .catch((error) => showLoadFailure(node, error));
+}
+
+function buildCreateForm(node, roles, onDone) {
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const nameInput = el("input", { type: "text", id: "np-name", required: true });
+    const emailInput = el("input", { type: "email", id: "np-email", required: true });
+    const initialsInput = el("input", {
+        type: "text", id: "np-initials", required: true, maxlength: 4,
+        style: "text-transform:uppercase"
+    });
+    const roleSelect = el("select", { id: "np-role", required: true }, [
+        el("option", { value: "", text: "Choose..." }),
+        ...roles.map((role) => el("option", { value: role.key, text: role.name }))
+    ]);
+    const disciplineInput = el("input", { type: "text", id: "np-discipline" });
+    const jobTitleInput = el("input", { type: "text", id: "np-job-title" });
+
+    const save = el("button", { class: "btn btn-primary", type: "submit" }, "Add person");
+
+    const form = el("form", { method: "dialog" }, [
+        errorBox,
+        field("np-name", "Full name", nameInput, true),
+        field("np-email", "Email", emailInput, true),
+        field("np-initials", "Initials", initialsInput, true,
+            "Used to sign records - keep it short, for example AM"),
+        field("np-role", "Role", roleSelect, true),
+        field("np-discipline", "Discipline", disciplineInput, false),
+        field("np-job-title", "Job title", jobTitleInput, false)
+    ]);
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Add person" })),
+        el("div", { class: "modal-body" }, form),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            save
+        ])
+    );
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorBox.hidden = true;
+
+        const problems = [];
+        if (!nameInput.value.trim()) problems.push("Full name is required");
+        if (!emailInput.value.trim()) problems.push("Email is required");
+        if (!initialsInput.value.trim()) problems.push("Initials are required");
+        if (!roleSelect.value) problems.push("Role is required");
+
+        if (problems.length > 0) {
+            errorBox.replaceChildren(...problems.map((text) => el("div", { text })));
+            errorBox.hidden = false;
+            return;
+        }
+
+        save.disabled = true;
+        save.textContent = "Adding...";
+
+        try {
+            const created = await api.createUser({
+                full_name: nameInput.value.trim(),
+                email: emailInput.value.trim(),
+                initials: initialsInput.value.trim(),
+                role: roleSelect.value,
+                discipline: disciplineInput.value.trim() || undefined,
+                job_title: jobTitleInput.value.trim() || undefined
+            });
+
+            node.close();
+            showCredentialsDialog({
+                heading: created.full_name + " was added",
+                initials: created.initials,
+                temporaryPassword: created.temporary_password,
+                note: created.note
+            });
+            if (onDone) onDone();
+        } catch (error) {
+            const fields = error.payload?.fields;
+            errorBox.replaceChildren(
+                el("div", { text: error.message }),
+                fields ? el("div", { class: "sm", text: "Missing: " + fields.join(", ") }) : null
+            );
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Add person";
+        }
+    });
+
+    nameInput.focus();
+}
+
+/* ---------- editing role, discipline, job title ---------- */
+
+function openEditUserDialog(user, onDone) {
+    const node = ensureDialog();
+    node.replaceChildren(el("p", { class: "sm dim", text: "Loading roles..." }));
+    node.showModal();
+
+    loadRoleOptions()
+        .then((roles) => buildEditForm(node, user, roles, onDone))
+        .catch((error) => showLoadFailure(node, error));
+}
+
+function buildEditForm(node, user, roles, onDone) {
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const roleSelect = el("select", { id: "eu-role" },
+        roles.map((role) => el("option", {
+            value: role.key, text: role.name,
+            selected: role.key === user.role ? "selected" : undefined
+        }))
+    );
+    const disciplineInput = el("input", { type: "text", id: "eu-discipline", value: user.discipline || "" });
+    const jobTitleInput = el("input", { type: "text", id: "eu-job-title", value: user.job_title || "" });
+    const reasonInput = el("textarea", {
+        id: "eu-reason", rows: 2, placeholder: "Optional. Recorded against this change."
+    });
+
+    const save = el("button", { class: "btn btn-primary", type: "submit" }, "Save");
+
+    const form = el("form", { method: "dialog" }, [
+        errorBox,
+        field("eu-role", "Role", roleSelect, false),
+        field("eu-discipline", "Discipline", disciplineInput, false),
+        field("eu-job-title", "Job title", jobTitleInput, false),
+        field("eu-reason", "Reason", reasonInput, false)
+    ]);
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Edit " + user.full_name })),
+        el("div", { class: "modal-body" }, form),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            save
+        ])
+    );
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorBox.hidden = true;
+        save.disabled = true;
+        save.textContent = "Saving...";
+
+        try {
+            await api.updateUser(user.initials, {
+                role: roleSelect.value || undefined,
+                discipline: disciplineInput.value.trim() || undefined,
+                job_title: jobTitleInput.value.trim() || undefined,
+                reason: reasonInput.value.trim() || undefined
+            });
+
+            node.close();
+            toast(user.full_name + " updated");
+            if (onDone) onDone();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Save";
+        }
+    });
+}
+
+/* ---------- resetting a forgotten password ---------- */
+
+function openResetPasswordDialog(user, onDone) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+    const reasonInput = el("textarea", {
+        rows: 2, placeholder: "Optional. Recorded against this change."
+    });
+
+    const go = el("button", { class: "btn btn-primary", type: "button" }, "Reset password");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" },
+            el("h2", { class: "modal-title", text: "Reset password for " + user.full_name })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("p", { class: "sm", style: "margin:0 0 14px",
+                text: "Issues a new temporary password and ends every session they currently hold." }),
+            el("div", { class: "field-group" }, [
+                el("label", { text: "Reason" }),
+                reasonInput
+            ])
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            go
+        ])
+    );
+
+    go.addEventListener("click", async () => {
+        go.disabled = true;
+        go.textContent = "Working...";
+
+        try {
+            const result = await api.resetPassword(user.initials, {
+                reason: reasonInput.value.trim() || undefined
+            });
+
+            node.close();
+            showCredentialsDialog({
+                heading: "Password reset for " + result.full_name,
+                initials: result.initials,
+                temporaryPassword: result.temporary_password,
+                note: result.note
+            });
+            if (onDone) onDone();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            go.disabled = false;
+            go.textContent = "Reset password";
+        }
+    });
+
+    node.showModal();
+}
+
+/* ---------- showing a one-time temporary password ---------- */
+
+function showCredentialsDialog({ heading, initials, temporaryPassword, note }) {
+    const node = ensureDialog();
+
+    const passwordInput = el("input", {
+        type: "text", readonly: "readonly", value: temporaryPassword,
+        class: "mono", style: "font-size: 15px; letter-spacing: 0.5px; flex: 1"
+    });
+
+    const copyButton = el("button", { class: "btn", type: "button", text: "Copy" });
+    copyButton.addEventListener("click", async () => {
+        try {
+            await navigator.clipboard.writeText(temporaryPassword);
+            copyButton.textContent = "Copied";
+            setTimeout(() => { copyButton.textContent = "Copy"; }, 1500);
+        } catch {
+            /* Clipboard access can be blocked (permissions, non-secure
+               context). Selecting the text is the fallback that always
+               works, since the field is right there either way. */
+            passwordInput.select();
+        }
+    });
+
+    const done = el("button", { class: "btn btn-primary", type: "button", text: "Done" });
+    done.addEventListener("click", () => node.close());
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: heading })),
+        el("div", { class: "modal-body" }, [
+            el("p", { class: "sm", style: "margin:0 0 10px", text: "Temporary password for " + initials + ":" }),
+            el("div", { class: "row", style: "gap:8px" }, [passwordInput, copyButton]),
+            el("p", { class: "sm dim", style: "margin-top:12px",
+                text: note || "Give this to them directly. It is shown once and cannot be retrieved." })
+        ]),
+        el("div", { class: "modal-foot" }, done)
+    );
+
+    node.showModal();
+    passwordInput.focus();
+    passwordInput.select();
 }

@@ -89,6 +89,8 @@ export const api = {
         request("PATCH", "/users/" + encodeURIComponent(initials), payload),
     deactivateUser: (initials, payload) =>
         request("POST", "/users/" + encodeURIComponent(initials) + "/deactivate", payload),
+    resetPassword: (initials, payload) =>
+        request("POST", "/users/" + encodeURIComponent(initials) + "/reset-password", payload),
 
     dashboard:    ()        => get("/dashboard"),
     openEvents:   ()        => get("/dashboard/open-events"),
@@ -151,6 +153,9 @@ export const api = {
 
     vendors:      ()        => get("/vendors"),
     gages:        ()        => get("/gages"),
+    gageCalibrations: (gageId) => get("/gages/" + encodeURIComponent(gageId) + "/calibrations"),
+    recordCalibration: (gageId, payload) =>
+        request("POST", "/gages/" + encodeURIComponent(gageId) + "/calibrations", payload),
     documents:    ()        => get("/documents"),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),
     parts:        ()        => get("/parts"),

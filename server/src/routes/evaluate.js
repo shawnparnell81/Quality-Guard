@@ -9,8 +9,10 @@
    ============================================================ */
 
 import { Router } from "express";
+import PDFDocument from "pdfkit";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
+import { INK, INK_2, drawLetterhead, drawFooter } from "../pdf-branding.js";
 
 export const evaluate = Router();
 
@@ -64,58 +66,166 @@ const COMPUTED = {
                    where not (r.closed_at is null and r.due_at < now()))
                  / nullif(count(*), 0), 1), 0) as value
           from records r join record_types rt on rt.id = r.record_type_id
-         where r.org_id = $1 and rt.key = 'audit'`
+         where r.org_id = $1 and rt.key = 'audit'`,
+
+    /* Average days a CAPA actually stays open, not just whether it beat
+       a threshold - capa_on_time above answers "did it beat 30 days,"
+       this answers "how long does one really take." */
+    capa_avg_days_to_close: `
+        select coalesce(round(
+                 avg(extract(epoch from (r.closed_at - r.opened_at)) / 86400.0)
+               , 1), 0) as value
+          from records r join record_types rt on rt.id = r.record_type_id
+         where r.org_id = $1 and rt.key = 'capa' and r.closed_at is not null`,
+
+    /* First-pass yield: production that never generated an NCR,
+       against total quantity actually run. An NCR only counts toward
+       this if its work_order field matches a real work order in this
+       org - a form that doesn't collect that field (every org's NCR
+       form is its own, per the configurable layer) simply cannot
+       contribute a number here, the same way an out-of-range risk
+       score is skipped by the risk matrix rather than misrepresented. */
+    first_pass_yield: `
+        with produced as (
+            select coalesce(sum(qty), 0) as total_qty
+              from work_orders where org_id = $1
+        ),
+        nonconforming as (
+            select coalesce(sum((r.data->>'qty_affected')::numeric), 0) as total_affected
+              from records r
+              join record_types rt on rt.id = r.record_type_id
+              join work_orders wo on wo.org_id = r.org_id and wo.wo_number = r.data->>'work_order'
+             where r.org_id = $1 and rt.key = 'ncr'
+        )
+        select coalesce(round(
+                 100.0 * greatest(produced.total_qty - nonconforming.total_affected, 0)
+                 / nullif(produced.total_qty, 0)
+               , 1), 0) as value
+          from produced, nonconforming`
 };
+
+/* Shared by the JSON endpoint and the PDF export, so the two can
+   never disagree about what a scorecard actually says. */
+async function getObjectives(orgId) {
+    const defined = await query(`
+        select o.name, o.clause, o.target_value, o.unit, o.direction,
+               o.source, o.stored_actual, o.period, u.full_name as owner
+          from quality_objectives o
+     left join users u on u.id = o.owner_id
+         where o.org_id = $1
+         order by o.position
+    `, [orgId]);
+
+    /* Compute every actual the system can measure for itself. */
+    const computed = {};
+    await Promise.all(Object.entries(COMPUTED).map(async ([key, sql]) => {
+        const result = await query(sql, [orgId]);
+        computed[key] = Number(result.rows[0].value);
+    }));
+
+    return defined.rows.map((objective) => {
+        const live = objective.source && computed[objective.source] !== undefined;
+        const actual = live
+            ? computed[objective.source]
+            : (objective.stored_actual === null ? null : Number(objective.stored_actual));
+
+        const target = Number(objective.target_value);
+        const onTarget = actual === null
+            ? null
+            : (objective.direction === "min" ? actual >= target : actual <= target);
+
+        return {
+            name: objective.name,
+            clause: objective.clause,
+            target,
+            actual,
+            unit: objective.unit,
+            direction: objective.direction,
+            owner: objective.owner,
+            period: objective.period,
+            on_target: onTarget,
+            /* Says plainly whether the number is measured or typed. */
+            measurement: live ? "computed" : "entered"
+        };
+    });
+}
 
 evaluate.get("/objectives", async (request, response, next) => {
     try {
-        const defined = await query(`
-            select o.name, o.clause, o.target_value, o.unit, o.direction,
-                   o.source, o.stored_actual, o.period, u.full_name as owner
-              from quality_objectives o
-         left join users u on u.id = o.owner_id
-             where o.org_id = $1
-             order by o.position
-        `, [request.user.org_id]);
-
-        /* Compute every actual the system can measure for itself. */
-        const computed = {};
-        await Promise.all(Object.entries(COMPUTED).map(async ([key, sql]) => {
-            const result = await query(sql, [request.user.org_id]);
-            computed[key] = Number(result.rows[0].value);
-        }));
-
-        const objectives = defined.rows.map((objective) => {
-            const live = objective.source && computed[objective.source] !== undefined;
-            const actual = live
-                ? computed[objective.source]
-                : (objective.stored_actual === null ? null : Number(objective.stored_actual));
-
-            const target = Number(objective.target_value);
-            const onTarget = actual === null
-                ? null
-                : (objective.direction === "min" ? actual >= target : actual <= target);
-
-            return {
-                name: objective.name,
-                clause: objective.clause,
-                target,
-                actual,
-                unit: objective.unit,
-                direction: objective.direction,
-                owner: objective.owner,
-                period: objective.period,
-                on_target: onTarget,
-                /* Says plainly whether the number is measured or typed. */
-                measurement: live ? "computed" : "entered"
-            };
-        });
+        const objectives = await getObjectives(request.user.org_id);
 
         response.json({
             count: objectives.length,
             on_target: objectives.filter((o) => o.on_target === true).length,
             objectives
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* GET /api/objectives/pdf
+   A management-ready one-pager: every objective, its target against
+   its actual, and whether it is on target - the thing an ISO 9001
+   management review (clause 9.3) actually wants handed to it. Saved
+   wherever the browser puts downloads, not to cloud storage - this
+   project runs with zero cloud dependencies by design, and a PDF on
+   disk is not the kind of thing that needs a compliance-grade WORM
+   bucket to be useful. */
+evaluate.get("/objectives/pdf", async (request, response, next) => {
+    try {
+        const [objectives, orgRow] = await Promise.all([
+            getObjectives(request.user.org_id),
+            query("select name from organizations where id = $1", [request.user.org_id])
+        ]);
+
+        const orgName = orgRow.rows[0]?.name || "Organization";
+
+        const doc = new PDFDocument({ size: "LETTER", margin: 44 });
+        response.setHeader("Content-Type", "application/pdf");
+        response.setHeader("Content-Disposition", "attachment; filename=\"quality-scorecard.pdf\"");
+        doc.pipe(response);
+
+        drawLetterhead(doc, orgName, orgName + " - Quality Scorecard");
+
+        doc.fontSize(17).fillColor(INK).font("Helvetica-Bold").text("Quality Objectives, clause 6.2");
+        doc.fontSize(9.5).fillColor(INK_2).font("Helvetica")
+            .text("Generated " + new Date().toLocaleDateString() + "  -  "
+                + objectives.filter((o) => o.on_target === true).length + " of "
+                + objectives.length + " on target");
+        doc.moveDown(1);
+
+        for (const objective of objectives) {
+            const statusLabel = objective.on_target === null ? "NO DATA"
+                : objective.on_target ? "ON TARGET" : "OFF TARGET";
+            const statusColor = objective.on_target === null ? INK_2
+                : objective.on_target ? "#1C6E47" : "#99241A";
+
+            const rowTop = doc.y;
+            doc.fontSize(11.5).fillColor(INK).font("Helvetica-Bold")
+                .text(objective.name, doc.page.margins.left, rowTop, { continued: false });
+
+            doc.fontSize(8.5).fillColor(statusColor).font("Helvetica-Bold")
+                .text(statusLabel, doc.page.width - doc.page.margins.right - 90, rowTop, { width: 90, align: "right" });
+
+            doc.fontSize(9).fillColor(INK_2).font("Helvetica").text(
+                "Clause " + (objective.clause || "-")
+                + "    Target: " + (objective.direction === "min" ? "at least " : "at most ") + objective.target + " " + objective.unit
+                + "    Actual: " + (objective.actual === null ? "not yet measured" : objective.actual + " " + objective.unit)
+                + (objective.owner ? "    Owner: " + objective.owner : "")
+            );
+            doc.fontSize(7.5).fillColor(INK_2).font("Helvetica-Oblique")
+                .text(objective.measurement === "computed" ? "Computed live from the records behind it" : "Entered figure");
+
+            doc.moveDown(0.9);
+            doc.moveTo(doc.page.margins.left, doc.y)
+                .lineTo(doc.page.width - doc.page.margins.right, doc.y)
+                .lineWidth(0.5).stroke("#D8E1DF");
+            doc.moveDown(0.7);
+        }
+
+        drawFooter(doc, orgName);
+        doc.end();
     } catch (error) {
         next(error);
     }

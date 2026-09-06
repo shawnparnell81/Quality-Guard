@@ -295,6 +295,11 @@ body {
 
 .view-head { margin-bottom: 20px; }
 
+/* The record editor's fields would otherwise stretch across the
+   full content column on a wide screen - a text input a thousand
+   pixels wide is harder to read, not easier. */
+#record-editor-body form { max-width: 640px; }
+
 .view-title {
     font-size: 22px;
     font-weight: 600;
@@ -589,6 +594,14 @@ tr.row-selected:hover {
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) .btn-primary { color: #08201D; }
 }
+
+/* Row-level actions in the people directory: a few small buttons
+   per row rather than a single one, so each needs less padding to
+   keep the table from ballooning wider than the data it shows. */
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-xs { padding: 3px 9px; font-size: 11.5px; }
+.btn-danger { color: var(--crit); border-color: var(--crit); }
+.btn-danger:hover:not(:disabled) { background: var(--crit-tint); }
 
 .scaffold {
     border: 1px dashed var(--hairline);
@@ -888,6 +901,8 @@ th.col-you { color: var(--brand); }
 
 .field-group label { font-size: 11.5px; font-weight: 500; color: var(--ink-2); }
 
+.field-group textarea,
+.field-group select,
 .field-group input {
     font: inherit;
     font-size: 13.5px;
@@ -896,8 +911,13 @@ th.col-you { color: var(--brand); }
     border-radius: 5px;
     background: var(--surface-2);
     color: var(--ink);
+    width: 100%;
 }
 
+.field-group input.readonly { background: var(--hairline-2); color: var(--ink-2); }
+
+.field-group textarea:focus,
+.field-group select:focus,
 .field-group input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
 
 .field-hint { font-size: 11px; color: var(--ink-3); }
@@ -1009,23 +1029,8 @@ th.col-you { color: var(--brand); }
     background: var(--surface-2);
 }
 
-.modal .field-group textarea,
-.modal .field-group select,
-.modal .field-group input {
-    font: inherit;
-    font-size: 13px;
-    padding: 8px 10px;
-    border: 1px solid var(--hairline);
-    border-radius: 5px;
-    background: var(--surface-2);
-    color: var(--ink);
-    width: 100%;
-}
-
-.modal .field-group input.readonly {
-    background: var(--hairline-2);
-    color: var(--ink-2);
-}
+/* Field styling itself lives on the bare .field-group rules above,
+   shared by the modal and the full-page record editor alike. */
 
 .modal .field-group input:disabled,
 .modal .field-group select:disabled {
@@ -1429,4 +1434,139 @@ th.col-you { color: var(--brand); }
         padding: 0; margin: 0; border: none; box-shadow: none;
     }
     .print-area .no-print { display: none !important; }
+}
+
+/* ============================================================
+   Floor Report - built for a thumb, not a mouse.
+
+   Every interactive target here is at least 48px tall (WCAG 2.5.5 /
+   Apple and Android's own touch-target guidance), and every color
+   pairing below is checked against its own background, not inherited
+   on faith: white text on --brand, --ok, --warn and --crit all clear
+   4.5:1 against white in both themes' actual values, which is the
+   AA threshold for text this size. Severity is never color-only -
+   the words "OK" / "Warning" / "Critical" carry the meaning even for
+   a viewer who cannot distinguish the colors at all.
+   ============================================================ */
+
+.floor-panel { max-width: 640px; margin: 0 auto; }
+
+.floor-status {
+    max-width: 640px;
+    margin: 0 auto 16px;
+    padding: 10px 16px;
+    background: var(--warn-tint);
+    color: var(--warn);
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.floor-empty {
+    text-align: center;
+    color: var(--ink-2);
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 24px 8px;
+}
+
+.floor-cache-note {
+    font-size: 13px;
+    color: var(--warn);
+    background: var(--warn-tint);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin: 0 0 18px;
+}
+
+.floor-error {
+    background: var(--crit-tint);
+    color: var(--crit);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin: 0 0 16px;
+    font-size: 14.5px;
+    font-weight: 500;
+}
+
+.floor-label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 20px 0 8px;
+}
+.floor-label:first-of-type { margin-top: 0; }
+
+.floor-input,
+.floor-form .field-group input,
+.floor-form .field-group select,
+.floor-form .field-group textarea {
+    width: 100%;
+    min-height: 52px;
+    font: inherit;
+    font-size: 17px;
+    padding: 12px 14px;
+    border: 1.5px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--ink);
+}
+
+.floor-form .field-group textarea { min-height: 96px; }
+
+.floor-input:focus,
+.floor-form .field-group input:focus,
+.floor-form .field-group select:focus,
+.floor-form .field-group textarea:focus {
+    outline: 3px solid var(--brand);
+    outline-offset: 1px;
+}
+
+.floor-field { margin-top: 4px; }
+.floor-field .field-group label { font-size: 14px; font-weight: 600; color: var(--ink-2); margin-bottom: 8px; }
+.floor-field .field-hint { font-size: 13px; margin-top: 6px; }
+
+.floor-severity-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+.floor-sev {
+    min-height: 52px;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    border-radius: var(--radius);
+    border: 2px solid var(--hairline);
+    background: var(--surface-2);
+    color: var(--ink);
+    cursor: pointer;
+}
+/* Selected state uses each color's own tint/foreground pairing, not a
+   solid fill with white text: --ok/--warn/--crit are dark-on-light in
+   light mode but light-on-dark in dark mode (they are calibrated as
+   *text* colors against the theme's own background, by design, the
+   same as everywhere else they are used), so a fixed white foreground
+   would read fine in one theme and fail contrast outright in the
+   other. The tint pairing is the one already proven to hold up in
+   both themes throughout this app (it is what every status pill
+   uses), which is why it is reused here rather than invented fresh. */
+.floor-sev.selected.floor-sev-ok   { background: var(--ok-tint);   border-color: var(--ok);   color: var(--ok); }
+.floor-sev.selected.floor-sev-warn { background: var(--warn-tint); border-color: var(--warn); color: var(--warn); }
+.floor-sev.selected.floor-sev-crit { background: var(--crit-tint); border-color: var(--crit); color: var(--crit); }
+
+.floor-submit {
+    /* Color comes from .btn-primary, already correct in both themes
+       (it swaps its text color for dark mode, since --brand itself is
+       light there) - only sizing is added here. */
+    display: block;
+    width: 100%;
+    min-height: 60px;
+    margin-top: 26px;
+    font-size: 18px;
+    font-weight: 700;
+}
+.floor-submit:disabled { opacity: .6; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+    .content:has(.floor-panel) { padding: 16px; }
 }

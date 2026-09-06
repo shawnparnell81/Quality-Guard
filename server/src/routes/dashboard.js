@@ -39,7 +39,8 @@ dashboard.get("/", async (request, response, next) => {
                         interval '1 week'
                     ) as week_start
                 )
-                select rt.key as type, w.week_start, count(r.id)::int as n
+                select rt.key as type, w.week_start, count(r.id)::int as n,
+                       array_remove(array_agg(r.number order by r.number), null) as numbers
                   from weeks w
                   cross join record_types rt
              left join records r
@@ -94,10 +95,15 @@ dashboard.get("/", async (request, response, next) => {
         /* Eight numbers per type, oldest to newest - opened-per-week,
            for the sparkline under each KPI tile. Real history from
            opened_at, not a separate metrics table: nothing here is
-           tracked twice. */
+           tracked twice. trend_records carries the same shape, one
+           array of record numbers per week instead of a count, so a
+           sparkline point can be clicked straight through to the
+           records that made it up rather than just displaying it. */
         const trends = {};
+        const trendRecords = {};
         for (const row of weekly.rows) {
             (trends[row.type] ||= []).push(Number(row.n));
+            (trendRecords[row.type] ||= []).push(row.numbers || []);
         }
 
         response.json({
@@ -121,7 +127,8 @@ dashboard.get("/", async (request, response, next) => {
                figure disagree with clause 9.2's finding on the
                Readiness screen. One definition of overdue, not two. */
             audits: { overdue: byType.audit?.overdue ?? 0 },
-            trends
+            trends,
+            trend_records: trendRecords
         });
     } catch (error) {
         next(error);

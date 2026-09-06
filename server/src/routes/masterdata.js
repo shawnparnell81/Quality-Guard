@@ -73,7 +73,12 @@ const LINK_SOURCES = {
 
     gages: `select gage_id as value,
                    gage_id || '  ' || description as label,
-                   (next_due < current_date) as disabled
+                   (next_due < current_date or availability = 'hold') as disabled,
+                   case
+                       when availability = 'hold' then 'failed calibration'
+                       when next_due < current_date then 'calibration expired'
+                       else null
+                   end as disabled_reason
               from gages where org_id = $1 order by gage_id`,
 
     lots:  `select lot_number as value,
@@ -187,6 +192,9 @@ function problemWith(fields) {
         if (!field.key || typeof field.key !== "string") return "Every field needs a key";
         if (!field.label || typeof field.label !== "string") return "Every field needs a label";
         if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
+        if (field.section !== undefined && typeof field.section !== "string") {
+            return "\"" + field.label + "\"'s section must be text";
+        }
 
         if (seenKeys.has(field.key)) return "Two fields share the key \"" + field.key + "\"";
         seenKeys.add(field.key);
@@ -285,7 +293,7 @@ masterdata.get("/gages", async (request, response, next) => {
     try {
         const result = await query(`
             select gage_id, description, range_text, interval_months,
-                   last_cal, next_due,
+                   last_cal, next_due, availability,
                    case
                        when next_due < current_date then 'past_due'
                        when next_due < current_date + interval '30 days' then 'due_soon'
@@ -298,6 +306,95 @@ masterdata.get("/gages", async (request, response, next) => {
         `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, gages: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* GET /api/gages/BG-0221/calibrations
+   History, most recent first - what "historical calibration records"
+   actually means, as opposed to the single last_cal/next_due pair on
+   the gage itself. */
+masterdata.get("/gages/:gageId/calibrations", async (request, response, next) => {
+    try {
+        const result = await query(`
+            select c.performed_at, c.result, c.reading, c.notes,
+                   u.full_name as performed_by
+              from gage_calibrations c
+              join gages g on g.id = c.gage_id
+         left join users u on u.id = c.performed_by
+             where g.org_id = $1 and g.gage_id = $2
+             order by c.performed_at desc
+        `, [request.user.org_id, request.params.gageId]);
+
+        response.json({ count: result.rowCount, calibrations: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/gages/BG-0221/calibrations   { result, reading, notes }
+
+   A pass extends next_due by the gage's own interval and clears any
+   hold. A fail does the opposite: next_due is left alone (there is no
+   "next due date" for a gage that is not fit to use right now, only
+   a hold that recording another result - hopefully a pass - lifts),
+   and the gage is set unavailable immediately, in the same
+   transaction that records the failure, not as a separate step
+   something could skip. */
+masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate"), async (request, response, next) => {
+    try {
+        const { result, reading, notes } = request.body || {};
+
+        if (result !== "pass" && result !== "fail") {
+            return response.status(400).json({ error: "result must be 'pass' or 'fail'" });
+        }
+
+        const updated = await withTransaction(async (client) => {
+            const found = await client.query(
+                "select id, interval_months, availability from gages where org_id = $1 and gage_id = $2 for update",
+                [request.user.org_id, request.params.gageId]
+            );
+
+            if (found.rowCount === 0) return null;
+            const gage = found.rows[0];
+
+            const performedAt = new Date();
+            const nextAvailability = result === "fail" ? "hold" : "available";
+
+            await client.query(`
+                insert into gage_calibrations
+                    (org_id, gage_id, performed_by, result, reading, notes)
+                values ($1, $2, $3, $4, $5, $6)
+            `, [request.user.org_id, gage.id, request.user.id, result, reading || null, notes || null]);
+
+            const nextDueClause = result === "pass"
+                ? "current_date + make_interval(months => interval_months)"
+                : "next_due";
+
+            const record = await client.query(`
+                update gages
+                   set last_cal = current_date,
+                       next_due = ${nextDueClause},
+                       availability = $2
+                 where id = $1
+                returning gage_id, last_cal, next_due, availability
+            `, [gage.id, nextAvailability]);
+
+            if (gage.availability !== nextAvailability) {
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
+                    values ($1, 'gages', $2, 'availability', $3, $4, $5, $6)
+                `, [request.user.org_id, gage.id, gage.availability, nextAvailability,
+                    result === "fail" ? "Failed calibration" : "Passed calibration", request.user.id]);
+            }
+
+            return record.rows[0];
+        });
+
+        if (!updated) return response.status(404).json({ error: "No such gage" });
+        response.status(201).json(updated);
     } catch (error) {
         next(error);
     }

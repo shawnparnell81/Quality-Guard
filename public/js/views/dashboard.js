@@ -9,10 +9,28 @@
 import { api } from "../api.js";
 import { getOrganization, describeCountdown } from "../org.js";
 import { VENDOR_STATUS } from "./resources.js";
+import { show } from "../app.js";
+import { renderRecordDetail } from "./events.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    setText, formatDate, humanize, statusKind, drawSparkline
+    setText, formatDate, humanize, statusKind, drawSparkline, toast
 } from "../dom.js";
+
+/* A sparkline point's record numbers are oldest-first within the
+   week; the most recent one is the most useful thing to land on.
+   Same view names as the type keys for all three of these charts, so
+   no translation table is needed the way palette.js needs one for
+   every type. */
+async function jumpToTrendPoint(type, numbers) {
+    if (!numbers || numbers.length === 0) return;
+
+    await show(type);
+    await renderRecordDetail(type, numbers[numbers.length - 1]);
+
+    if (numbers.length > 1) {
+        toast(numbers.length + " records that week - showing " + numbers[numbers.length - 1]);
+    }
+}
 
 export async function renderDashboard() {
     const events = document.getElementById("dashboard-events");
@@ -53,10 +71,22 @@ export async function renderDashboard() {
         setText("kpi-audits-foot",   "clause 9.2");
 
         /* Real history (opened_at, bucketed by week server-side), not
-           a decoration - eight weeks, oldest to newest. */
-        drawSparkline("kpi-ncr-spark",    summary.trends?.ncr);
-        drawSparkline("kpi-capa-spark",   summary.trends?.capa);
-        drawSparkline("kpi-audits-spark", summary.trends?.audit);
+           a decoration - eight weeks, oldest to newest. Every point
+           with real records behind it is clickable straight through
+           to them (trend_records carries the same shape as trends,
+           one array of record numbers per week instead of a count). */
+        drawSparkline("kpi-ncr-spark", summary.trends?.ncr, {
+            recordsByWeek: summary.trend_records?.ncr,
+            onPointClick: (index, numbers) => jumpToTrendPoint("ncr", numbers)
+        });
+        drawSparkline("kpi-capa-spark", summary.trends?.capa, {
+            recordsByWeek: summary.trend_records?.capa,
+            onPointClick: (index, numbers) => jumpToTrendPoint("capa", numbers)
+        });
+        drawSparkline("kpi-audits-spark", summary.trends?.audit, {
+            recordsByWeek: summary.trend_records?.audit,
+            onPointClick: (index, numbers) => jumpToTrendPoint("audit", numbers)
+        });
 
         /* ---- open events ---- */
         const eventsNote = document.getElementById("open-events-note");
