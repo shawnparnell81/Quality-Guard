@@ -57,14 +57,15 @@ const GRANTS = {
     quality_inspector: [
         "ncr.read", "ncr.create", "ncr.contain", "capa.read", "complaint.read",
         "document.read", "drawing.read", "production.read", "shipping.read",
-        "shipping.release", "gage.read", "training.read", "audit.read"],
+        "shipping.release", "gage.read", "training.read", "audit.read", "receiving.log"],
 
     quality_tech: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition",
         "capa.read", "capa.create", "complaint.read", "complaint.create",
         "document.read", "drawing.read", "production.read", "production.hold",
         "shipping.read", "gage.read", "gage.calibrate", "training.read",
-        "training.record", "audit.read", "risk.read", "vendor.read", "scar.issue"],
+        "training.record", "audit.read", "risk.read", "vendor.read", "scar.issue",
+        "receiving.log"],
 
     quality_engineer: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "mrb.signoff",
@@ -73,7 +74,7 @@ const GRANTS = {
         "production.read", "production.hold", "shipping.read",
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "risk.read", "risk.manage",
-        "vendor.read", "scar.issue"],
+        "vendor.read", "scar.issue", "receiving.log"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
@@ -125,7 +126,7 @@ const GRANTS = {
         "gage.read", "gage.calibrate", "gage.retire",
         "training.read", "training.record",
         "audit.read", "audit.schedule", "audit.close",
-        "risk.read", "risk.manage", "user.read", "forms.manage"]
+        "risk.read", "risk.manage", "user.read", "forms.manage", "receiving.log"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"

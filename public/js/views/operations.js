@@ -8,10 +8,10 @@
 
 import { api } from "../api.js";
 import { can } from "../session.js";
-import { confirmStep } from "../forms.js";
+import { confirmStep, ensureDialog } from "../forms.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize
+    formatDate, humanize, toast
 } from "../dom.js";
 
 /* ============================================================
@@ -79,9 +79,18 @@ async function renderReceipt(number) {
     if (measureBody) loadingRow(measureBody, 5);
 
     try {
-        const { receipt, measurements, can_disposition } = await api.receipt(number);
+        const { receipt, measurements, can_disposition, can_log_measurement } = await api.receipt(number);
 
         if (heading) heading.textContent = receipt.receipt_number;
+
+        /* code_letter/sample_size are the real ANSI/ASQ Z1.4 Table I
+           numbers for this lot's actual quantity, not a static label -
+           see vendor-scoring.js's receivingSamplePlan for what "real"
+           means here and what it deliberately does not claim to be. */
+        const samplingLine = receipt.code_letter
+            ? "Pull " + receipt.sample_size + " (code " + receipt.code_letter + "), "
+              + receipt.accept_on
+            : (receipt.sample_size ? "Inspect all " + receipt.sample_size : "-");
 
         const children = [
             el("dl", { class: "kv" }, [
@@ -96,6 +105,8 @@ async function renderReceipt(number) {
                 el("dd", { class: "mono", text: receipt.qty_received.toLocaleString() }),
                 el("dt", { text: "Sampling" }),
                 el("dd", { class: "mono", text: receipt.sample_plan || "-" }),
+                el("dt", { text: "Quality gate" }),
+                el("dd", { class: "mono", text: samplingLine }),
                 el("dt", { text: "Received" }),
                 el("dd", { class: "mono", text: formatDate(receipt.received_at) })
             ])
@@ -155,9 +166,124 @@ async function renderReceipt(number) {
             { className: "mono sm dim", render: (row) => row.gage_id || "-" },
             { render: (row) => row.result === "pass" ? pill("Pass", "done") : pill("Fail", "open") }
         ], "No measurements recorded");
+
+        const addArea = document.getElementById("measurement-add");
+        if (addArea) {
+            if (can_log_measurement && receipt.status === "pending") {
+                addArea.replaceChildren(buildMeasurementForm(number));
+            } else {
+                addArea.replaceChildren();
+            }
+        }
     } catch (error) {
         errorRow(measureBody, 5, error);
     }
+}
+
+/* One line of the sample this receipt's quality gate called for -
+   inline, not a dialog, because an inspector works through several
+   of these in a row while the sample is in front of them. */
+function buildMeasurementForm(number) {
+    const characteristic = el("input", { type: "text", placeholder: "Characteristic", class: "sm" });
+    const specification = el("input", { type: "text", placeholder: "Specification", class: "sm" });
+    const actual = el("input", { type: "text", placeholder: "Actual", class: "sm" });
+    const result = el("select", { class: "sm" }, [
+        el("option", { value: "pass", text: "Pass" }),
+        el("option", { value: "fail", text: "Fail" })
+    ]);
+    const add = el("button", { class: "btn no-print", type: "button" }, "Add");
+
+    add.addEventListener("click", async () => {
+        if (!characteristic.value.trim()) {
+            toast("Characteristic is required", "error");
+            return;
+        }
+
+        try {
+            await api.addReceiptMeasurement(number, {
+                characteristic: characteristic.value.trim(),
+                specification: specification.value.trim() || null,
+                actual: actual.value.trim() || null,
+                result: result.value
+            });
+            await renderReceipt(number);
+        } catch (error) {
+            toast(error.message, "error");
+        }
+    });
+
+    return el("div", { class: "row no-print", style: "gap:6px;flex-wrap:wrap" },
+        [characteristic, specification, actual, result, add]);
+}
+
+/* "Log receipt" - clause 8.4.2's actual starting gate. Vendor options
+   come from the same computed list the AVL screen shows, so the
+   grade behind the quality gate is never stale. */
+function buildLogReceiptDialog(vendors) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const vendorSelect = el("select", {}, [
+        el("option", { value: "", text: "Choose a vendor..." }),
+        ...vendors.map((v) => el("option", { value: v.name, text: v.name + "  grade " + (v.grade || "?") }))
+    ]);
+    const poNumber = el("input", { type: "text", placeholder: "PO-4471" });
+    const partNumber = el("input", { type: "text", placeholder: "RP-4471-A" });
+    const qty = el("input", { type: "number", min: "1", step: "1" });
+    const notes = el("textarea", { rows: 2, placeholder: "Optional" });
+
+    const go = el("button", { class: "btn btn-primary", type: "button" }, "Log receipt");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Log a new receipt" })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("div", { class: "field-group" }, [el("label", { text: "Vendor" }), vendorSelect]),
+            el("div", { class: "field-group" }, [el("label", { text: "Purchase order" }), poNumber]),
+            el("div", { class: "field-group" }, [el("label", { text: "Part number" }), partNumber]),
+            el("div", { class: "field-group" }, [el("label", { text: "Quantity received" }), qty]),
+            el("div", { class: "field-group" }, [el("label", { text: "Notes" }), notes])
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            go
+        ])
+    );
+
+    go.addEventListener("click", async () => {
+        errorBox.hidden = true;
+
+        if (!vendorSelect.value || !qty.value || Number(qty.value) <= 0) {
+            errorBox.textContent = "Vendor and a positive quantity are both required.";
+            errorBox.hidden = false;
+            return;
+        }
+
+        go.disabled = true;
+        go.textContent = "Logging...";
+
+        try {
+            const created = await api.createReceipt({
+                vendor: vendorSelect.value,
+                po_number: poNumber.value.trim() || null,
+                part_number: partNumber.value.trim() || null,
+                qty_received: Number(qty.value),
+                notes: notes.value.trim() || null
+            });
+            node.close();
+            toast(created.receipt_number + " logged");
+            selectedReceipt = created.receipt_number;
+            await renderReceiving();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            go.disabled = false;
+            go.textContent = "Log receipt";
+        }
+    });
+
+    node.showModal();
 }
 
 /* ============================================================
@@ -340,6 +466,22 @@ export function wireOperations() {
             mark(receipts, "receipt", row.dataset.receipt);
             renderReceipt(row.dataset.receipt);
         });
+    }
+
+    const logReceiptBtn = document.getElementById("log-receipt-btn");
+    if (logReceiptBtn) {
+        if (!can("receiving.log")) {
+            logReceiptBtn.hidden = true;
+        } else {
+            logReceiptBtn.addEventListener("click", async () => {
+                try {
+                    const { vendors } = await api.vendors();
+                    buildLogReceiptDialog(vendors);
+                } catch (error) {
+                    toast(error.message, "error");
+                }
+            });
+        }
     }
 
     const shipments = document.getElementById("shipment-table");

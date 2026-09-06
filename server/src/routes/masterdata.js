@@ -287,6 +287,71 @@ masterdata.get("/vendors", async (request, response, next) => {
     }
 });
 
+/* ---------- vendor evaluations, clause 8.4.1 ----------
+   The other half of supplier scoring: a dated, documented review,
+   distinct from the rolling PPM/grade in vendor-scoring.js. Nothing
+   here is computed - someone conducts the review and records what
+   they found. */
+masterdata.get("/vendors/:name/evaluations", async (request, response, next) => {
+    try {
+        const vendor = await query(
+            "select id from vendors where org_id = $1 and name = $2",
+            [request.user.org_id, request.params.name]
+        );
+        if (vendor.rowCount === 0) {
+            return response.status(404).json({ error: "No such vendor" });
+        }
+
+        const result = await query(`
+            select e.audit_date, e.performance_score, e.non_conformance_count,
+                   e.notes, u.full_name as evaluated_by
+              from vendor_evaluations e
+         left join users u on u.id = e.evaluated_by
+             where e.vendor_id = $1
+             order by e.audit_date desc
+        `, [vendor.rows[0].id]);
+
+        response.json({ count: result.rowCount, evaluations: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/vendors/Halstead%20Steel/evaluations
+   { "audit_date": "2026-09-01", "performance_score": 92.5,
+     "non_conformance_count": 1, "notes": "..." } */
+masterdata.post("/vendors/:name/evaluations", requirePermission("vendor.approve"),
+    async (request, response, next) => {
+        try {
+            const { audit_date, performance_score, non_conformance_count, notes } = request.body || {};
+
+            if (!audit_date || Number.isNaN(new Date(audit_date).getTime())) {
+                return response.status(400).json({ error: "audit_date is required and must be a valid date" });
+            }
+
+            const vendor = await query(
+                "select id from vendors where org_id = $1 and name = $2",
+                [request.user.org_id, request.params.name]
+            );
+            if (vendor.rowCount === 0) {
+                return response.status(404).json({ error: "No such vendor" });
+            }
+
+            const inserted = await query(`
+                insert into vendor_evaluations
+                    (vendor_id, audit_date, performance_score, non_conformance_count, notes, evaluated_by)
+                values ($1, $2, $3, $4, $5, $6)
+                returning audit_date, performance_score, non_conformance_count, notes
+            `, [vendor.rows[0].id, audit_date,
+                performance_score === undefined ? null : Number(performance_score),
+                Number(non_conformance_count) || 0, notes || null, request.user.id]);
+
+            response.status(201).json(inserted.rows[0]);
+        } catch (error) {
+            next(error);
+        }
+    });
+
 /* ---------- gages ----------
    Status is derived from the due date rather than stored, so it can
    never drift out of sync with reality. */
