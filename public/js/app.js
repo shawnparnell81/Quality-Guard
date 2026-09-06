@@ -41,6 +41,7 @@ const LOADERS = {
     complaints:  () => renderRegister("complaint"),
     audit:       () => renderRegister("audit"),
     risk:        () => renderRegister("risk"),
+    apqp:        () => renderRegister("apqp"),
     calibration: renderCalibration,
     training:    renderTraining,
     documents:   renderDocuments,
@@ -227,6 +228,7 @@ async function updateNavCounts() {
             complaint: summary.events.complaint?.open,
             ecn: summary.events.ecn?.open,
             audit: summary.events.audit?.overdue,
+            apqp: summary.events.apqp?.open,
             calibration_due: summary.calibration?.due_soon
         };
 

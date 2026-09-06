@@ -196,7 +196,8 @@ const CREATE_PERMISSION = {
     audit:     "audit.schedule",
     risk:      "risk.manage",
     eightd:    "capa.create",
-    ecn:       "change.create"
+    ecn:       "change.create",
+    apqp:      "apqp.manage"
 };
 
 export function createPermissionFor(request) {
