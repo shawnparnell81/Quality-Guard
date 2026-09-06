@@ -6,7 +6,7 @@
    ============================================================ */
 
 import { api } from "../api.js";
-import { can } from "../session.js";
+import { can, applyPermissions } from "../session.js";
 import { ensureDialog } from "../forms.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement, toast
@@ -22,10 +22,17 @@ const CAL_STATUS = {
 
 export async function renderCalibration() {
     const tbody = document.getElementById("calibration-table");
-    loadingRow(tbody, 7);
+    const note = document.getElementById("calibration-note");
+    loadingRow(tbody, 9);
 
     try {
         const { gages } = await api.gages();
+
+        if (note) {
+            const pastDue = gages.filter((g) => g.status === "past_due").length;
+            const dueSoon = gages.filter((g) => g.status === "due_soon").length;
+            note.textContent = pastDue + " past due / " + dueSoon + " due in 30 d";
+        }
 
         fillTable(tbody, gages, [
             { className: "mono sm", render: (row) => row.gage_id },
@@ -37,11 +44,109 @@ export async function renderCalibration() {
             { render: (row) => {
                 const [label, kind] = CAL_STATUS[row.status] || ["Unknown", "hold"];
                 return pill(label, kind);
-            } }
-        ]);
+            } },
+            /* Separate from the due-date status above on purpose - a
+               gage can be well within its calibration interval and
+               still be on hold because the last result was a fail.
+               Neither fact can stand in for the other. */
+            { render: (row) => row.availability === "hold"
+                ? pill("On hold", "open")
+                : pill("Available", "done") },
+            { render: (row) => el("button", {
+                class: "btn btn-xs", type: "button", text: "Record",
+                dataset: { requires: "gage.calibrate", gage: row.gage_id }
+            }) }
+        ], "No gages tracked yet");
+
+        applyPermissions(tbody);
     } catch (error) {
-        errorRow(tbody, 7, error);
+        errorRow(tbody, 9, error);
     }
+}
+
+/* ---------- recording a calibration result ---------- */
+
+function openCalibrationDialog(gageId, onSaved) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const resultSelect = el("select", { id: "cal-result" }, [
+        el("option", { value: "pass", text: "Pass" }),
+        el("option", { value: "fail", text: "Fail" })
+    ]);
+    const readingInput = el("input", { type: "text", id: "cal-reading",
+        placeholder: "e.g. 0.0002 in high" });
+    const notesInput = el("textarea", { id: "cal-notes", rows: 2 });
+
+    const save = el("button", { class: "btn btn-primary", type: "button" }, "Save result");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Record calibration - " + gageId })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("div", { class: "field-group" }, [
+                el("label", { for: "cal-result", text: "Result" }),
+                resultSelect
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "cal-reading", text: "Reading" }),
+                readingInput,
+                el("span", { class: "field-hint", text: "Optional - what the instrument actually measured." })
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "cal-notes", text: "Notes" }),
+                notesInput
+            ]),
+            el("p", { class: "sm dim", id: "cal-fail-note", hidden: "hidden",
+                text: "A fail puts this gage on hold immediately - it will not be selectable on new records until a later result passes." })
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            save
+        ])
+    );
+
+    const failNote = node.querySelector("#cal-fail-note");
+    resultSelect.addEventListener("change", () => {
+        failNote.hidden = resultSelect.value !== "fail";
+    });
+
+    save.addEventListener("click", async () => {
+        save.disabled = true;
+        save.textContent = "Saving...";
+
+        try {
+            const result = await api.recordCalibration(gageId, {
+                result: resultSelect.value,
+                reading: readingInput.value.trim() || undefined,
+                notes: notesInput.value.trim() || undefined
+            });
+
+            node.close();
+            toast(gageId + (result.availability === "hold" ? " on hold - failed calibration" : " calibration recorded"));
+            if (onSaved) onSaved();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Save result";
+        }
+    });
+
+    node.showModal();
+}
+
+export function wireCalibration() {
+    const tbody = document.getElementById("calibration-table");
+    if (!tbody) return;
+
+    tbody.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-gage]");
+        if (!button || button.disabled) return;
+
+        openCalibrationDialog(button.dataset.gage, () => renderCalibration());
+    });
 }
 
 /* ---------- training ----------

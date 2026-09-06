@@ -38,6 +38,7 @@
     <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count" data-nav-count="capa" hidden></span></button>
     <button class="nav-item" data-view="d8"><span>8D Investigations</span><span class="nav-count" data-nav-count="eightd" hidden></span></button>
     <button class="nav-item" data-view="complaints"><span>Customer Complaints</span><span class="nav-count" data-nav-count="complaint" hidden></span></button>
+    <button class="nav-item" data-view="floor-report"><span>Floor Report</span></button>
 
     <div class="nav-group">Control</div>
     <button class="nav-item" data-view="documents"><span>Document Control</span></button>
@@ -353,6 +354,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="ncr-detail-number">Select a record</h2>
                     <span id="ncr-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="ncr-edit" data-edit-record="ncr">Edit</button>
                     <button type="button" class="btn no-print" id="ncr-print">Print</button>
                     <button type="button" class="btn no-print" id="ncr-pdf">PDF</button>
                 </div>
@@ -395,6 +397,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="capa-detail-number">Select a record</h2>
                     <span id="capa-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="capa-edit" data-edit-record="capa">Edit</button>
                     <button type="button" class="btn no-print" id="capa-print">Print</button>
                     <button type="button" class="btn no-print" id="capa-pdf">PDF</button>
                 </div>
@@ -439,11 +442,29 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="complaint-detail-number">Select a record</h2>
                     <span id="complaint-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="complaint-edit" data-edit-record="complaint">Edit</button>
                     <button type="button" class="btn no-print" id="complaint-print">Print</button>
                     <button type="button" class="btn no-print" id="complaint-pdf">PDF</button>
                 </div>
                 <div class="panel-body" id="complaint-detail"></div>
             </div>
+        </div>
+    </section>
+
+    <!-- ============ FLOOR REPORT ============
+         Built for a phone or a tablet at a workstation, not a desk -
+         big touch targets, barcode-scanner-friendly, works offline.
+         See public/js/offline-queue.js and views/floorreport.js. -->
+    <section class="view" id="view-floor-report" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Floor Report<span class="clause-ref">8.7</span></h1>
+            <p class="view-sub">Report a nonconformance from the floor. Scan a part or lot to fill it in - this keeps working without a connection and syncs automatically once one comes back.</p>
+        </div>
+
+        <p class="floor-status" id="floor-report-status" hidden></p>
+
+        <div class="panel floor-panel">
+            <div class="panel-body" id="floor-report-body"></div>
         </div>
     </section>
 
@@ -515,9 +536,7 @@
         </div>
     </section>
 
-    <!-- ============ CHANGE CONTROL ============ -->
-
-    <!-- ============ PRODUCTION ============ -->
+    <!-- ============ 8D INVESTIGATIONS ============ -->
     <section class="view" id="view-d8" hidden>
         <div class="view-head">
             <h1 class="view-title">8D Investigations<span class="clause-ref">10.2</span></h1>
@@ -525,7 +544,10 @@
         </div>
 
         <div class="panel" style="margin-bottom:16px">
-            <div class="panel-head"><h2 class="panel-title">Open investigations</h2></div>
+            <div class="panel-head">
+                <h2 class="panel-title">Open investigations</h2>
+                <button class="btn btn-primary" data-requires="capa.create" data-new-record="eightd">New 8D</button>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Record</th><th>Problem</th><th>Customer</th><th>Champion</th><th>Discipline</th></tr></thead>
@@ -546,7 +568,10 @@
             </div>
 
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Investigation detail</h2></div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Investigation detail</h2>
+                    <button type="button" class="btn btn-primary no-print" id="eightd-edit" data-edit-record="eightd">Edit</button>
+                </div>
                 <div class="panel-body" id="eightd-side"></div>
             </div>
         </div>
@@ -586,7 +611,10 @@
             </div>
 
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Change detail</h2></div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Change detail</h2>
+                    <button type="button" class="btn btn-primary no-print" id="ecn-edit" data-edit-record="ecn">Edit</button>
+                </div>
                 <div class="panel-body" id="ecn-side"></div>
             </div>
         </div>
@@ -797,28 +825,15 @@
     <section class="view" id="view-calibration" hidden>
         <div class="view-head">
             <h1 class="view-title">Calibration<span class="clause-ref">7.1.5</span></h1>
-            <p class="view-sub">Monitoring and measuring resources. 214 gages under control, traceable to NIST.</p>
+            <p class="view-sub">Monitoring and measuring resources. Every result recorded here, kept as history, not just a due date.</p>
         </div>
         <div class="panel">
-            <div class="panel-head"><h2 class="panel-title">Gage register</h2><span class="panel-note">1 past due / 7 due in 30 d</span></div>
+            <div class="panel-head"><h2 class="panel-title">Gage register</h2><span class="panel-note" id="calibration-note"></span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Gage ID</th><th>Description</th><th>Range</th><th>Interval</th><th>Last cal</th><th>Due</th><th>Status</th></tr></thead>
+                    <thead><tr><th>Gage ID</th><th>Description</th><th>Range</th><th>Interval</th><th>Last cal</th><th>Due</th><th>Status</th><th>Availability</th><th></th></tr></thead>
                     <tbody id="calibration-table"></tbody>
                 </table>
-            </div>
-        </div>
-
-        <div class="section-label">Out-of-tolerance impact, MIC-114</div>
-        <div class="panel">
-            <div class="panel-body">
-                <p class="sm dim" style="margin:0 0 12px;max-width:66ch">A gage found out of tolerance at calibration triggers a reverse traceability sweep: every lot measured with it since the last good calibration is listed for review. Clause 7.1.5.2 requires this and it is the most commonly missed requirement in the standard.</p>
-                <div class="chip-list">
-                    <span class="chip">L-87902, 640 pc, shipped</span>
-                    <span class="chip">L-88044, 220 pc, in stock</span>
-                    <span class="chip">L-88102, 96 pc, NCR-0135</span>
-                    <span class="chip">L-88190, 88 pc, on hold</span>
-                </div>
             </div>
         </div>
     </section>
@@ -891,12 +906,16 @@
                     <div class="panel-head">
                         <h2 class="panel-title">Audit schedule 2026</h2>
                         <span class="panel-note" id="audit-overdue-note"></span>
-                        <select class="filter-severity" data-type="audit" title="Filter by severity">
-                            <option value="">All severities</option>
-                            <option value="crit">Critical</option>
-                            <option value="warn">Warning</option>
-                            <option value="ok">OK</option>
-                        </select>
+                        <div class="row">
+                            <select class="filter-severity" data-type="audit" title="Filter by severity">
+                                <option value="">All severities</option>
+                                <option value="crit">Critical</option>
+                                <option value="warn">Warning</option>
+                                <option value="ok">OK</option>
+                            </select>
+                            <label class="filter-open"><input type="checkbox" data-type="audit"> Open only</label>
+                            <button class="btn btn-primary" data-requires="audit.schedule" data-new-record="audit">Schedule audit</button>
+                        </div>
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -911,6 +930,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="audit-detail-number">Select a record</h2>
                     <span id="audit-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="audit-edit" data-edit-record="audit">Edit</button>
                     <button type="button" class="btn no-print" id="audit-print">Print</button>
                     <button type="button" class="btn no-print" id="audit-pdf">PDF</button>
                 </div>
@@ -975,12 +995,16 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2 class="panel-title">Risks and opportunities</h2>
-                    <select class="filter-severity" data-type="risk" title="Filter by severity">
-                        <option value="">All severities</option>
-                        <option value="crit">Critical</option>
-                        <option value="warn">Warning</option>
-                        <option value="ok">OK</option>
-                    </select>
+                    <div class="row">
+                        <select class="filter-severity" data-type="risk" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="risk"> Open only</label>
+                        <button class="btn btn-primary" data-requires="risk.manage" data-new-record="risk">Add risk</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -994,6 +1018,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="risk-detail-number">Select a record</h2>
                     <span id="risk-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="risk-edit" data-edit-record="risk">Edit</button>
                     <button type="button" class="btn no-print" id="risk-print">Print</button>
                     <button type="button" class="btn no-print" id="risk-pdf">PDF</button>
                 </div>
@@ -1011,7 +1036,10 @@
         <div class="panel">
             <div class="panel-head">
                 <h2 class="panel-title">Quality objectives</h2>
-                <span class="panel-note" id="objective-note"></span>
+                <div class="row">
+                    <span class="panel-note" id="objective-note"></span>
+                    <button type="button" class="btn no-print" id="objectives-pdf">Export PDF</button>
+                </div>
             </div>
             <div class="table-wrap">
                 <table>
@@ -1034,7 +1062,7 @@
                 <h2 class="panel-title">Directory</h2>
                 <div class="row">
                     <span class="panel-note" id="people-note"></span>
-                    <button class="btn btn-primary" data-requires="user.create">Add person</button>
+                    <button class="btn btn-primary" id="add-person-btn" data-requires="user.create">Add person</button>
                 </div>
             </div>
             <div class="table-wrap">
@@ -1042,7 +1070,7 @@
                     <thead>
                         <tr>
                             <th>Name</th><th>Job title</th><th>Discipline</th>
-                            <th>Role</th><th class="num">Permissions</th><th>Access</th>
+                            <th>Role</th><th class="num">Permissions</th><th>Access</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="people-table"></tbody>
@@ -1174,6 +1202,19 @@
             <div class="table-wrap">
                 <table class="matrix" id="roles-matrix"></table>
             </div>
+        </div>
+    </section>
+
+    <!-- ============ RECORD EDITOR (create / edit, full page) ============ -->
+    <section class="view" id="view-record-editor" hidden>
+        <div class="view-head">
+            <button class="btn no-print" id="record-editor-back" type="button" style="margin-bottom:10px">&larr; Back</button>
+            <h1 class="view-title" id="record-editor-title">New record</h1>
+            <p class="view-sub" id="record-editor-sub"></p>
+        </div>
+
+        <div class="panel">
+            <div class="panel-body" id="record-editor-body"></div>
         </div>
     </section>
 
