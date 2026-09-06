@@ -13,6 +13,7 @@ import { api } from "../api.js";
 import { can } from "../session.js";
 import { openRecordEditor, confirmStep, editDueDate } from "../forms.js";
 import { renderEightD, renderChange } from "./change.js";
+import { renderDocumentsPanel } from "./resources.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind, printElement, toast
@@ -499,6 +500,15 @@ export async function renderRecordDetail(type, number) {
 
         const editButton = document.getElementById(type + "-edit");
         if (editButton) editButton.dataset.number = record.number;
+
+        /* Only apqp has a Documents panel in the markup today - this
+           is written to key off that element's presence rather than
+           the type, so any other record type that gets one later
+           (an 8D's own, added below in change.js, or a future type)
+           picks this up with no change here. */
+        if (document.getElementById(type + "-documents-panel")) {
+            renderDocumentsPanel(record.number, type + "-documents-panel");
+        }
 
         if (statusSlot) {
             statusSlot.replaceChildren(

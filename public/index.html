@@ -479,7 +479,10 @@
         </div>
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Controlled documents</h2></div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Controlled documents</h2>
+                    <button class="btn btn-primary no-print" type="button" id="document-upload" data-requires="document.create">Upload document</button>
+                </div>
                 <div class="table-wrap">
                     <table>
                         <thead><tr><th>Doc</th><th>Title</th><th>Rev</th><th>Owner</th><th class="num">Revisions</th><th>Status</th></tr></thead>
@@ -492,12 +495,13 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="document-detail-number">Select a document</h2>
                     <span id="document-detail-status"></span>
+                    <button type="button" class="btn no-print" id="document-new-revision" data-requires="document.create">New revision</button>
                     <button type="button" class="btn no-print" id="document-print">Print</button>
                 </div>
                 <div class="panel-body" id="document-summary"></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Rev</th><th>Change</th><th>Author</th><th>Approved by</th><th>Effective</th></tr></thead>
+                        <thead><tr><th>Rev</th><th>Change</th><th>Author</th><th>Approved by</th><th>Effective</th><th>Actions</th></tr></thead>
                         <tbody id="document-revisions"></tbody>
                     </table>
                 </div>
@@ -576,6 +580,8 @@
                     <button type="button" class="btn btn-primary no-print" id="eightd-edit" data-edit-record="eightd">Edit</button>
                 </div>
                 <div class="panel-body" id="eightd-side"></div>
+                <div class="section-label">Documents</div>
+                <div class="panel-body" id="eightd-documents-panel"></div>
             </div>
         </div>
     </section>
@@ -1059,6 +1065,8 @@
                     <button type="button" class="btn no-print" id="apqp-pdf">PDF</button>
                 </div>
                 <div class="panel-body" id="apqp-detail"></div>
+                <div class="section-label">Documents</div>
+                <div class="panel-body" id="apqp-documents-panel"></div>
             </div>
         </div>
     </section>
