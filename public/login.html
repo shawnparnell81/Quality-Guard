@@ -43,6 +43,18 @@
                     <input type="password" id="password" name="password" autocomplete="current-password" required>
                 </div>
 
+                <!-- DEV ONLY - remove this field before launch. Checking it
+                     asks the server for a 30-day session instead of the
+                     usual 12 hours, purely so sign-in doesn't happen over
+                     and over while building. Never stores the password
+                     itself anywhere; the server also ignores this outside
+                     development, so it does nothing even if this markup
+                     is left in by mistake. -->
+                <div class="field-group" style="display:flex;flex-direction:row;align-items:center;gap:6px">
+                    <input type="checkbox" id="remember" name="remember" style="width:auto">
+                    <label for="remember" style="margin:0">Remember me (dev only)</label>
+                </div>
+
                 <button type="submit" class="signin-submit" id="signin-submit">Sign in</button>
             </form>
         </div>
@@ -72,7 +84,8 @@ form.addEventListener("submit", async (event) => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 email: document.getElementById("email").value.trim(),
-                password: document.getElementById("password").value
+                password: document.getElementById("password").value,
+                remember: document.getElementById("remember").checked
             })
         });
 
