@@ -33,6 +33,33 @@ function parseDueAt(value) {
     return { ok: true, value: parsed.toISOString() };
 }
 
+/* Risk priority numbers are derived, never entered - severity times
+   occurrence times detection, computed here so a stored rpn can
+   never disagree with the very numbers it comes from. Same idea for
+   residual_rpn: the re-evaluation after a mitigation is verified,
+   using its own severity/occurrence/detection, not the original
+   risk's - a control that lowers occurrence does nothing for
+   severity, and the two numbers should say so separately. Only
+   touches risk records; every other type's data passes through
+   untouched. */
+function withComputedRpn(typeKey, data) {
+    if (typeKey !== "risk" || !data || typeof data !== "object") return data;
+
+    const computed = { ...data };
+    const score = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 1 && n <= 10 ? n : null;
+    };
+
+    const [s, o, d] = [score(data.severity), score(data.occurrence), score(data.detection)];
+    if (s !== null && o !== null && d !== null) computed.rpn = s * o * d;
+
+    const [rs, ro, rd] = [score(data.residual_severity), score(data.residual_occurrence), score(data.residual_detection)];
+    if (rs !== null && ro !== null && rd !== null) computed.residual_rpn = rs * ro * rd;
+
+    return computed;
+}
+
 /* Which authority an edit needs depends on what is being changed.
    Selecting "Rework" and selecting "Use-as-is" travel through the same
    endpoint but are not the same decision: use-as-is ships a known
@@ -357,7 +384,8 @@ records.get("/:number/pdf", async (request, response, next) => {
    accepts without touching this file. */
 records.post("/", requirePermission(createPermissionFor), async (request, response, next) => {
     try {
-        const { type, title, owner, data = {}, severity = "ok", due_at, idempotency_key } = request.body || {};
+        const { type, title, owner, severity = "ok", due_at, idempotency_key } = request.body || {};
+        const data = withComputedRpn(type, request.body?.data || {});
 
         if (!type || !title) {
             return response.status(400).json({
@@ -529,10 +557,12 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
         }
 
         const updated = await withTransaction(async (client) => {
-            const current = await client.query(
-                "select id, title, data, severity, due_at from records where org_id = $1 and number = $2 for update",
-                [request.user.org_id, request.params.number]
-            );
+            const current = await client.query(`
+                select r.id, r.title, r.data, r.severity, r.due_at, rt.key as type
+                  from records r join record_types rt on rt.id = r.record_type_id
+                 where r.org_id = $1 and r.number = $2
+                   for update of r
+            `, [request.user.org_id, request.params.number]);
 
             if (current.rowCount === 0) return null;
 
@@ -543,7 +573,17 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                server, not the caller, decides whose name goes on it. */
             const actorId = request.user.id;
 
-            for (const [key, value] of Object.entries(data)) {
+            const merged = withComputedRpn(record.type, { ...record.data, ...data });
+
+            /* A risk's rpn/residual_rpn are derived, not sent by the
+               caller, so they never appear in the plain "what did the
+               client ask to change" set below - audited against the
+               full merged-and-computed result instead, for this type
+               only, so a scores edit still leaves its own trail on the
+               number it actually changes. */
+            const auditAgainst = record.type === "risk" ? merged : data;
+
+            for (const [key, value] of Object.entries(auditAgainst)) {
                 const before = record.data[key];
                 if (String(before) === String(value)) continue;
 
@@ -556,8 +596,6 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                     before === undefined ? null : String(before),
                     String(value), reason || null, actorId]);
             }
-
-            const merged = { ...record.data, ...data };
 
             /* Unchanged (undefined) when the caller never mentioned
                due_at at all; otherwise the new value, parsed above,

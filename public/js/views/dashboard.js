@@ -8,6 +8,7 @@
 
 import { api } from "../api.js";
 import { getOrganization, describeCountdown } from "../org.js";
+import { VENDOR_STATUS } from "./resources.js";
 import { show } from "../app.js";
 import { renderRecordDetail } from "./events.js";
 import {
@@ -33,17 +34,23 @@ async function jumpToTrendPoint(type, numbers) {
 
 export async function renderDashboard() {
     const events = document.getElementById("dashboard-events");
+    const escalations = document.getElementById("dashboard-escalations");
+    const suppliers = document.getElementById("dashboard-suppliers");
     const calibration = document.getElementById("dashboard-cal");
     const training = document.getElementById("dashboard-training");
 
     loadingRow(events, 5);
+    loadingRow(escalations, 4);
+    loadingRow(suppliers, 6);
     loadingRow(calibration, 3);
     loadingRow(training, 2);
 
     try {
-        const [summary, feed, gages, gaps] = await Promise.all([
+        const [summary, feed, dueSoonRecords, vendors, gages, gaps] = await Promise.all([
             api.dashboard(),
             api.openEvents(),
+            api.escalations(14),
+            api.vendors(),
             api.gages(),
             api.trainingGaps()
         ]);
@@ -81,8 +88,20 @@ export async function renderDashboard() {
             onPointClick: (index, numbers) => jumpToTrendPoint("audit", numbers)
         });
 
-        /* ---- open events ----
-           Five columns, not seven. Part, lot and quantity belong on the
+        /* ---- open events ---- */
+        const eventsNote = document.getElementById("open-events-note");
+        if (eventsNote) {
+            const counts = [
+                ["ncr", "NCR"], ["capa", "CAPA"], ["complaint", "COMP"]
+            ].map(([key, label]) => [summary.events[key]?.open ?? 0, label])
+             .filter(([count]) => count > 0);
+
+            eventsNote.textContent = counts.length > 0
+                ? counts.map(([count, label]) => count + " " + label).join(" / ")
+                : "Nothing open";
+        }
+
+        /* Five columns, not seven. Part, lot and quantity belong on the
            module screens; crammed in here they force every description
            to wrap over four lines and the table stops being scannable. */
         fillTable(events, feed.events, [
@@ -92,6 +111,45 @@ export async function renderDashboard() {
             { className: "mono sm", render: (row) => row.age_days + " d" },
             { render: (row) => pill(humanize(row.status), statusKind(row.status)) }
         ], "No open quality events");
+
+        /* ---- coming due ----
+           Who would get a warning, and about what, computed live -
+           there is no email provider wired up yet, so this is the
+           honest version: the answer to "who needs telling," visible,
+           rather than a notification nobody can actually send. */
+        const note = document.getElementById("escalations-note");
+        if (note) {
+            note.textContent = dueSoonRecords.count + " in the next 14 d"
+                + (dueSoonRecords.unowned > 0 ? ", " + dueSoonRecords.unowned + " unowned" : "");
+        }
+
+        fillTable(escalations, dueSoonRecords.escalations, [
+            { className: "mono sm", render: (row) => row.number },
+            { className: "sm dim", render: (row) => humanize(row.type) },
+            { className: "sm", render: (row) => row.owner_name
+                || el("span", { class: "dim", text: "Unowned" }) },
+            { className: "mono sm", render: (row) => row.overdue
+                ? el("span", { style: "color:var(--crit)", text: formatDate(row.due_at) + " overdue" })
+                : formatDate(row.due_at) }
+        ], "Nothing coming due");
+
+        /* ---- supplier scorecard ----
+           The full list lives on the Approved Vendor List screen; the
+           dashboard only needs the ones actually worth a second look -
+           already sorted scar_open, then on_watch, then everyone else
+           by the endpoint itself, so taking the first few is taking
+           the ones that need attention, not an arbitrary slice. */
+        fillTable(suppliers, vendors.vendors.slice(0, 5), [
+            { render: (row) => row.name },
+            { className: "sm dim", render: (row) => row.scope },
+            { className: "num", render: (row) => row.otd_pct != null ? row.otd_pct + "%" : "-" },
+            { className: "num", render: (row) => row.ppm != null ? row.ppm.toLocaleString() : "-" },
+            { className: "num", render: (row) => row.grade || "-" },
+            { render: (row) => {
+                const [label, kind] = VENDOR_STATUS[row.status] || ["Unknown", "hold"];
+                return pill(label, kind);
+            } }
+        ], "No vendors tracked yet");
 
         /* ---- calibration due ---- */
         const dueSoon = gages.gages.filter((gage) => gage.status !== "current").slice(0, 5);
@@ -114,6 +172,8 @@ export async function renderDashboard() {
 
     } catch (error) {
         errorRow(events, 5, error);
+        errorRow(escalations, 4, error);
+        errorRow(suppliers, 6, error);
         errorRow(calibration, 3, error);
         errorRow(training, 2, error);
     }

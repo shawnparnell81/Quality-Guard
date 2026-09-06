@@ -371,7 +371,7 @@ export function wireDocuments() {
 
 /* ---------- vendors ---------- */
 
-const VENDOR_STATUS = {
+export const VENDOR_STATUS = {
     approved:   ["Approved",    "done"],
     on_watch:   ["On watch",    "prog"],
     scar_open:  ["SCAR issued", "open"],

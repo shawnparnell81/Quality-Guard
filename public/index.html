@@ -151,7 +151,7 @@
                 <div class="panel">
                     <div class="panel-head">
                         <h2 class="panel-title">Open quality events</h2>
-                        <span class="panel-note">14 NCR / 6 CAPA / 3 COMP</span>
+                        <span class="panel-note" id="open-events-note"></span>
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -166,6 +166,21 @@
                     </div>
                 </div>
 
+                <div class="panel" style="margin-top:16px">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Coming due</h2>
+                        <span class="panel-note" id="escalations-note"></span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Record</th><th>Type</th><th>Owner</th><th>Due</th></tr>
+                            </thead>
+                            <tbody id="dashboard-escalations"></tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div class="panel">
                     <div class="panel-head">
                         <h2 class="panel-title">Supplier scorecard</h2>
@@ -176,28 +191,7 @@
                             <thead>
                                 <tr><th>Vendor</th><th>Scope</th><th class="num">OTD</th><th class="num">PPM</th><th class="num">Grade</th><th>Status</th></tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td>Halstead Steel</td><td class="sm dim">Bar stock, 1018 / 4140</td>
-                                    <td class="num">99.1%</td><td class="num">180</td><td class="num">A</td>
-                                    <td><span class="pill pill-done">Approved</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Corveil Coatings</td><td class="sm dim">Black oxide, passivation</td>
-                                    <td class="num">94.6%</td><td class="num">2,140</td><td class="num">C</td>
-                                    <td><span class="pill pill-prog">On watch</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Ainsley Tool</td><td class="sm dim">Perishable tooling</td>
-                                    <td class="num">98.8%</td><td class="num">0</td><td class="num">A</td>
-                                    <td><span class="pill pill-done">Approved</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Nordvik Heat Treat</td><td class="sm dim">Stress relief, carburize</td>
-                                    <td class="num">91.2%</td><td class="num">3,900</td><td class="num">D</td>
-                                    <td><span class="pill pill-open">SCAR issued</span></td>
-                                </tr>
-                            </tbody>
+                            <tbody id="dashboard-suppliers"></tbody>
                         </table>
                     </div>
                 </div>
