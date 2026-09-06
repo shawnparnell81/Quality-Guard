@@ -104,3 +104,57 @@ export function samplePlanForGrade(grade) {
         default:  return "AQL 2.5";
     }
 }
+
+/* ANSI/ASQ Z1.4 Table I - sample size code letters, general
+   inspection level II. This table (which lot-size range maps to
+   which letter, and how many units that letter means) is the
+   published, unambiguous part of the standard. What is deliberately
+   NOT reproduced here is Table II-A's accept/reject numbers per AQL:
+   that table has enough cells (every code letter crossed with every
+   AQL, plus arrow-down substitution rules for combinations with no
+   direct entry) that getting one transcribed wrong would be a worse
+   failure than not having it, in a system built to help a plant pass
+   an audit. So the accept rule used below is zero-defect - pull the
+   real, correctly-sized sample this table calls for, reject the lot
+   if anything in it fails - a legitimate, simpler alternative to the
+   full standard (this is exactly what a c=0 sampling plan is), not a
+   fabricated stand-in for it. An org that needs the exact published
+   Ac/Re numbers should read them from their own controlled copy of
+   the standard until this table is extended with a verified source. */
+const SAMPLE_SIZE_CODE_LETTERS = [
+    { max: 8,       letter: "A", size: 2 },
+    { max: 15,      letter: "B", size: 3 },
+    { max: 25,      letter: "C", size: 5 },
+    { max: 50,      letter: "D", size: 8 },
+    { max: 90,      letter: "E", size: 13 },
+    { max: 150,     letter: "F", size: 20 },
+    { max: 280,     letter: "G", size: 32 },
+    { max: 500,     letter: "H", size: 50 },
+    { max: 1200,    letter: "J", size: 80 },
+    { max: 3200,    letter: "K", size: 125 },
+    { max: 10000,   letter: "L", size: 200 },
+    { max: 35000,   letter: "M", size: 315 },
+    { max: 150000,  letter: "N", size: 500 },
+    { max: 500000,  letter: "P", size: 800 },
+    { max: Infinity, letter: "Q", size: 1250 }
+];
+
+/* Turns a vendor's grade and the quantity actually received into a
+   real quality gate for this specific lot: how many units to pull,
+   and what to reject on. A 100%-inspection vendor (grade D) and a
+   lot too small for the table to apply both sample everything -
+   there is no such thing as a sampling plan that asks for more units
+   than the lot contains. */
+export function receivingSamplePlan(grade, qtyReceived) {
+    const sample_plan = samplePlanForGrade(grade);
+    const qty = Number(qtyReceived) || 0;
+
+    if (sample_plan === "100% inspection" || qty < 2) {
+        return { sample_plan, code_letter: null, sample_size: qty, accept_on: "zero failures" };
+    }
+
+    const row = SAMPLE_SIZE_CODE_LETTERS.find((r) => qty <= r.max);
+    const sampleSize = Math.min(row.size, qty);
+
+    return { sample_plan, code_letter: row.letter, sample_size: sampleSize, accept_on: "zero failures" };
+}

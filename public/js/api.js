@@ -128,6 +128,9 @@ export const api = {
 
     receipts:      ()       => get("/receipts"),
     receipt:       (number) => get("/receipts/" + encodeURIComponent(number)),
+    createReceipt: (payload) => request("POST", "/receipts", payload),
+    addReceiptMeasurement: (number, payload) =>
+        request("POST", "/receipts/" + encodeURIComponent(number) + "/measurements", payload),
     dispositionReceipt: (number, payload) =>
         request("POST", "/receipts/" + encodeURIComponent(number) + "/disposition", payload),
 
@@ -150,6 +153,9 @@ export const api = {
                 + "/stages/" + encodeURIComponent(stageKey) + "/complete", payload),
 
     vendors:      ()        => get("/vendors"),
+    vendorEvaluations: (name) => get("/vendors/" + encodeURIComponent(name) + "/evaluations"),
+    addVendorEvaluation: (name, payload) =>
+        request("POST", "/vendors/" + encodeURIComponent(name) + "/evaluations", payload),
     gages:        ()        => get("/gages"),
     documents:    ()        => get("/documents"),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),

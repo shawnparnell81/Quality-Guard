@@ -28,7 +28,7 @@ import { renderForms, wireForms } from "./views/formbuilder.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
-    renderVendors, renderWarehouse, wireDocuments
+    renderVendors, renderWarehouse, wireDocuments, wireVendors
 } from "./views/resources.js";
 import { wirePalette } from "./palette.js";
 
@@ -344,6 +344,7 @@ async function start() {
     wireEvaluate();
     wireForms();
     wireDocuments();
+    wireVendors();
     wirePalette();
     checkConnection();
     fillHeader();

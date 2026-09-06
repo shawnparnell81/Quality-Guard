@@ -6,8 +6,10 @@
    ============================================================ */
 
 import { api } from "../api.js";
+import { can } from "../session.js";
+import { ensureDialog } from "../forms.js";
 import {
-    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement
+    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement, toast
 } from "../dom.js";
 
 /* ---------- calibration ---------- */
@@ -313,8 +315,109 @@ export async function renderVendors() {
                 ]);
             } }
         ], "No vendors tracked yet");
+
+        tbody.querySelectorAll("tr").forEach((tr, index) => {
+            if (!vendors[index]) return;
+            tr.dataset.vendor = vendors[index].name;
+            tr.classList.add("row-clickable");
+        });
     } catch (error) {
         errorRow(tbody, 7, error);
+    }
+}
+
+/* Periodic re-evaluation, clause 8.4.1 - separate from the live PPM/
+   grade above, which recomputes every time this screen loads. This
+   is the dated, documented review an auditor asks to see: someone
+   looked at this vendor on a specific day and recorded what they
+   found. A dialog rather than its own screen, since it is one short
+   history list plus one short form. */
+async function openVendorEvaluations(name) {
+    const node = ensureDialog();
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: name })),
+        el("div", { class: "modal-body" }, el("p", { class: "sm dim", text: "Loading..." }))
+    );
+    node.showModal();
+
+    try {
+        const { evaluations } = await api.vendorEvaluations(name);
+
+        const history = evaluations.length > 0
+            ? el("div", { class: "chip-list" }, evaluations.map((e) => el("span", {
+                class: "chip",
+                title: e.notes || "",
+                text: formatDate(e.audit_date)
+                      + (e.performance_score != null ? "  score " + e.performance_score : "")
+                      + "  " + e.non_conformance_count + " NC"
+                      + (e.evaluated_by ? "  by " + e.evaluated_by : "")
+              })))
+            : el("p", { class: "sm dim", text: "No evaluations recorded yet." });
+
+        const body = [
+            el("div", { class: "section-label", text: "History" }),
+            history
+        ];
+
+        if (can("vendor.approve")) {
+            const auditDate = el("input", { type: "date" });
+            const score = el("input", { type: "number", min: "0", max: "100", step: "0.1", placeholder: "0-100" });
+            const ncCount = el("input", { type: "number", min: "0", step: "1", value: "0" });
+            const notes = el("textarea", { rows: 2, placeholder: "Optional" });
+            const add = el("button", { class: "btn btn-primary no-print", type: "button" }, "Record evaluation");
+
+            add.addEventListener("click", async () => {
+                if (!auditDate.value) {
+                    toast("Audit date is required", "error");
+                    return;
+                }
+
+                try {
+                    await api.addVendorEvaluation(name, {
+                        audit_date: auditDate.value,
+                        performance_score: score.value === "" ? null : Number(score.value),
+                        non_conformance_count: Number(ncCount.value) || 0,
+                        notes: notes.value.trim() || null
+                    });
+                    toast("Evaluation recorded");
+                    await openVendorEvaluations(name);
+                } catch (error) {
+                    toast(error.message, "error");
+                }
+            });
+
+            body.push(
+                el("div", { class: "section-label", text: "Record a new evaluation" }),
+                el("div", { class: "field-group" }, [el("label", { text: "Audit date" }), auditDate]),
+                el("div", { class: "field-group" }, [el("label", { text: "Performance score" }), score]),
+                el("div", { class: "field-group" }, [el("label", { text: "Non-conformances found" }), ncCount]),
+                el("div", { class: "field-group" }, [el("label", { text: "Notes" }), notes]),
+                el("div", { class: "row" }, add)
+            );
+        }
+
+        node.replaceChildren(
+            el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: name })),
+            el("div", { class: "modal-body" }, body),
+            el("div", { class: "modal-foot" },
+                el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Close"))
+        );
+    } catch (error) {
+        node.replaceChildren(
+            el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: name })),
+            el("div", { class: "modal-body" }, el("p", { class: "sm", style: "color:var(--crit)", text: error.message }))
+        );
+    }
+}
+
+export function wireVendors() {
+    const tbody = document.getElementById("vendors-table");
+    if (tbody) {
+        tbody.addEventListener("click", (event) => {
+            const row = event.target.closest("tr[data-vendor]");
+            if (!row) return;
+            openVendorEvaluations(row.dataset.vendor);
+        });
     }
 }
 
