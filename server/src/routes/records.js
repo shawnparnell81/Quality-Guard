@@ -91,6 +91,79 @@ async function hasAttachment(runQuery, recordId) {
     return found.rowCount > 0;
 }
 
+/* IATF 16949 8.3.4: design and development planning must include
+   reviews at planned stages, against defined exit criteria, before
+   the next stage begins. An APQP program's five states are its five
+   phases, so that requirement means a program cannot leave a phase
+   until that phase's own deliverables are actually done - not
+   "required to create the record" (records.js's one required-field
+   check runs once, at creation, against a type's whole form; a
+   program months from launch cannot be required to have already
+   typed its launch metrics just to be opened at all), but required
+   to advance past the phase that deliverable belongs to.
+
+   Keyed by the phase being left, not the one being entered - nothing
+   gates draft -> plan_define, since Phase 1's own work has not
+   started yet. oneOf on a status field means "not started" or
+   "draft" does not count as done, even though the field itself is
+   non-empty. A criterion never names a "file"-type field: that field
+   type renders as a disabled placeholder in forms.js today (nothing
+   loads or saves a value for it, the same pre-existing gap NCR's own
+   "photos" field has) - a gate no real user could ever satisfy
+   through the app is worse than no gate. Where a deliverable's real
+   evidence matters, the criterion is the same hasAttachment() check
+   CAPA's own closure gate already uses, since that is the one
+   evidence mechanism that actually works end to end. */
+const APQP_PHASE_EXIT_CRITERIA = {
+    plan_define: [
+        { key: "voc_customer_requirements", label: "Voice of customer" },
+        { key: "feasibility_status", label: "Feasibility review", oneOf: ["Feasible", "Feasible with conditions"] },
+        { key: "program_risk_summary", label: "Risk assessment" },
+        { key: "charter_approved_by", label: "Program charter sign-off" }
+    ],
+    product_design: [
+        { key: "dfmea_status", label: "DFMEA", oneOf: ["Approved"] },
+        { key: "dfmea_approved_by", label: "DFMEA sign-off" },
+        { attachment: true, label: "Supporting evidence attached (drawing, DFMEA, or other design record)" }
+    ],
+    process_design: [
+        { key: "pfmea_status", label: "PFMEA", oneOf: ["Approved"] },
+        { key: "control_plan_status", label: "Control plan", oneOf: ["Approved"] },
+        { key: "control_plan_approved_by", label: "Control plan sign-off" }
+    ],
+    validation: [
+        { key: "psw_status", label: "PPAP / PSW status", oneOf: ["Approved", "Interim Approval"] },
+        { key: "run_at_rate_status", label: "Run-at-rate", oneOf: ["Passed"] }
+    ],
+    production: [
+        { key: "lessons_learned", label: "Lessons learned" },
+        { key: "launch_metrics_summary", label: "Launch metrics" }
+    ]
+};
+
+async function apqpPhaseGaps(runQuery, fromState, data, recordId) {
+    const criteria = APQP_PHASE_EXIT_CRITERIA[fromState];
+    if (!criteria) return [];
+
+    const gaps = [];
+
+    for (const criterion of criteria) {
+        if (criterion.attachment) {
+            if (!await hasAttachment(runQuery, recordId)) gaps.push(criterion.label);
+            continue;
+        }
+
+        const value = data?.[criterion.key];
+        const empty = value === undefined || value === null || value === "";
+
+        if (empty || (criterion.oneOf && !criterion.oneOf.includes(value))) {
+            gaps.push(criterion.label);
+        }
+    }
+
+    return gaps;
+}
+
 /* Which authority an edit needs depends on what is being changed.
    Selecting "Rework" and selecting "Use-as-is" travel through the same
    endpoint but are not the same decision: use-as-is ships a known
@@ -278,6 +351,14 @@ records.get("/:number", async (request, response, next) => {
         const auditHasConflict = record.type === "audit"
             && await auditorConflict(query, request.user.org_id, record.data);
 
+        /* Every APQP move is a stage gate on the phase being left, not
+           only the final close - computed once here so a blocked
+           "next phase" button says exactly which deliverables are
+           still open before anyone clicks it. */
+        const apqpMissing = record.type === "apqp"
+            ? await apqpPhaseGaps(query, record.status, record.data, record.id)
+            : [];
+
         const transitions = moves.rows.map((move) => {
             const stepOk = !move.required_permission || request.can(move.required_permission);
             const closeOk = !move.is_terminal || !closeKey || request.can(closeKey);
@@ -288,15 +369,18 @@ records.get("/:number", async (request, response, next) => {
                         ? "The assigned auditor works within the department under review"
                         : null))
                 : null;
+            const apqpBlocked = apqpMissing.length > 0
+                ? "This phase is not complete - missing: " + apqpMissing.join(", ")
+                : null;
 
             return {
                 to: move.to_state,
                 label: move.to_name || move.to_state,
                 is_terminal: move.is_terminal,
-                allowed: stepOk && closeOk && !gateBlocked,
+                allowed: stepOk && closeOk && !gateBlocked && !apqpBlocked,
                 blocked_because: !stepOk
                     ? "Needs permission to " + (move.permission_description || move.required_permission).toLowerCase()
-                    : (!closeOk ? "Closing this needs " + closeKey : gateBlocked)
+                    : (!closeOk ? "Closing this needs " + closeKey : (gateBlocked || apqpBlocked))
             };
         });
 
@@ -1035,6 +1119,26 @@ records.post("/:number/transition", async (request, response, next) => {
                         detail: "Clause 10.2 requires evidence the corrective action was verified effective."
                     }
                 };
+            }
+
+            /* Clause 8.3.4: every APQP phase move, not only the final
+               close, is a stage gate - the phase being left has to
+               have met its own exit criteria first. */
+            if (record.type === "apqp") {
+                const missing = await apqpPhaseGaps(
+                    (text, params) => client.query(text, params),
+                    record.status, record.data, record.id
+                );
+                if (missing.length > 0) {
+                    return {
+                        code: 409,
+                        body: {
+                            error: "This phase's deliverables are not complete",
+                            detail: "Clause 8.3.4 requires defined exit criteria be met before advancing a design and development stage.",
+                            missing
+                        }
+                    };
+                }
             }
 
             const actorId = request.user.id;
