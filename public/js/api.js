@@ -89,9 +89,12 @@ export const api = {
         request("PATCH", "/users/" + encodeURIComponent(initials), payload),
     deactivateUser: (initials, payload) =>
         request("POST", "/users/" + encodeURIComponent(initials) + "/deactivate", payload),
+    resetPassword: (initials, payload) =>
+        request("POST", "/users/" + encodeURIComponent(initials) + "/reset-password", payload),
 
     dashboard:    ()        => get("/dashboard"),
     openEvents:   ()        => get("/dashboard/open-events"),
+    escalations:  (days)    => get(withQuery("/dashboard/escalations", { days })),
     readiness:    ()        => get("/dashboard/readiness"),
 
     recordTypes:  ()        => get("/record-types"),
@@ -106,6 +109,10 @@ export const api = {
         request("PATCH", "/records/" + encodeURIComponent(number), payload),
     transition:   (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/transition", payload),
+
+    attachments:      (number)  => get("/records/" + encodeURIComponent(number) + "/attachments"),
+    addAttachment: (number, payload) =>
+        request("POST", "/records/" + encodeURIComponent(number) + "/attachments", payload),
 
     workOrders:   (params)  => get(withQuery("/work-orders", params)),
     workOrder:    (wo)      => get("/work-orders/" + encodeURIComponent(wo)),
@@ -127,6 +134,9 @@ export const api = {
 
     receipts:      ()       => get("/receipts"),
     receipt:       (number) => get("/receipts/" + encodeURIComponent(number)),
+    createReceipt: (payload) => request("POST", "/receipts", payload),
+    addReceiptMeasurement: (number, payload) =>
+        request("POST", "/receipts/" + encodeURIComponent(number) + "/measurements", payload),
     dispositionReceipt: (number, payload) =>
         request("POST", "/receipts/" + encodeURIComponent(number) + "/disposition", payload),
 
@@ -149,7 +159,13 @@ export const api = {
                 + "/stages/" + encodeURIComponent(stageKey) + "/complete", payload),
 
     vendors:      ()        => get("/vendors"),
+    vendorEvaluations: (name) => get("/vendors/" + encodeURIComponent(name) + "/evaluations"),
+    addVendorEvaluation: (name, payload) =>
+        request("POST", "/vendors/" + encodeURIComponent(name) + "/evaluations", payload),
     gages:        ()        => get("/gages"),
+    gageCalibrations: (gageId) => get("/gages/" + encodeURIComponent(gageId) + "/calibrations"),
+    recordCalibration: (gageId, payload) =>
+        request("POST", "/gages/" + encodeURIComponent(gageId) + "/calibrations", payload),
     documents:    ()        => get("/documents"),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),
     parts:        ()        => get("/parts"),

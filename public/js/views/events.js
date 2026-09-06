@@ -11,11 +11,28 @@
 
 import { api } from "../api.js";
 import { can } from "../session.js";
-import { openRecordForm, confirmStep, editDueDate } from "../forms.js";
+import { openRecordEditor, confirmStep, editDueDate } from "../forms.js";
+import { renderEightD, renderChange } from "./change.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize, statusKind, printElement
+    formatDate, humanize, statusKind, printElement, toast
 } from "../dom.js";
+
+/* 8D and ECN keep their own register + detail rendering (change.js) -
+   the eight-discipline track and the impact sign-off table are not
+   the generic key/value detail every other type shares - so creating
+   or editing one of these refreshes through those functions instead
+   of REGISTERS/renderRecordDetail below. */
+const OWN_SCREEN_REFRESH = { eightd: renderEightD, ecn: renderChange };
+
+/* Which sidebar screen "New X" and "Edit X" should return to once the
+   full-page editor is done - the nav-item data-view values, not the
+   record type keys, since a few of them differ (complaint -> the
+   "complaints" screen, eightd -> "d8", ecn -> "change"). */
+const TYPE_VIEW = {
+    ncr: "ncr", capa: "capa", complaint: "complaints",
+    audit: "audit", risk: "risk", eightd: "d8", ecn: "change"
+};
 
 /* Shared first column: severity stripe plus record number. */
 const idColumn = {
@@ -300,11 +317,13 @@ function clearDetail(type) {
     const statusSlot = document.getElementById(type + "-detail-status");
     const panel = document.getElementById(type + "-detail");
     const pdfButton = document.getElementById(type + "-pdf");
+    const editButton = document.getElementById(type + "-edit");
 
     if (heading) heading.textContent = "Select a record";
     if (statusSlot) statusSlot.replaceChildren();
     if (panel) panel.replaceChildren();
     if (pdfButton) delete pdfButton.dataset.number;
+    if (editButton) delete editButton.dataset.number;
 }
 
 /* One listener per register, attached once when this module loads.
@@ -364,25 +383,58 @@ export function wireRegisterClicks() {
         }
     });
 
-    /* Every "raise a record" button on every screen, through one
-       listener. The button says which type it opens. */
+    /* Every "raise a record" and "edit this record" button on every
+       screen, through one listener each. The button says which type
+       it opens, and edit buttons carry the currently-shown record's
+       number in their dataset (stamped by renderRecordDetail, or by
+       the type's own detail renderer for 8D and ECN). */
     document.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-new-record]");
-        if (!button || button.disabled) return;
+        const newButton = event.target.closest("[data-new-record]");
+        if (newButton && !newButton.disabled) {
+            const type = newButton.dataset.newRecord;
 
-        const type = button.dataset.newRecord;
+            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "record-editor" } }));
+            openRecordEditor(type, {
+                returnView: TYPE_VIEW[type] || type,
+                onSaved: async (created) => {
+                    if (OWN_SCREEN_REFRESH[type]) {
+                        await OWN_SCREEN_REFRESH[type](created.number);
+                    } else if (REGISTERS[type]) {
+                        await renderRegister(type);
 
-        openRecordForm(type, {
-            onSaved: async (created) => {
-                await renderRegister(type);
+                        /* Land on the thing that was just created rather
+                           than leaving somebody to hunt for it. */
+                        const register = document.getElementById(REGISTERS[type].tbody);
+                        if (register) selectRow(register, created.number);
+                        await renderRecordDetail(type, created.number);
+                    }
+                }
+            });
+            return;
+        }
 
-                /* Land on the thing that was just created rather than
-                   leaving somebody to hunt for it in the register. */
-                const register = document.getElementById(REGISTERS[type]?.tbody);
-                if (register) selectRow(register, created.number);
-                await renderRecordDetail(type, created.number);
-            }
-        });
+        const editButton = event.target.closest("[data-edit-record]");
+        if (editButton && !editButton.disabled) {
+            const type = editButton.dataset.editRecord;
+            const number = editButton.dataset.number;
+            if (!number) return;
+
+            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "record-editor" } }));
+            openRecordEditor(type, {
+                number,
+                returnView: TYPE_VIEW[type] || type,
+                onSaved: async (updated) => {
+                    if (OWN_SCREEN_REFRESH[type]) {
+                        await OWN_SCREEN_REFRESH[type](updated.number);
+                    } else if (REGISTERS[type]) {
+                        await renderRegister(type);
+                        const register = document.getElementById(REGISTERS[type].tbody);
+                        if (register) selectRow(register, updated.number);
+                        await renderRecordDetail(type, updated.number);
+                    }
+                }
+            });
+        }
     });
 }
 
@@ -434,12 +486,19 @@ export async function renderRecordDetail(type, number) {
     panel.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
-        const { record, links, history, transitions } = await api.record(number);
+        const [{ record, links, history, transitions }, attachData] = await Promise.all([
+            api.record(number),
+            api.attachments(number)
+        ]);
+        const attachments = attachData.attachments;
 
         if (heading) heading.textContent = record.number;
 
         const pdfButton = document.getElementById(type + "-pdf");
         if (pdfButton) pdfButton.dataset.number = record.number;
+
+        const editButton = document.getElementById(type + "-edit");
+        if (editButton) editButton.dataset.number = record.number;
 
         if (statusSlot) {
             statusSlot.replaceChildren(
@@ -560,6 +619,51 @@ export async function renderRecordDetail(type, number) {
                 }))
             ));
         }
+
+        /* Metadata only - what the evidence is and where it lives, not
+           the file's bytes. See the route comment in records.js for
+           why. A CAPA cannot close without at least one of these; the
+           disabled close button above already says so before this
+           section is even reached. */
+        children.push(el("div", { class: "section-label", text: "Attachments" }));
+
+        if (attachments.length > 0) {
+            children.push(el("div", { class: "chip-list" },
+                attachments.map((a) => el("span", {
+                    class: "chip",
+                    title: a.storage_key,
+                    text: a.filename + "  " + formatDate(a.uploaded_at)
+                          + (a.uploaded_by ? "  " + a.uploaded_by : "")
+                }))
+            ));
+        } else {
+            children.push(el("p", { class: "sm dim", text: "No attachments yet." }));
+        }
+
+        const addFilename = el("input", { type: "text", placeholder: "Filename", class: "sm" });
+        const addLocation = el("input", { type: "text", placeholder: "Where it lives (path or link)", class: "sm" });
+        const addButton = el("button", { class: "btn no-print", type: "button" }, "Add");
+
+        addButton.addEventListener("click", async () => {
+            const filename = addFilename.value.trim();
+            const location = addLocation.value.trim();
+
+            if (!filename || !location) {
+                toast("Filename and location are both required", "error");
+                return;
+            }
+
+            try {
+                await api.addAttachment(record.number, { filename, storage_key: location });
+                await renderRecordDetail(type, number);
+            } catch (error) {
+                toast(error.message, "error");
+            }
+        });
+
+        children.push(el("div", {
+            class: "row no-print", style: "gap:6px;margin:4px 0 12px;flex-wrap:wrap"
+        }, [addFilename, addLocation, addButton]));
 
         if (history.length > 0) {
             children.push(el("div", { class: "section-label", text: "Audit trail" }));

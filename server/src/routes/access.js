@@ -27,6 +27,7 @@ export function meHandler(request, response) {
 
     response.json({
         id: request.user.id,
+        org_id: request.user.org_id,
         name: request.user.full_name,
         initials: request.user.initials,
         role: request.user.role,

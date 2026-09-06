@@ -6,8 +6,10 @@
    ============================================================ */
 
 import { api } from "../api.js";
+import { can, applyPermissions } from "../session.js";
+import { ensureDialog } from "../forms.js";
 import {
-    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement
+    el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement, toast
 } from "../dom.js";
 
 /* ---------- calibration ---------- */
@@ -20,10 +22,17 @@ const CAL_STATUS = {
 
 export async function renderCalibration() {
     const tbody = document.getElementById("calibration-table");
-    loadingRow(tbody, 7);
+    const note = document.getElementById("calibration-note");
+    loadingRow(tbody, 9);
 
     try {
         const { gages } = await api.gages();
+
+        if (note) {
+            const pastDue = gages.filter((g) => g.status === "past_due").length;
+            const dueSoon = gages.filter((g) => g.status === "due_soon").length;
+            note.textContent = pastDue + " past due / " + dueSoon + " due in 30 d";
+        }
 
         fillTable(tbody, gages, [
             { className: "mono sm", render: (row) => row.gage_id },
@@ -35,11 +44,109 @@ export async function renderCalibration() {
             { render: (row) => {
                 const [label, kind] = CAL_STATUS[row.status] || ["Unknown", "hold"];
                 return pill(label, kind);
-            } }
-        ]);
+            } },
+            /* Separate from the due-date status above on purpose - a
+               gage can be well within its calibration interval and
+               still be on hold because the last result was a fail.
+               Neither fact can stand in for the other. */
+            { render: (row) => row.availability === "hold"
+                ? pill("On hold", "open")
+                : pill("Available", "done") },
+            { render: (row) => el("button", {
+                class: "btn btn-xs", type: "button", text: "Record",
+                dataset: { requires: "gage.calibrate", gage: row.gage_id }
+            }) }
+        ], "No gages tracked yet");
+
+        applyPermissions(tbody);
     } catch (error) {
-        errorRow(tbody, 7, error);
+        errorRow(tbody, 9, error);
     }
+}
+
+/* ---------- recording a calibration result ---------- */
+
+function openCalibrationDialog(gageId, onSaved) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const resultSelect = el("select", { id: "cal-result" }, [
+        el("option", { value: "pass", text: "Pass" }),
+        el("option", { value: "fail", text: "Fail" })
+    ]);
+    const readingInput = el("input", { type: "text", id: "cal-reading",
+        placeholder: "e.g. 0.0002 in high" });
+    const notesInput = el("textarea", { id: "cal-notes", rows: 2 });
+
+    const save = el("button", { class: "btn btn-primary", type: "button" }, "Save result");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Record calibration - " + gageId })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("div", { class: "field-group" }, [
+                el("label", { for: "cal-result", text: "Result" }),
+                resultSelect
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "cal-reading", text: "Reading" }),
+                readingInput,
+                el("span", { class: "field-hint", text: "Optional - what the instrument actually measured." })
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "cal-notes", text: "Notes" }),
+                notesInput
+            ]),
+            el("p", { class: "sm dim", id: "cal-fail-note", hidden: "hidden",
+                text: "A fail puts this gage on hold immediately - it will not be selectable on new records until a later result passes." })
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            save
+        ])
+    );
+
+    const failNote = node.querySelector("#cal-fail-note");
+    resultSelect.addEventListener("change", () => {
+        failNote.hidden = resultSelect.value !== "fail";
+    });
+
+    save.addEventListener("click", async () => {
+        save.disabled = true;
+        save.textContent = "Saving...";
+
+        try {
+            const result = await api.recordCalibration(gageId, {
+                result: resultSelect.value,
+                reading: readingInput.value.trim() || undefined,
+                notes: notesInput.value.trim() || undefined
+            });
+
+            node.close();
+            toast(gageId + (result.availability === "hold" ? " on hold - failed calibration" : " calibration recorded"));
+            if (onSaved) onSaved();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Save result";
+        }
+    });
+
+    node.showModal();
+}
+
+export function wireCalibration() {
+    const tbody = document.getElementById("calibration-table");
+    if (!tbody) return;
+
+    tbody.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-gage]");
+        if (!button || button.disabled) return;
+
+        openCalibrationDialog(button.dataset.gage, () => renderCalibration());
+    });
 }
 
 /* ---------- training ----------
@@ -264,7 +371,7 @@ export function wireDocuments() {
 
 /* ---------- vendors ---------- */
 
-const VENDOR_STATUS = {
+export const VENDOR_STATUS = {
     approved:   ["Approved",    "done"],
     on_watch:   ["On watch",    "prog"],
     scar_open:  ["SCAR issued", "open"],
@@ -274,10 +381,18 @@ const VENDOR_STATUS = {
 
 export async function renderVendors() {
     const tbody = document.getElementById("vendors-table");
+    const note = document.getElementById("vendors-note");
     loadingRow(tbody, 7);
 
     try {
         const { vendors } = await api.vendors();
+
+        if (note) {
+            const active = vendors.filter((v) => v.status !== "onboarding" && v.status !== "suspended").length;
+            const scarOpen = vendors.filter((v) => v.open_scars > 0).length;
+            note.textContent = active + " active"
+                + (scarOpen > 0 ? " / " + scarOpen + " SCAR open" : "");
+        }
 
         fillTable(tbody, vendors, [
             { render: (row) => row.name },
@@ -288,11 +403,126 @@ export async function renderVendors() {
             { className: "num", render: (row) => row.ppm != null ? row.ppm.toLocaleString() : "-" },
             { render: (row) => {
                 const [label, kind] = VENDOR_STATUS[row.status] || ["Unknown", "hold"];
-                return pill(label, kind);
+                /* "live" vs "entered" mirrors the exact chip the
+                   Scorecards screen already uses for the same
+                   distinction - a grade computed from real receiving
+                   volume against one still resting on a typed-in
+                   figure because there is not enough history yet. */
+                return el("span", { class: "row", style: "gap:6px" }, [
+                    pill(label, kind),
+                    el("span", {
+                        class: "chip",
+                        title: row.scoring === "computed"
+                            ? "Calculated from real receiving history"
+                            : "Not enough receiving volume yet - entered figure",
+                        text: row.scoring === "computed" ? "live" : "entered"
+                    })
+                ]);
             } }
-        ]);
+        ], "No vendors tracked yet");
+
+        tbody.querySelectorAll("tr").forEach((tr, index) => {
+            if (!vendors[index]) return;
+            tr.dataset.vendor = vendors[index].name;
+            tr.classList.add("row-clickable");
+        });
     } catch (error) {
         errorRow(tbody, 7, error);
+    }
+}
+
+/* Periodic re-evaluation, clause 8.4.1 - separate from the live PPM/
+   grade above, which recomputes every time this screen loads. This
+   is the dated, documented review an auditor asks to see: someone
+   looked at this vendor on a specific day and recorded what they
+   found. A dialog rather than its own screen, since it is one short
+   history list plus one short form. */
+async function openVendorEvaluations(name) {
+    const node = ensureDialog();
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: name })),
+        el("div", { class: "modal-body" }, el("p", { class: "sm dim", text: "Loading..." }))
+    );
+    node.showModal();
+
+    try {
+        const { evaluations } = await api.vendorEvaluations(name);
+
+        const history = evaluations.length > 0
+            ? el("div", { class: "chip-list" }, evaluations.map((e) => el("span", {
+                class: "chip",
+                title: e.notes || "",
+                text: formatDate(e.audit_date)
+                      + (e.performance_score != null ? "  score " + e.performance_score : "")
+                      + "  " + e.non_conformance_count + " NC"
+                      + (e.evaluated_by ? "  by " + e.evaluated_by : "")
+              })))
+            : el("p", { class: "sm dim", text: "No evaluations recorded yet." });
+
+        const body = [
+            el("div", { class: "section-label", text: "History" }),
+            history
+        ];
+
+        if (can("vendor.approve")) {
+            const auditDate = el("input", { type: "date" });
+            const score = el("input", { type: "number", min: "0", max: "100", step: "0.1", placeholder: "0-100" });
+            const ncCount = el("input", { type: "number", min: "0", step: "1", value: "0" });
+            const notes = el("textarea", { rows: 2, placeholder: "Optional" });
+            const add = el("button", { class: "btn btn-primary no-print", type: "button" }, "Record evaluation");
+
+            add.addEventListener("click", async () => {
+                if (!auditDate.value) {
+                    toast("Audit date is required", "error");
+                    return;
+                }
+
+                try {
+                    await api.addVendorEvaluation(name, {
+                        audit_date: auditDate.value,
+                        performance_score: score.value === "" ? null : Number(score.value),
+                        non_conformance_count: Number(ncCount.value) || 0,
+                        notes: notes.value.trim() || null
+                    });
+                    toast("Evaluation recorded");
+                    await openVendorEvaluations(name);
+                } catch (error) {
+                    toast(error.message, "error");
+                }
+            });
+
+            body.push(
+                el("div", { class: "section-label", text: "Record a new evaluation" }),
+                el("div", { class: "field-group" }, [el("label", { text: "Audit date" }), auditDate]),
+                el("div", { class: "field-group" }, [el("label", { text: "Performance score" }), score]),
+                el("div", { class: "field-group" }, [el("label", { text: "Non-conformances found" }), ncCount]),
+                el("div", { class: "field-group" }, [el("label", { text: "Notes" }), notes]),
+                el("div", { class: "row" }, add)
+            );
+        }
+
+        node.replaceChildren(
+            el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: name })),
+            el("div", { class: "modal-body" }, body),
+            el("div", { class: "modal-foot" },
+                el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Close"))
+        );
+    } catch (error) {
+        node.replaceChildren(
+            el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: name })),
+            el("div", { class: "modal-body" }, el("p", { class: "sm", style: "color:var(--crit)", text: error.message }))
+        );
+    }
+}
+
+export function wireVendors() {
+    const tbody = document.getElementById("vendors-table");
+    if (tbody) {
+        tbody.addEventListener("click", (event) => {
+            const row = event.target.closest("tr[data-vendor]");
+            if (!row) return;
+            openVendorEvaluations(row.dataset.vendor);
+        });
     }
 }
 

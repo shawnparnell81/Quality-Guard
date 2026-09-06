@@ -8,6 +8,7 @@
 
 import { Router } from "express";
 import { query } from "../db.js";
+import { scoredVendors } from "../vendor-scoring.js";
 
 export const dashboard = Router();
 
@@ -39,7 +40,8 @@ dashboard.get("/", async (request, response, next) => {
                         interval '1 week'
                     ) as week_start
                 )
-                select rt.key as type, w.week_start, count(r.id)::int as n
+                select rt.key as type, w.week_start, count(r.id)::int as n,
+                       array_remove(array_agg(r.number order by r.number), null) as numbers
                   from weeks w
                   cross join record_types rt
              left join records r
@@ -73,13 +75,13 @@ dashboard.get("/", async (request, response, next) => {
                         or tr.revision_trained is distinct from d.current_revision)
             `, [request.user.org_id]),
 
-            query(`
-                select count(*) filter (where status = 'scar_open') as scar_open,
-                       count(*) filter (where grade = 'D')          as grade_d,
-                       round(avg(ppm))                              as avg_ppm,
-                       count(*)                                     as total
-                  from vendors where org_id = $1 and status <> 'onboarding'
-            `, [request.user.org_id])
+            /* Same computed ppm/grade every screen showing a vendor
+               now uses (vendor-scoring.js) - a KPI averaging the raw
+               stored column would drift from what the register right
+               below it shows the moment real receiving history came
+               in for one vendor but not another. */
+            scoredVendors(request.user.org_id).then((all) =>
+                all.filter((vendor) => vendor.status !== "onboarding"))
         ]);
 
         const byType = {};
@@ -94,10 +96,15 @@ dashboard.get("/", async (request, response, next) => {
         /* Eight numbers per type, oldest to newest - opened-per-week,
            for the sparkline under each KPI tile. Real history from
            opened_at, not a separate metrics table: nothing here is
-           tracked twice. */
+           tracked twice. trend_records carries the same shape, one
+           array of record numbers per week instead of a count, so a
+           sparkline point can be clicked straight through to the
+           records that made it up rather than just displaying it. */
         const trends = {};
+        const trendRecords = {};
         for (const row of weekly.rows) {
             (trends[row.type] ||= []).push(Number(row.n));
+            (trendRecords[row.type] ||= []).push(row.numbers || []);
         }
 
         response.json({
@@ -110,10 +117,20 @@ dashboard.get("/", async (request, response, next) => {
             },
             training: { gaps: Number(training.rows[0].gaps) },
             suppliers: {
-                scar_open: Number(vendors.rows[0].scar_open),
-                grade_d: Number(vendors.rows[0].grade_d),
-                avg_ppm: Number(vendors.rows[0].avg_ppm),
-                total: Number(vendors.rows[0].total)
+                scar_open: vendors.filter((v) => v.status === "scar_open").length,
+                grade_d: vendors.filter((v) => v.grade === "D").length,
+                /* Matches SQL's own avg(): a vendor with no ppm at all
+                   (never received from, nothing entered either) is
+                   left out of the average entirely, not counted as a
+                   perfect 0 - that would drag the figure down for
+                   having no data, the opposite of what "no data" means. */
+                avg_ppm: (() => {
+                    const known = vendors.filter((v) => v.ppm !== null);
+                    return known.length > 0
+                        ? Math.round(known.reduce((sum, v) => sum + v.ppm, 0) / known.length)
+                        : 0;
+                })(),
+                total: vendors.length
             },
             /* Computed the same way every other type's overdue count is
                (closed_at is null and due_at has passed) - not from a
@@ -121,7 +138,8 @@ dashboard.get("/", async (request, response, next) => {
                figure disagree with clause 9.2's finding on the
                Readiness screen. One definition of overdue, not two. */
             audits: { overdue: byType.audit?.overdue ?? 0 },
-            trends
+            trends,
+            trend_records: trendRecords
         });
     } catch (error) {
         next(error);
@@ -154,6 +172,54 @@ dashboard.get("/open-events", async (request, response, next) => {
         `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, events: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* GET /api/dashboard/escalations?days=7
+   Every open record with a real owner and a due date landing inside
+   the window - overdue ones included, since "already late" is the
+   most urgent case a warning exists for, not a separate one. This is
+   the computation half of due-date escalation: who would get a
+   warning, and about what. It does not send anything - there is no
+   email provider wired up yet, so the honest thing is to expose the
+   answer to "who needs telling" and stop there, rather than pretend
+   to notify anyone. */
+dashboard.get("/escalations", async (request, response, next) => {
+    try {
+        const days = Math.min(Math.max(Number(request.query.days) || 7, 1), 90);
+
+        const result = await query(`
+            select r.number, r.title, r.status, r.severity, r.due_at,
+                   rt.key as type, rt.name as type_name,
+                   u.id as owner_id, u.full_name as owner_name, u.email as owner_email,
+                   ceil(extract(epoch from (r.due_at - now())) / 86400.0)::int as days_until_due
+              from records r
+              join record_types rt on rt.id = r.record_type_id
+         left join users u        on u.id = r.owner_id
+             where r.org_id = $1
+               and r.closed_at is null
+               and r.due_at is not null
+               and r.due_at <= now() + ($2 || ' days')::interval
+             order by r.due_at
+        `, [request.user.org_id, days]);
+
+        const escalations = result.rows.map((row) => ({
+            ...row,
+            overdue: row.days_until_due < 0,
+            /* No owner on the record at all is its own kind of finding -
+               a warning nobody would actually receive - surfaced rather
+               than silently dropped from the list. */
+            owner_name: row.owner_name || null,
+            owner_email: row.owner_email || null
+        }));
+
+        response.json({
+            count: escalations.length,
+            unowned: escalations.filter((e) => !e.owner_email).length,
+            escalations
+        });
     } catch (error) {
         next(error);
     }

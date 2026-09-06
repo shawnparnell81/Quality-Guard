@@ -10,6 +10,7 @@
 import { Router } from "express";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
+import { scoredVendors } from "../vendor-scoring.js";
 
 export const masterdata = Router();
 
@@ -73,7 +74,12 @@ const LINK_SOURCES = {
 
     gages: `select gage_id as value,
                    gage_id || '  ' || description as label,
-                   (next_due < current_date) as disabled
+                   (next_due < current_date or availability = 'hold') as disabled,
+                   case
+                       when availability = 'hold' then 'failed calibration'
+                       when next_due < current_date then 'calibration expired'
+                       else null
+                   end as disabled_reason
               from gages where org_id = $1 order by gage_id`,
 
     lots:  `select lot_number as value,
@@ -152,6 +158,24 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
             options[target] = rows.rows;
         }));
 
+        /* "user" has been accepted in FIELD_TYPES since this validator
+           was written, but nothing ever loaded options for one - a form
+           that declared it would have rendered as a plain text box.
+           Value is the person's initials, the same identifier records
+           already use for owner, so a field like audit's "auditor" is
+           a real reference rather than a name typed freely. */
+        if (fields.some((f) => f.type === "user")) {
+            const rows = await query(`
+                select initials as value,
+                       full_name || case when discipline is not null
+                                         then ' (' || discipline || ')' else '' end as label,
+                       false as disabled
+                  from users where org_id = $1 and active
+                  order by full_name
+            `, [request.user.org_id]);
+            options.users = rows.rows;
+        }
+
         response.json({
             key: definition.key,
             name: definition.name,
@@ -187,6 +211,9 @@ function problemWith(fields) {
         if (!field.key || typeof field.key !== "string") return "Every field needs a key";
         if (!field.label || typeof field.label !== "string") return "Every field needs a label";
         if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
+        if (field.section !== undefined && typeof field.section !== "string") {
+            return "\"" + field.label + "\"'s section must be text";
+        }
 
         if (seenKeys.has(field.key)) return "Two fields share the key \"" + field.key + "\"";
         seenKeys.add(field.key);
@@ -259,24 +286,89 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
     });
 
 /* ---------- vendors ---------- */
+/* ppm and grade are computed here, not read straight off the row -
+   see vendor-scoring.js for what "computed" actually means (real
+   receiving history where there is enough of it, the entered figure
+   otherwise, an open SCAR always capping the grade). */
 masterdata.get("/vendors", async (request, response, next) => {
     try {
-        const result = await query(`
-            select name, scope, cert_type, cert_expires,
-                   otd_pct, ppm, grade, status
-              from vendors
-             where org_id = $1
-             order by case status when 'scar_open' then 0
-                                  when 'on_watch'  then 1
-                                  else 2 end,
-                      name
-        `, [request.user.org_id]);
+        const vendors = await scoredVendors(request.user.org_id);
 
-        response.json({ count: result.rowCount, vendors: result.rows });
+        vendors.sort((a, b) => {
+            const rank = (v) => v.status === "scar_open" ? 0 : v.status === "on_watch" ? 1 : 2;
+            return rank(a) - rank(b) || a.name.localeCompare(b.name);
+        });
+
+        response.json({ count: vendors.length, vendors });
     } catch (error) {
         next(error);
     }
 });
+
+/* ---------- vendor evaluations, clause 8.4.1 ----------
+   The other half of supplier scoring: a dated, documented review,
+   distinct from the rolling PPM/grade in vendor-scoring.js. Nothing
+   here is computed - someone conducts the review and records what
+   they found. */
+masterdata.get("/vendors/:name/evaluations", async (request, response, next) => {
+    try {
+        const vendor = await query(
+            "select id from vendors where org_id = $1 and name = $2",
+            [request.user.org_id, request.params.name]
+        );
+        if (vendor.rowCount === 0) {
+            return response.status(404).json({ error: "No such vendor" });
+        }
+
+        const result = await query(`
+            select e.audit_date, e.performance_score, e.non_conformance_count,
+                   e.notes, u.full_name as evaluated_by
+              from vendor_evaluations e
+         left join users u on u.id = e.evaluated_by
+             where e.vendor_id = $1
+             order by e.audit_date desc
+        `, [vendor.rows[0].id]);
+
+        response.json({ count: result.rowCount, evaluations: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/vendors/Halstead%20Steel/evaluations
+   { "audit_date": "2026-09-01", "performance_score": 92.5,
+     "non_conformance_count": 1, "notes": "..." } */
+masterdata.post("/vendors/:name/evaluations", requirePermission("vendor.approve"),
+    async (request, response, next) => {
+        try {
+            const { audit_date, performance_score, non_conformance_count, notes } = request.body || {};
+
+            if (!audit_date || Number.isNaN(new Date(audit_date).getTime())) {
+                return response.status(400).json({ error: "audit_date is required and must be a valid date" });
+            }
+
+            const vendor = await query(
+                "select id from vendors where org_id = $1 and name = $2",
+                [request.user.org_id, request.params.name]
+            );
+            if (vendor.rowCount === 0) {
+                return response.status(404).json({ error: "No such vendor" });
+            }
+
+            const inserted = await query(`
+                insert into vendor_evaluations
+                    (vendor_id, audit_date, performance_score, non_conformance_count, notes, evaluated_by)
+                values ($1, $2, $3, $4, $5, $6)
+                returning audit_date, performance_score, non_conformance_count, notes
+            `, [vendor.rows[0].id, audit_date,
+                performance_score === undefined ? null : Number(performance_score),
+                Number(non_conformance_count) || 0, notes || null, request.user.id]);
+
+            response.status(201).json(inserted.rows[0]);
+        } catch (error) {
+            next(error);
+        }
+    });
 
 /* ---------- gages ----------
    Status is derived from the due date rather than stored, so it can
@@ -285,7 +377,7 @@ masterdata.get("/gages", async (request, response, next) => {
     try {
         const result = await query(`
             select gage_id, description, range_text, interval_months,
-                   last_cal, next_due,
+                   last_cal, next_due, availability,
                    case
                        when next_due < current_date then 'past_due'
                        when next_due < current_date + interval '30 days' then 'due_soon'
@@ -298,6 +390,95 @@ masterdata.get("/gages", async (request, response, next) => {
         `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, gages: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* GET /api/gages/BG-0221/calibrations
+   History, most recent first - what "historical calibration records"
+   actually means, as opposed to the single last_cal/next_due pair on
+   the gage itself. */
+masterdata.get("/gages/:gageId/calibrations", async (request, response, next) => {
+    try {
+        const result = await query(`
+            select c.performed_at, c.result, c.reading, c.notes,
+                   u.full_name as performed_by
+              from gage_calibrations c
+              join gages g on g.id = c.gage_id
+         left join users u on u.id = c.performed_by
+             where g.org_id = $1 and g.gage_id = $2
+             order by c.performed_at desc
+        `, [request.user.org_id, request.params.gageId]);
+
+        response.json({ count: result.rowCount, calibrations: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/gages/BG-0221/calibrations   { result, reading, notes }
+
+   A pass extends next_due by the gage's own interval and clears any
+   hold. A fail does the opposite: next_due is left alone (there is no
+   "next due date" for a gage that is not fit to use right now, only
+   a hold that recording another result - hopefully a pass - lifts),
+   and the gage is set unavailable immediately, in the same
+   transaction that records the failure, not as a separate step
+   something could skip. */
+masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate"), async (request, response, next) => {
+    try {
+        const { result, reading, notes } = request.body || {};
+
+        if (result !== "pass" && result !== "fail") {
+            return response.status(400).json({ error: "result must be 'pass' or 'fail'" });
+        }
+
+        const updated = await withTransaction(async (client) => {
+            const found = await client.query(
+                "select id, interval_months, availability from gages where org_id = $1 and gage_id = $2 for update",
+                [request.user.org_id, request.params.gageId]
+            );
+
+            if (found.rowCount === 0) return null;
+            const gage = found.rows[0];
+
+            const performedAt = new Date();
+            const nextAvailability = result === "fail" ? "hold" : "available";
+
+            await client.query(`
+                insert into gage_calibrations
+                    (org_id, gage_id, performed_by, result, reading, notes)
+                values ($1, $2, $3, $4, $5, $6)
+            `, [request.user.org_id, gage.id, request.user.id, result, reading || null, notes || null]);
+
+            const nextDueClause = result === "pass"
+                ? "current_date + make_interval(months => interval_months)"
+                : "next_due";
+
+            const record = await client.query(`
+                update gages
+                   set last_cal = current_date,
+                       next_due = ${nextDueClause},
+                       availability = $2
+                 where id = $1
+                returning gage_id, last_cal, next_due, availability
+            `, [gage.id, nextAvailability]);
+
+            if (gage.availability !== nextAvailability) {
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
+                    values ($1, 'gages', $2, 'availability', $3, $4, $5, $6)
+                `, [request.user.org_id, gage.id, gage.availability, nextAvailability,
+                    result === "fail" ? "Failed calibration" : "Passed calibration", request.user.id]);
+            }
+
+            return record.rows[0];
+        });
+
+        if (!updated) return response.status(404).json({ error: "No such gage" });
+        response.status(201).json(updated);
     } catch (error) {
         next(error);
     }
