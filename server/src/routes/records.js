@@ -60,6 +60,37 @@ function withComputedRpn(typeKey, data) {
     return computed;
 }
 
+/* Clause 9.2: an auditor must be independent of the area under
+   review. "Area" is not an invented category here - it is the same
+   discipline column every person record already carries, compared
+   against the department an audit now has to declare. runQuery is
+   either the module-level query() or a transaction client's query
+   bound to it, so this works both before a transaction opens (create)
+   and inside one (update, transition). */
+async function auditorConflict(runQuery, orgId, data) {
+    if (!data || !data.auditor || !data.department) return false;
+
+    const found = await runQuery(
+        "select discipline from users where org_id = $1 and initials = $2",
+        [orgId, data.auditor]
+    );
+    if (found.rowCount === 0) return false;
+
+    const discipline = found.rows[0].discipline;
+    return Boolean(discipline)
+        && discipline.trim().toLowerCase() === String(data.department).trim().toLowerCase();
+}
+
+/* Clause 10.2: a CAPA may not close without evidence the corrective
+   action was actually validated. */
+async function hasAttachment(runQuery, recordId) {
+    const found = await runQuery(
+        "select 1 from attachments where record_id = $1 limit 1",
+        [recordId]
+    );
+    return found.rowCount > 0;
+}
+
 /* Which authority an edit needs depends on what is being changed.
    Selecting "Rework" and selecting "Use-as-is" travel through the same
    endpoint but are not the same decision: use-as-is ships a known
@@ -239,18 +270,33 @@ records.get("/:number", async (request, response, next) => {
 
         const closeKey = closePermissionFor(record.type);
 
+        /* Same two closure gates the transition endpoint itself
+           enforces (clause 9.2 and 10.2), checked once here so a
+           blocked close button says why before anyone clicks it,
+           rather than only after a 409 comes back. */
+        const capaMissingAttachment = record.type === "capa" && !await hasAttachment(query, record.id);
+        const auditHasConflict = record.type === "audit"
+            && await auditorConflict(query, request.user.org_id, record.data);
+
         const transitions = moves.rows.map((move) => {
             const stepOk = !move.required_permission || request.can(move.required_permission);
             const closeOk = !move.is_terminal || !closeKey || request.can(closeKey);
+            const gateBlocked = move.is_terminal
+                ? (capaMissingAttachment
+                    ? "Needs at least one attachment before closing"
+                    : (auditHasConflict
+                        ? "The assigned auditor works within the department under review"
+                        : null))
+                : null;
 
             return {
                 to: move.to_state,
                 label: move.to_name || move.to_state,
                 is_terminal: move.is_terminal,
-                allowed: stepOk && closeOk,
-                blocked_because: stepOk
-                    ? (closeOk ? null : "Closing this needs " + closeKey)
-                    : "Needs permission to " + (move.permission_description || move.required_permission).toLowerCase()
+                allowed: stepOk && closeOk && !gateBlocked,
+                blocked_because: !stepOk
+                    ? "Needs permission to " + (move.permission_description || move.required_permission).toLowerCase()
+                    : (!closeOk ? "Closing this needs " + closeKey : gateBlocked)
             };
         });
 
@@ -411,6 +457,13 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
         const dueAt = parseDueAt(due_at);
         if (!dueAt.ok) {
             return response.status(400).json({ error: "due_at is not a valid date" });
+        }
+
+        if (type === "audit" && await auditorConflict(query, request.user.org_id, data)) {
+            return response.status(409).json({
+                error: "That auditor works within the department under review",
+                detail: "Clause 9.2 requires an auditor be independent of the area they audit."
+            });
         }
 
         const typeRow = await query(
@@ -575,6 +628,11 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
             const merged = withComputedRpn(record.type, { ...record.data, ...data });
 
+            if (record.type === "audit"
+                && await auditorConflict((text, params) => client.query(text, params), request.user.org_id, merged)) {
+                return { conflict: "That auditor works within the department under review" };
+            }
+
             /* A risk's rpn/residual_rpn are derived, not sent by the
                caller, so they never appear in the plain "what did the
                client ask to change" set below - audited against the
@@ -643,7 +701,91 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             return response.status(404).json({ error: "Record not found" });
         }
 
+        if (updated.conflict) {
+            return response.status(409).json({
+                error: updated.conflict,
+                detail: "Clause 9.2 requires an auditor be independent of the area they audit."
+            });
+        }
+
         response.json(updated);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- attachments ----------
+   GET  /api/records/NCR-2026-0142/attachments
+   POST /api/records/NCR-2026-0142/attachments
+       { "filename": "capa-0042-verify.pdf", "storage_key": "\\\\qms\\evidence\\capa-0042-verify.pdf" }
+
+   Metadata only - this records what the evidence is and where it
+   lives (a network path, a link into wherever the org already keeps
+   files), not the file's bytes. Storing and serving the bytes
+   themselves is a real storage-backend decision (local disk vs S3 vs
+   Azure Blob, retention policy, scanning) that has not been made yet,
+   same as the email-provider question sitting open for escalations.
+   An attachment row is real either way - closure gates that check for
+   one are not checking a stub. */
+records.get("/:number/attachments", async (request, response, next) => {
+    try {
+        if (!request.user) return response.status(401).json({ error: "Not signed in" });
+
+        const record = await query(
+            "select id from records where org_id = $1 and number = $2",
+            [request.user.org_id, request.params.number]
+        );
+        if (record.rowCount === 0) {
+            return response.status(404).json({ error: "Record not found" });
+        }
+
+        const result = await query(`
+            select a.id, a.filename, a.mime_type, a.size_bytes, a.storage_key,
+                   a.uploaded_at, u.full_name as uploaded_by
+              from attachments a
+         left join users u on u.id = a.uploaded_by
+             where a.record_id = $1
+             order by a.uploaded_at desc
+        `, [record.rows[0].id]);
+
+        response.json({ count: result.rowCount, attachments: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.post("/:number/attachments", async (request, response, next) => {
+    try {
+        if (!request.user) return response.status(401).json({ error: "Not signed in" });
+
+        const { filename, storage_key, mime_type, size_bytes } = request.body || {};
+        if (!filename || !storage_key) {
+            return response.status(400).json({ error: "filename and storage_key are required" });
+        }
+
+        const record = await query(
+            "select id from records where org_id = $1 and number = $2",
+            [request.user.org_id, request.params.number]
+        );
+        if (record.rowCount === 0) {
+            return response.status(404).json({ error: "Record not found" });
+        }
+
+        const inserted = await query(`
+            insert into attachments (record_id, filename, mime_type, size_bytes, storage_key, uploaded_by)
+            values ($1, $2, $3, $4, $5, $6)
+            returning id, filename, mime_type, size_bytes, storage_key, uploaded_at
+        `, [record.rows[0].id, filename, mime_type || null,
+            Number.isFinite(Number(size_bytes)) ? Number(size_bytes) : null,
+            storage_key, request.user.id]);
+
+        await query(`
+            insert into audit_log
+                (org_id, record_id, entity, entity_id, field, new_value, changed_by)
+            values ($1, $2, 'attachments', $3, 'added', $4, $5)
+        `, [request.user.org_id, record.rows[0].id, inserted.rows[0].id, filename, request.user.id]);
+
+        response.status(201).json(inserted.rows[0]);
     } catch (error) {
         next(error);
     }
@@ -670,7 +812,7 @@ records.post("/:number/transition", async (request, response, next) => {
 
         const outcome = await withTransaction(async (client) => {
             const current = await client.query(`
-                select r.id, r.status, r.record_type_id, rt.key as type
+                select r.id, r.status, r.record_type_id, r.data, rt.key as type
                   from records r
                   join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
@@ -731,6 +873,37 @@ records.post("/:number/transition", async (request, response, next) => {
                         error: "Your role does not permit closing this record",
                         required: closeKey,
                         your_role: request.user.role_name
+                    }
+                };
+            }
+
+            /* Verifying an audit closed is the other half of clause 9.2 -
+               a conflict that somehow made it into a record's data
+               (raised before this check existed, or edited around it)
+               is caught again here, at the moment the audit is actually
+               signed off, not only at the moment it was scheduled. */
+            if (isTerminal && record.type === "audit"
+                && await auditorConflict((text, params) => client.query(text, params), request.user.org_id, record.data)) {
+                return {
+                    code: 409,
+                    body: {
+                        error: "That auditor works within the department under review",
+                        detail: "Clause 9.2 requires an auditor be independent of the area they audit."
+                    }
+                };
+            }
+
+            /* Clause 10.2: closing a CAPA without evidence the
+               corrective action was actually validated is exactly the
+               gap between "we planned a fix" and "we proved the fix
+               worked" that this clause exists to close. */
+            if (isTerminal && record.type === "capa"
+                && !await hasAttachment((text, params) => client.query(text, params), record.id)) {
+                return {
+                    code: 409,
+                    body: {
+                        error: "At least one validation attachment is required before closing this CAPA",
+                        detail: "Clause 10.2 requires evidence the corrective action was verified effective."
                     }
                 };
             }

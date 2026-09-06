@@ -105,6 +105,15 @@ export function buildField(field, options, currentValue) {
             break;
         }
 
+        case "user": {
+            const list = options.users || [];
+            input = el("select", { id, name: field.key }, [
+                el("option", { value: "", text: "Choose..." }),
+                ...list.map((item) => el("option", { value: item.value, text: item.label }))
+            ]);
+            break;
+        }
+
         case "signature": {
             /* Editing a record must not silently re-sign it in whoever
                happens to be making the correction - the stored value,
