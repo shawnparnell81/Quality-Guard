@@ -87,6 +87,15 @@ function buildField(field, options) {
             break;
         }
 
+        case "user": {
+            const list = options.users || [];
+            input = el("select", { id, name: field.key }, [
+                el("option", { value: "", text: "Choose..." }),
+                ...list.map((item) => el("option", { value: item.value, text: item.label }))
+            ]);
+            break;
+        }
+
         case "signature": {
             const me = currentUser();
             input = el("input", {

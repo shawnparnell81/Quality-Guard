@@ -152,6 +152,24 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
             options[target] = rows.rows;
         }));
 
+        /* "user" has been accepted in FIELD_TYPES since this validator
+           was written, but nothing ever loaded options for one - a form
+           that declared it would have rendered as a plain text box.
+           Value is the person's initials, the same identifier records
+           already use for owner, so a field like audit's "auditor" is
+           a real reference rather than a name typed freely. */
+        if (fields.some((f) => f.type === "user")) {
+            const rows = await query(`
+                select initials as value,
+                       full_name || case when discipline is not null
+                                         then ' (' || discipline || ')' else '' end as label,
+                       false as disabled
+                  from users where org_id = $1 and active
+                  order by full_name
+            `, [request.user.org_id]);
+            options.users = rows.rows;
+        }
+
         response.json({
             key: definition.key,
             name: definition.name,

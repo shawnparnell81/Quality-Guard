@@ -107,6 +107,10 @@ export const api = {
     transition:   (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/transition", payload),
 
+    attachments:      (number)  => get("/records/" + encodeURIComponent(number) + "/attachments"),
+    addAttachment: (number, payload) =>
+        request("POST", "/records/" + encodeURIComponent(number) + "/attachments", payload),
+
     workOrders:   (params)  => get(withQuery("/work-orders", params)),
     workOrder:    (wo)      => get("/work-orders/" + encodeURIComponent(wo)),
     holdWorkOrder: (wo, payload) =>
