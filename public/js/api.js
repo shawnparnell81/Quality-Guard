@@ -152,6 +152,9 @@ export const api = {
 
     vendors:      ()        => get("/vendors"),
     gages:        ()        => get("/gages"),
+    gageCalibrations: (gageId) => get("/gages/" + encodeURIComponent(gageId) + "/calibrations"),
+    recordCalibration: (gageId, payload) =>
+        request("POST", "/gages/" + encodeURIComponent(gageId) + "/calibrations", payload),
     documents:    ()        => get("/documents"),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),
     parts:        ()        => get("/parts"),
