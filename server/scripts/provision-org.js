@@ -74,7 +74,7 @@ const GRANTS = {
         "production.read", "production.hold", "shipping.read",
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "risk.read", "risk.manage",
-        "vendor.read", "scar.issue", "receiving.log"],
+        "vendor.read", "scar.issue", "apqp.manage", "receiving.log"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
@@ -86,7 +86,7 @@ const GRANTS = {
         "ncr.read", "ncr.create", "capa.read", "capa.create",
         "document.read", "document.create", "drawing.read",
         "change.create", "production.read", "production.hold", "production.release",
-        "gage.read", "training.read", "training.record"],
+        "gage.read", "training.read", "training.record", "apqp.manage"],
 
     document_controller: [
         "ncr.read", "document.read", "document.create", "document.approve",
@@ -111,7 +111,7 @@ const GRANTS = {
         "drawing.read", "drawing.create", "drawing.edit", "drawing.release",
         "change.create", "change.approve",
         "production.read", "production.release", "training.read",
-        "audit.read", "risk.read", "risk.manage", "user.read"],
+        "audit.read", "risk.read", "risk.manage", "user.read", "apqp.manage"],
 
     quality_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "ncr.use_as_is",
@@ -126,7 +126,7 @@ const GRANTS = {
         "gage.read", "gage.calibrate", "gage.retire",
         "training.read", "training.record",
         "audit.read", "audit.schedule", "audit.close",
-        "risk.read", "risk.manage", "user.read", "forms.manage", "receiving.log"]
+        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
@@ -148,7 +148,8 @@ const RECORD_TYPES = [
     { key: "scar",      name: "Supplier Corrective", prefix: "SCAR", clause: "8.4" },
     { key: "audit",     name: "Internal Audit",      prefix: "AUD",  clause: "9.2" },
     { key: "ecn",       name: "Engineering Change",  prefix: "ECN",  clause: "8.5.6" },
-    { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" }
+    { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" },
+    { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" }
 ];
 
 const WORKFLOWS = {
@@ -246,6 +247,28 @@ const WORKFLOWS = {
             ["unmitigated", "in_progress", "risk.manage"], ["opportunity", "in_progress", "risk.manage"],
             ["in_progress", "controlled", "risk.manage"]
         ]
+    },
+    /* The five states here are the five APQP phases themselves - a
+       program's workflow position on screen IS its phase, nothing
+       else tracks that separately. */
+    apqp: {
+        states: [
+            ["draft", "Draft", 1, false],
+            ["plan_define", "Phase 1 - Plan & Define Program", 2, false],
+            ["product_design", "Phase 2 - Product Design & Dev.", 3, false],
+            ["process_design", "Phase 3 - Process Design & Dev.", 4, false],
+            ["validation", "Phase 4 - Product & Process Validation", 5, false],
+            ["production", "Phase 5 - Feedback & Corrective Action", 6, false],
+            ["closed", "Closed", 7, true]
+        ],
+        transitions: [
+            ["draft", "plan_define", "apqp.manage"],
+            ["plan_define", "product_design", "apqp.manage"],
+            ["product_design", "process_design", "apqp.manage"],
+            ["process_design", "validation", "apqp.manage"],
+            ["validation", "production", "apqp.manage"],
+            ["production", "closed", "apqp.manage"]
+        ]
     }
 };
 
@@ -305,6 +328,17 @@ const FORMS = {
         { key: "occurrence", label: "Occurrence (1-10)", type: "number", min: 1 },
         { key: "detection",  label: "Detection (1-10)",  type: "number", min: 1 },
         { key: "action",     label: "Planned action",    type: "memo" }
+    ],
+    apqp: [
+        { key: "customer",             label: "Customer",                    type: "text", required: true },
+        { key: "part_number",          label: "Part number",                 type: "text" },
+        { key: "target_sop",           label: "Target start of production",  type: "date" },
+        { key: "ppap_level",           label: "PPAP submission level",       type: "select",
+          options: ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] },
+        { key: "psw_status",           label: "PSW status",                  type: "select",
+          options: ["Not submitted", "Submitted", "Interim Approval", "Approved", "Rejected"] },
+        { key: "program_risk_summary", label: "Top program risks",           type: "memo" },
+        { key: "lessons_learned",      label: "Lessons learned",             type: "memo" }
     ]
 };
 

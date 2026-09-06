@@ -33,6 +33,9 @@
     <div class="nav-group">Overview</div>
     <button class="nav-item" data-view="dashboard" aria-current="true"><span>Quality Dashboard</span></button>
 
+    <div class="nav-group">Programs</div>
+    <button class="nav-item" data-view="apqp"><span>APQP Programs</span><span class="nav-count" data-nav-count="apqp" hidden></span></button>
+
     <div class="nav-group">Quality Events</div>
     <button class="nav-item" data-view="ncr"><span>Nonconformance</span><span class="nav-count hot" data-nav-count="ncr" hidden></span></button>
     <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count" data-nav-count="capa" hidden></span></button>
@@ -1023,6 +1026,39 @@
                     <button type="button" class="btn no-print" id="risk-pdf">PDF</button>
                 </div>
                 <div class="panel-body" id="risk-detail"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ APQP PROGRAMS ============ -->
+    <section class="view" id="view-apqp" hidden>
+        <div class="view-head">
+            <h1 class="view-title">APQP Programs<span class="clause-ref">8.3</span></h1>
+            <p class="view-sub">Advanced Product Quality Planning, phase by phase. A program's status on this screen is the gate it is currently at &mdash; there is no separate phase tracker to fall out of step with it.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">Programs</h2>
+                <button class="btn btn-primary" data-requires="apqp.manage" data-new-record="apqp">New APQP Program</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Program</th><th>Customer</th><th>Name</th><th>Part</th><th>Target SOP</th><th>PSW</th><th>Phase</th></tr></thead>
+                    <tbody id="apqp-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel" id="apqp-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="apqp-detail-number">Select a program</h2>
+                    <span id="apqp-detail-status"></span>
+                    <button type="button" class="btn no-print" id="apqp-print">Print</button>
+                    <button type="button" class="btn no-print" id="apqp-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="apqp-detail"></div>
             </div>
         </div>
     </section>

@@ -107,6 +107,19 @@ const REGISTERS = {
             { className: "sm", render: (row) => row.data.action || "-" },
             statusColumn
         ]
+    },
+
+    apqp: {
+        tbody: "apqp-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.customer || "-" },
+            { className: "sm", render: (row) => row.title },
+            { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
+            { className: "mono sm", render: (row) => formatDate(row.data.target_sop) },
+            { className: "sm dim", render: (row) => row.data.psw_status || "-" },
+            statusColumn
+        ]
     }
 };
 
@@ -455,7 +468,12 @@ const DETAIL_FIELDS = [
     ["Severity",              (d) => d.severity],
     ["Occurrence",            (d) => d.occurrence],
     ["Detection",             (d) => d.detection],
-    ["Action",                (d) => d.action]
+    ["Action",                (d) => d.action],
+    ["Target SOP",            (d) => d.target_sop],
+    ["PPAP level",            (d) => d.ppap_level],
+    ["PSW status",            (d) => d.psw_status],
+    ["Top program risks",     (d) => d.program_risk_summary],
+    ["Lessons learned",       (d) => d.lessons_learned]
 ];
 
 export async function renderRecordDetail(type, number) {
