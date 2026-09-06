@@ -10,7 +10,7 @@ import { Router } from "express";
 import PDFDocument from "pdfkit";
 import { query, withTransaction } from "../db.js";
 import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
-import { INK, INK_2, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
+import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 
 export const records = Router();
 
@@ -342,7 +342,11 @@ function drawRecordHeader(doc, record) {
     doc.moveDown(1);
 }
 
-function drawFields(doc, data) {
+/* Fallback for a record type with no form schema to draw from (should
+   not happen for anything raised through this app, but a PDF export
+   is the wrong place to 500 over it) - the flat, generic dump this
+   function used to be the only version of. */
+function drawGenericFields(doc, data) {
     const entries = Object.entries(data || {})
         .filter(([, value]) => value !== null && value !== undefined && value !== "");
 
@@ -356,6 +360,112 @@ function drawFields(doc, data) {
             .text(humanizeKey(key) + ":  ", { continued: true })
             .font("Helvetica").fillColor(INK)
             .text(String(value));
+    }
+
+    doc.moveDown(1);
+}
+
+/* A section banner matching the form itself: bold, uppercase, a
+   hairline underneath - the same visual language the letterhead's
+   own rule already uses, so a section heading here does not look
+   like a new idiom invented just for this. */
+function drawSectionHeading(doc, title) {
+    doc.moveDown(0.3);
+    doc.fontSize(10.5).font("Helvetica-Bold").fillColor(INK).text(title.toUpperCase());
+    doc.moveTo(doc.page.margins.left, doc.y + 2)
+        .lineTo(doc.page.width - doc.page.margins.right, doc.y + 2)
+        .lineWidth(0.75).stroke(HAIRLINE);
+    doc.moveDown(0.5);
+}
+
+/* A date field's value is the plain "YYYY-MM-DD" string forms.js
+   stores it as - readable, but not what a person reads on a printed
+   form. A "user" field's value is initials, the same short code the
+   form's own dropdown carries as its option value; userNames turns
+   that back into a name when one is known, without pretending an
+   initials code no longer resolves when it does not. */
+function formatFieldValue(field, value, userNames) {
+    if (field.type === "date") {
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString();
+    }
+
+    if (field.type === "user" && userNames && userNames.has(value)) {
+        return userNames.get(value) + " (" + value + ")";
+    }
+
+    return String(value);
+}
+
+/* The whole point of this export: a PDF laid out like the form that
+   was actually filled in, not an alphabetised key/value dump. Reads
+   the exact form version the record was raised under - schema.fields
+   in their declared order, grouped under the same section headings
+   forms.js groups them under on screen (public/js/forms.js,
+   appendFieldsGrouped) - so a printed NCR reads the way the on-screen
+   form reads, sections and all.
+
+   A key present in data but no longer named by that version's schema
+   (an older field, since renamed or removed in a later form version)
+   is not dropped - it still happened, and this is meant to carry ALL
+   of a record's information, not just what the current form asks
+   for - it prints last, under "Additional details". */
+function drawFormFields(doc, data, schema, userNames) {
+    const values = data || {};
+    const fields = (schema && Array.isArray(schema.fields)) ? schema.fields : [];
+
+    if (fields.length === 0) {
+        drawGenericFields(doc, values);
+        return;
+    }
+
+    doc.fontSize(11).fillColor(INK).font("Helvetica-Bold").text("Form detail");
+    doc.moveDown(0.2);
+
+    const shown = new Set();
+    let lastSection;
+    let first = true;
+
+    for (const field of fields) {
+        const value = values[field.key];
+        if (value === null || value === undefined || value === "") continue;
+
+        shown.add(field.key);
+
+        const section = field.section || null;
+        if (first || section !== lastSection) {
+            if (section) drawSectionHeading(doc, section);
+            lastSection = section;
+            first = false;
+        }
+
+        const label = field.label || humanizeKey(field.key);
+        const text = formatFieldValue(field, value, userNames);
+
+        if (field.type === "memo") {
+            doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2).text(label + ":");
+            doc.fontSize(9).font("Helvetica").fillColor(INK).text(text, {
+                width: doc.page.width - doc.page.margins.left - doc.page.margins.right
+            });
+            doc.moveDown(0.4);
+        } else {
+            doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
+                .text(label + ":  ", { continued: true })
+                .font("Helvetica").fillColor(INK).text(text);
+        }
+    }
+
+    const leftovers = Object.entries(values).filter(
+        ([key, value]) => !shown.has(key) && value !== null && value !== undefined && value !== ""
+    );
+
+    if (leftovers.length > 0) {
+        drawSectionHeading(doc, "Additional details");
+        for (const [key, value] of leftovers) {
+            doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
+                .text(humanizeKey(key) + ":  ", { continued: true })
+                .font("Helvetica").fillColor(INK).text(String(value));
+        }
     }
 
     doc.moveDown(1);
@@ -389,7 +499,7 @@ records.get("/:number/pdf", async (request, response, next) => {
 
         const record = found.rows[0];
 
-        const [org, history] = await Promise.all([
+        const [org, history, formVersion, users] = await Promise.all([
             query("select name from organizations where id = $1", [request.user.org_id]),
             query(`
                 select a.field, a.new_value, a.changed_at, u.full_name as changed_by
@@ -398,22 +508,41 @@ records.get("/:number/pdf", async (request, response, next) => {
                  where a.record_id = $1
                  order by a.changed_at desc
                  limit 15
-            `, [record.id])
+            `, [record.id]),
+            query(
+                "select schema from form_versions where record_type_id = $1 and version = $2",
+                [record.record_type_id, record.form_version]
+            ),
+            query("select initials, full_name from users where org_id = $1", [request.user.org_id])
         ]);
 
         const orgName = org.rows[0]?.name || "";
+        const schema = formVersion.rows[0]?.schema || null;
+        const userNames = new Map(users.rows.map((row) => [row.initials, row.full_name]));
 
         response.setHeader("Content-Type", "application/pdf");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + record.number + ".pdf\"");
 
-        const doc = new PDFDocument({ size: "letter", margin: 54 });
+        /* bufferPages holds every page until doc.end() instead of
+           flushing each as it fills, so the footer can be stamped onto
+           all of them afterward - a full-detail NCR routinely runs
+           past one page now, and a footer drawn only once, on
+           whichever page happened to be current when the content
+           ended, used to mean the first page had none and a second,
+           otherwise empty page had nothing else on it. */
+        const doc = new PDFDocument({ size: "letter", margin: 54, bufferPages: true });
         doc.pipe(response);
 
         drawLetterhead(doc, orgName);
         drawRecordHeader(doc, record);
-        drawFields(doc, record.data);
+        drawFormFields(doc, record.data, schema, userNames);
         drawHistory(doc, history.rows);
-        drawFooter(doc, orgName);
+
+        const pageRange = doc.bufferedPageRange();
+        for (let i = pageRange.start; i < pageRange.start + pageRange.count; i++) {
+            doc.switchToPage(i);
+            drawFooter(doc, orgName);
+        }
 
         doc.end();
     } catch (error) {
