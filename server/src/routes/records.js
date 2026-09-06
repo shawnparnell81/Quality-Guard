@@ -521,7 +521,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
    leaving a trace. */
 records.patch("/:number", requirePermission(editPermissionFor), async (request, response, next) => {
     try {
-        const { data = {}, severity, reason, due_at } = request.body || {};
+        const { data = {}, severity, reason, due_at, title } = request.body || {};
 
         /* Distinct from due_at being sent as null or "" (which means
            "clear it"): a PATCH that never mentions due_at at all - the
@@ -534,9 +534,14 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             return response.status(400).json({ error: "due_at is not a valid date" });
         }
 
+        const titleProvided = Object.prototype.hasOwnProperty.call(request.body || {}, "title");
+        if (titleProvided && !String(title || "").trim()) {
+            return response.status(400).json({ error: "title cannot be blank" });
+        }
+
         const updated = await withTransaction(async (client) => {
             const current = await client.query(
-                "select id, data, severity, due_at from records where org_id = $1 and number = $2 for update",
+                "select id, title, data, severity, due_at from records where org_id = $1 and number = $2 for update",
                 [request.user.org_id, request.params.number]
             );
 
@@ -583,14 +588,26 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                 }
             }
 
+            const nextTitle = titleProvided ? title.trim() : record.title;
+
+            if (titleProvided && nextTitle !== record.title) {
+                await client.query(`
+                    insert into audit_log
+                        (org_id, record_id, entity, entity_id, field,
+                         old_value, new_value, reason, changed_by)
+                    values ($1, $2, 'records', $2, 'title', $3, $4, $5, $6)
+                `, [request.user.org_id, record.id, record.title, nextTitle, reason || null, actorId]);
+            }
+
             const result = await client.query(`
                 update records
                    set data = $2,
                        severity = coalesce($3, severity),
-                       due_at = $4
+                       due_at = $4,
+                       title = $5
                  where id = $1
-                returning id, number, status, severity, data, due_at
-            `, [record.id, merged, severity || null, nextDueAt]);
+                returning id, number, title, status, severity, data, due_at
+            `, [record.id, merged, severity || null, nextDueAt, nextTitle]);
 
             return result.rows[0];
         });

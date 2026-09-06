@@ -17,7 +17,7 @@ import {
 } from "./session.js";
 import { renderDashboard, renderReadiness, wireReadiness } from "./views/dashboard.js";
 import { renderRegister, wireRegisterClicks } from "./views/events.js";
-import { renderRoles, renderPeople, wireMatrixEditing } from "./views/access.js";
+import { renderRoles, renderPeople, wireMatrixEditing, wirePeopleActions } from "./views/access.js";
 import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
 import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
@@ -25,6 +25,7 @@ import {
     renderDrawings, renderOnboarding, renderReview, renderScorecards, wireEvaluate
 } from "./views/evaluate.js";
 import { renderForms, wireForms } from "./views/formbuilder.js";
+import { wireRecordEditor } from "./forms.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -338,6 +339,8 @@ async function start() {
     wireRegisterClicks();
     wireReadiness();
     wireMatrixEditing();
+    wirePeopleActions();
+    wireRecordEditor();
     wireProduction();
     wireChangeScreens();
     wireOperations();

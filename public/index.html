@@ -359,6 +359,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="ncr-detail-number">Select a record</h2>
                     <span id="ncr-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="ncr-edit" data-edit-record="ncr">Edit</button>
                     <button type="button" class="btn no-print" id="ncr-print">Print</button>
                     <button type="button" class="btn no-print" id="ncr-pdf">PDF</button>
                 </div>
@@ -401,6 +402,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="capa-detail-number">Select a record</h2>
                     <span id="capa-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="capa-edit" data-edit-record="capa">Edit</button>
                     <button type="button" class="btn no-print" id="capa-print">Print</button>
                     <button type="button" class="btn no-print" id="capa-pdf">PDF</button>
                 </div>
@@ -445,6 +447,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="complaint-detail-number">Select a record</h2>
                     <span id="complaint-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="complaint-edit" data-edit-record="complaint">Edit</button>
                     <button type="button" class="btn no-print" id="complaint-print">Print</button>
                     <button type="button" class="btn no-print" id="complaint-pdf">PDF</button>
                 </div>
@@ -521,9 +524,7 @@
         </div>
     </section>
 
-    <!-- ============ CHANGE CONTROL ============ -->
-
-    <!-- ============ PRODUCTION ============ -->
+    <!-- ============ 8D INVESTIGATIONS ============ -->
     <section class="view" id="view-d8" hidden>
         <div class="view-head">
             <h1 class="view-title">8D Investigations<span class="clause-ref">10.2</span></h1>
@@ -531,7 +532,10 @@
         </div>
 
         <div class="panel" style="margin-bottom:16px">
-            <div class="panel-head"><h2 class="panel-title">Open investigations</h2></div>
+            <div class="panel-head">
+                <h2 class="panel-title">Open investigations</h2>
+                <button class="btn btn-primary" data-requires="capa.create" data-new-record="eightd">New 8D</button>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Record</th><th>Problem</th><th>Customer</th><th>Champion</th><th>Discipline</th></tr></thead>
@@ -552,7 +556,10 @@
             </div>
 
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Investigation detail</h2></div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Investigation detail</h2>
+                    <button type="button" class="btn btn-primary no-print" id="eightd-edit" data-edit-record="eightd">Edit</button>
+                </div>
                 <div class="panel-body" id="eightd-side"></div>
             </div>
         </div>
@@ -592,7 +599,10 @@
             </div>
 
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Change detail</h2></div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Change detail</h2>
+                    <button type="button" class="btn btn-primary no-print" id="ecn-edit" data-edit-record="ecn">Edit</button>
+                </div>
                 <div class="panel-body" id="ecn-side"></div>
             </div>
         </div>
@@ -892,12 +902,16 @@
                     <div class="panel-head">
                         <h2 class="panel-title">Audit schedule 2026</h2>
                         <span class="panel-note" id="audit-overdue-note"></span>
-                        <select class="filter-severity" data-type="audit" title="Filter by severity">
-                            <option value="">All severities</option>
-                            <option value="crit">Critical</option>
-                            <option value="warn">Warning</option>
-                            <option value="ok">OK</option>
-                        </select>
+                        <div class="row">
+                            <select class="filter-severity" data-type="audit" title="Filter by severity">
+                                <option value="">All severities</option>
+                                <option value="crit">Critical</option>
+                                <option value="warn">Warning</option>
+                                <option value="ok">OK</option>
+                            </select>
+                            <label class="filter-open"><input type="checkbox" data-type="audit"> Open only</label>
+                            <button class="btn btn-primary" data-requires="audit.schedule" data-new-record="audit">Schedule audit</button>
+                        </div>
                     </div>
                     <div class="table-wrap">
                         <table>
@@ -912,6 +926,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="audit-detail-number">Select a record</h2>
                     <span id="audit-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="audit-edit" data-edit-record="audit">Edit</button>
                     <button type="button" class="btn no-print" id="audit-print">Print</button>
                     <button type="button" class="btn no-print" id="audit-pdf">PDF</button>
                 </div>
@@ -976,12 +991,16 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2 class="panel-title">Risks and opportunities</h2>
-                    <select class="filter-severity" data-type="risk" title="Filter by severity">
-                        <option value="">All severities</option>
-                        <option value="crit">Critical</option>
-                        <option value="warn">Warning</option>
-                        <option value="ok">OK</option>
-                    </select>
+                    <div class="row">
+                        <select class="filter-severity" data-type="risk" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="risk"> Open only</label>
+                        <button class="btn btn-primary" data-requires="risk.manage" data-new-record="risk">Add risk</button>
+                    </div>
                 </div>
                 <div class="table-wrap">
                     <table>
@@ -995,6 +1014,7 @@
                 <div class="panel-head">
                     <h2 class="panel-title" id="risk-detail-number">Select a record</h2>
                     <span id="risk-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="risk-edit" data-edit-record="risk">Edit</button>
                     <button type="button" class="btn no-print" id="risk-print">Print</button>
                     <button type="button" class="btn no-print" id="risk-pdf">PDF</button>
                 </div>
@@ -1035,7 +1055,7 @@
                 <h2 class="panel-title">Directory</h2>
                 <div class="row">
                     <span class="panel-note" id="people-note"></span>
-                    <button class="btn btn-primary" data-requires="user.create">Add person</button>
+                    <button class="btn btn-primary" id="add-person-btn" data-requires="user.create">Add person</button>
                 </div>
             </div>
             <div class="table-wrap">
@@ -1043,7 +1063,7 @@
                     <thead>
                         <tr>
                             <th>Name</th><th>Job title</th><th>Discipline</th>
-                            <th>Role</th><th class="num">Permissions</th><th>Access</th>
+                            <th>Role</th><th class="num">Permissions</th><th>Access</th><th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="people-table"></tbody>
@@ -1175,6 +1195,19 @@
             <div class="table-wrap">
                 <table class="matrix" id="roles-matrix"></table>
             </div>
+        </div>
+    </section>
+
+    <!-- ============ RECORD EDITOR (create / edit, full page) ============ -->
+    <section class="view" id="view-record-editor" hidden>
+        <div class="view-head">
+            <button class="btn no-print" id="record-editor-back" type="button" style="margin-bottom:10px">&larr; Back</button>
+            <h1 class="view-title" id="record-editor-title">New record</h1>
+            <p class="view-sub" id="record-editor-sub"></p>
+        </div>
+
+        <div class="panel">
+            <div class="panel-body" id="record-editor-body"></div>
         </div>
     </section>
 

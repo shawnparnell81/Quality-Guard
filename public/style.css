@@ -295,6 +295,11 @@ body {
 
 .view-head { margin-bottom: 20px; }
 
+/* The record editor's fields would otherwise stretch across the
+   full content column on a wide screen - a text input a thousand
+   pixels wide is harder to read, not easier. */
+#record-editor-body form { max-width: 640px; }
+
 .view-title {
     font-size: 22px;
     font-weight: 600;
@@ -589,6 +594,14 @@ tr.row-selected:hover {
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) .btn-primary { color: #08201D; }
 }
+
+/* Row-level actions in the people directory: a few small buttons
+   per row rather than a single one, so each needs less padding to
+   keep the table from ballooning wider than the data it shows. */
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-xs { padding: 3px 9px; font-size: 11.5px; }
+.btn-danger { color: var(--crit); border-color: var(--crit); }
+.btn-danger:hover:not(:disabled) { background: var(--crit-tint); }
 
 .scaffold {
     border: 1px dashed var(--hairline);
@@ -888,6 +901,8 @@ th.col-you { color: var(--brand); }
 
 .field-group label { font-size: 11.5px; font-weight: 500; color: var(--ink-2); }
 
+.field-group textarea,
+.field-group select,
 .field-group input {
     font: inherit;
     font-size: 13.5px;
@@ -896,8 +911,13 @@ th.col-you { color: var(--brand); }
     border-radius: 5px;
     background: var(--surface-2);
     color: var(--ink);
+    width: 100%;
 }
 
+.field-group input.readonly { background: var(--hairline-2); color: var(--ink-2); }
+
+.field-group textarea:focus,
+.field-group select:focus,
 .field-group input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
 
 .field-hint { font-size: 11px; color: var(--ink-3); }
@@ -1009,23 +1029,8 @@ th.col-you { color: var(--brand); }
     background: var(--surface-2);
 }
 
-.modal .field-group textarea,
-.modal .field-group select,
-.modal .field-group input {
-    font: inherit;
-    font-size: 13px;
-    padding: 8px 10px;
-    border: 1px solid var(--hairline);
-    border-radius: 5px;
-    background: var(--surface-2);
-    color: var(--ink);
-    width: 100%;
-}
-
-.modal .field-group input.readonly {
-    background: var(--hairline-2);
-    color: var(--ink-2);
-}
+/* Field styling itself lives on the bare .field-group rules above,
+   shared by the modal and the full-page record editor alike. */
 
 .modal .field-group input:disabled,
 .modal .field-group select:disabled {
