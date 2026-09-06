@@ -9,6 +9,7 @@
 import { Router } from "express";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
+import { scoredVendors, samplePlanForGrade } from "../vendor-scoring.js";
 
 export const operations = Router();
 
@@ -16,26 +17,41 @@ export const operations = Router();
    Receiving
    ============================================================ */
 
+/* sample_plan and vendor_grade are overridden below with the live
+   computed grade (vendor-scoring.js), not read straight off the row -
+   the schema comment on receipts.sample_plan always said the plan
+   should follow the vendor's real grade; this is that rule, made
+   real instead of a static string set once at seed time. */
 operations.get("/receipts", async (request, response, next) => {
     try {
-        const result = await query(`
-            select r.receipt_number, r.po_number, r.part_number, r.qty_received,
-                   r.received_at, r.sample_plan, r.status, r.notes,
-                   v.name as vendor, v.grade as vendor_grade,
-                   u.full_name as inspected_by, r.inspected_at,
-                   (select count(*)::int from receipt_measurements m
-                     where m.receipt_id = r.id) as measurements,
-                   (select count(*)::int from receipt_measurements m
-                     where m.receipt_id = r.id and m.result = 'fail') as failures
-              from receipts r
-         left join vendors v on v.id = r.vendor_id
-         left join users u   on u.id = r.inspected_by
-             where r.org_id = $1
-             order by case r.status when 'pending' then 0 when 'reject' then 1 else 2 end,
-                      r.received_at desc
-        `, [request.user.org_id]);
+        const [result, vendors] = await Promise.all([
+            query(`
+                select r.receipt_number, r.po_number, r.part_number, r.qty_received,
+                       r.received_at, r.status, r.notes,
+                       v.name as vendor,
+                       u.full_name as inspected_by, r.inspected_at,
+                       (select count(*)::int from receipt_measurements m
+                         where m.receipt_id = r.id) as measurements,
+                       (select count(*)::int from receipt_measurements m
+                         where m.receipt_id = r.id and m.result = 'fail') as failures
+                  from receipts r
+             left join vendors v on v.id = r.vendor_id
+             left join users u   on u.id = r.inspected_by
+                 where r.org_id = $1
+                 order by case r.status when 'pending' then 0 when 'reject' then 1 else 2 end,
+                          r.received_at desc
+            `, [request.user.org_id]),
+            scoredVendors(request.user.org_id)
+        ]);
 
-        response.json({ count: result.rowCount, receipts: result.rows });
+        const vendorByName = new Map(vendors.map((v) => [v.name, v]));
+
+        const receipts = result.rows.map((row) => {
+            const grade = vendorByName.get(row.vendor)?.grade || null;
+            return { ...row, vendor_grade: grade, sample_plan: samplePlanForGrade(grade) };
+        });
+
+        response.json({ count: receipts.length, receipts });
     } catch (error) {
         next(error);
     }
@@ -43,20 +59,25 @@ operations.get("/receipts", async (request, response, next) => {
 
 operations.get("/receipts/:number", async (request, response, next) => {
     try {
-        const found = await query(`
-            select r.id, r.receipt_number, r.po_number, r.part_number,
-                   r.qty_received, r.received_at, r.sample_plan, r.status, r.notes,
-                   v.name as vendor, v.grade as vendor_grade, v.ppm as vendor_ppm,
-                   u.full_name as inspected_by, r.inspected_at
-              from receipts r
-         left join vendors v on v.id = r.vendor_id
-         left join users u   on u.id = r.inspected_by
-             where r.org_id = $1 and r.receipt_number = $2
-        `, [request.user.org_id, request.params.number]);
+        const [found, vendors] = await Promise.all([
+            query(`
+                select r.id, r.receipt_number, r.po_number, r.part_number,
+                       r.qty_received, r.received_at, r.status, r.notes,
+                       v.name as vendor,
+                       u.full_name as inspected_by, r.inspected_at
+                  from receipts r
+             left join vendors v on v.id = r.vendor_id
+             left join users u   on u.id = r.inspected_by
+                 where r.org_id = $1 and r.receipt_number = $2
+            `, [request.user.org_id, request.params.number]),
+            scoredVendors(request.user.org_id)
+        ]);
 
         if (found.rowCount === 0) {
             return response.status(404).json({ error: "No such receipt" });
         }
+
+        const vendor = vendors.find((v) => v.name === found.rows[0].vendor) || null;
 
         const measurements = await query(`
             select characteristic, specification, actual, result, gage_id
@@ -65,7 +86,12 @@ operations.get("/receipts/:number", async (request, response, next) => {
         `, [found.rows[0].id]);
 
         response.json({
-            receipt: found.rows[0],
+            receipt: {
+                ...found.rows[0],
+                vendor_grade: vendor?.grade || null,
+                vendor_ppm: vendor?.ppm ?? null,
+                sample_plan: samplePlanForGrade(vendor?.grade)
+            },
             measurements: measurements.rows,
             can_disposition: request.can("ncr.disposition")
         });

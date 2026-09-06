@@ -274,10 +274,18 @@ export const VENDOR_STATUS = {
 
 export async function renderVendors() {
     const tbody = document.getElementById("vendors-table");
+    const note = document.getElementById("vendors-note");
     loadingRow(tbody, 7);
 
     try {
         const { vendors } = await api.vendors();
+
+        if (note) {
+            const active = vendors.filter((v) => v.status !== "onboarding" && v.status !== "suspended").length;
+            const scarOpen = vendors.filter((v) => v.open_scars > 0).length;
+            note.textContent = active + " active"
+                + (scarOpen > 0 ? " / " + scarOpen + " SCAR open" : "");
+        }
 
         fillTable(tbody, vendors, [
             { render: (row) => row.name },
@@ -288,9 +296,23 @@ export async function renderVendors() {
             { className: "num", render: (row) => row.ppm != null ? row.ppm.toLocaleString() : "-" },
             { render: (row) => {
                 const [label, kind] = VENDOR_STATUS[row.status] || ["Unknown", "hold"];
-                return pill(label, kind);
+                /* "live" vs "entered" mirrors the exact chip the
+                   Scorecards screen already uses for the same
+                   distinction - a grade computed from real receiving
+                   volume against one still resting on a typed-in
+                   figure because there is not enough history yet. */
+                return el("span", { class: "row", style: "gap:6px" }, [
+                    pill(label, kind),
+                    el("span", {
+                        class: "chip",
+                        title: row.scoring === "computed"
+                            ? "Calculated from real receiving history"
+                            : "Not enough receiving volume yet - entered figure",
+                        text: row.scoring === "computed" ? "live" : "entered"
+                    })
+                ]);
             } }
-        ]);
+        ], "No vendors tracked yet");
     } catch (error) {
         errorRow(tbody, 7, error);
     }

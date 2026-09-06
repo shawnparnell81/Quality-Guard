@@ -8,6 +8,7 @@
 
 import { Router } from "express";
 import { query } from "../db.js";
+import { scoredVendors } from "../vendor-scoring.js";
 
 export const dashboard = Router();
 
@@ -73,13 +74,13 @@ dashboard.get("/", async (request, response, next) => {
                         or tr.revision_trained is distinct from d.current_revision)
             `, [request.user.org_id]),
 
-            query(`
-                select count(*) filter (where status = 'scar_open') as scar_open,
-                       count(*) filter (where grade = 'D')          as grade_d,
-                       round(avg(ppm))                              as avg_ppm,
-                       count(*)                                     as total
-                  from vendors where org_id = $1 and status <> 'onboarding'
-            `, [request.user.org_id])
+            /* Same computed ppm/grade every screen showing a vendor
+               now uses (vendor-scoring.js) - a KPI averaging the raw
+               stored column would drift from what the register right
+               below it shows the moment real receiving history came
+               in for one vendor but not another. */
+            scoredVendors(request.user.org_id).then((all) =>
+                all.filter((vendor) => vendor.status !== "onboarding"))
         ]);
 
         const byType = {};
@@ -110,10 +111,20 @@ dashboard.get("/", async (request, response, next) => {
             },
             training: { gaps: Number(training.rows[0].gaps) },
             suppliers: {
-                scar_open: Number(vendors.rows[0].scar_open),
-                grade_d: Number(vendors.rows[0].grade_d),
-                avg_ppm: Number(vendors.rows[0].avg_ppm),
-                total: Number(vendors.rows[0].total)
+                scar_open: vendors.filter((v) => v.status === "scar_open").length,
+                grade_d: vendors.filter((v) => v.grade === "D").length,
+                /* Matches SQL's own avg(): a vendor with no ppm at all
+                   (never received from, nothing entered either) is
+                   left out of the average entirely, not counted as a
+                   perfect 0 - that would drag the figure down for
+                   having no data, the opposite of what "no data" means. */
+                avg_ppm: (() => {
+                    const known = vendors.filter((v) => v.ppm !== null);
+                    return known.length > 0
+                        ? Math.round(known.reduce((sum, v) => sum + v.ppm, 0) / known.length)
+                        : 0;
+                })(),
+                total: vendors.length
             },
             /* Computed the same way every other type's overdue count is
                (closed_at is null and due_at has passed) - not from a
