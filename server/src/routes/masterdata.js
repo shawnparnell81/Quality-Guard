@@ -192,6 +192,9 @@ function problemWith(fields) {
         if (!field.key || typeof field.key !== "string") return "Every field needs a key";
         if (!field.label || typeof field.label !== "string") return "Every field needs a label";
         if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
+        if (field.section !== undefined && typeof field.section !== "string") {
+            return "\"" + field.label + "\"'s section must be text";
+        }
 
         if (seenKeys.has(field.key)) return "Two fields share the key \"" + field.key + "\"";
         seenKeys.add(field.key);

@@ -89,6 +89,8 @@ export const api = {
         request("PATCH", "/users/" + encodeURIComponent(initials), payload),
     deactivateUser: (initials, payload) =>
         request("POST", "/users/" + encodeURIComponent(initials) + "/deactivate", payload),
+    resetPassword: (initials, payload) =>
+        request("POST", "/users/" + encodeURIComponent(initials) + "/reset-password", payload),
 
     dashboard:    ()        => get("/dashboard"),
     openEvents:   ()        => get("/dashboard/open-events"),

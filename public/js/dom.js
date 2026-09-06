@@ -141,7 +141,7 @@ export function toast(message, kind = "ok") {
    28">, sized in CSS like any other element; stroke uses currentColor
    so a tile's own text colour (is-crit / is-warn) controls it without
    this needing to know about severity at all. */
-export function drawSparkline(svgId, values) {
+export function drawSparkline(svgId, values, { recordsByWeek, onPointClick } = {}) {
     const svg = document.getElementById(svgId);
     if (!svg || !values || values.length === 0) return;
 
@@ -175,6 +175,37 @@ export function drawSparkline(svgId, values) {
     dot.setAttribute("r", "2.3");
     dot.setAttribute("fill", "currentColor");
     svg.append(dot);
+
+    /* Every point with real records behind it gets an invisible,
+       generously-sized hit target - the visible dot is only 2.3px,
+       far too small to click reliably, and only weeks that actually
+       happened respond at all. recordsByWeek carries the same shape
+       as values: one array of record numbers per week, from the
+       dashboard endpoint's trend_records. */
+    if (onPointClick && recordsByWeek) {
+        points.forEach(([x, y], index) => {
+            const numbers = recordsByWeek[index];
+            if (!numbers || numbers.length === 0) return;
+
+            const hit = document.createElementNS(ns, "circle");
+            hit.setAttribute("cx", x);
+            hit.setAttribute("cy", y);
+            hit.setAttribute("r", "6");
+            hit.setAttribute("fill", "transparent");
+            hit.setAttribute("role", "button");
+            hit.setAttribute("tabindex", "0");
+            hit.setAttribute("aria-label", numbers.length + " record" + (numbers.length === 1 ? "" : "s") + " this week - open");
+            hit.style.cursor = "pointer";
+
+            const activate = (event) => { event.stopPropagation(); onPointClick(index, numbers); };
+            hit.addEventListener("click", activate);
+            hit.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); activate(event); }
+            });
+
+            svg.append(hit);
+        });
+    }
 }
 
 /* ---------- printing ---------- */
