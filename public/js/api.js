@@ -62,6 +62,47 @@ async function request(method, path, body) {
 
 const get = (path) => request("GET", path);
 
+/* A real file upload - FormData, not JSON. Shares request()'s
+   session/error handling by duplicating just the two lines that
+   differ (no Content-Type header of our own: the browser sets the
+   multipart boundary itself, and setting one by hand breaks it; no
+   JSON.stringify, FormData is already the wire format) rather than
+   bending request() itself around a body shape most callers never
+   send. */
+async function postForm(path, formData) {
+    let response;
+
+    try {
+        response = await fetch(BASE + path, {
+            method: "POST",
+            credentials: "same-origin",
+            body: formData
+        });
+    } catch (cause) {
+        throw new Error("Cannot reach the server. Is it running on port 3001?");
+    }
+
+    if (response.status === 401 && !path.startsWith("/auth/")) {
+        window.location.href = "/login.html";
+        throw new Error("Session ended");
+    }
+
+    if (response.status === 428) {
+        window.location.href = "/change-password.html";
+        throw new Error("Password change required");
+    }
+
+    if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const error = new Error(payload.error || response.status + " " + response.statusText);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+
+    return response.json();
+}
+
 function withQuery(path, params) {
     const search = new URLSearchParams(
         Object.entries(params || {}).filter(([, value]) => value !== undefined)
@@ -166,8 +207,21 @@ export const api = {
     gageCalibrations: (gageId) => get("/gages/" + encodeURIComponent(gageId) + "/calibrations"),
     recordCalibration: (gageId, payload) =>
         request("POST", "/gages/" + encodeURIComponent(gageId) + "/calibrations", payload),
-    documents:    ()        => get("/documents"),
+    documents:    (record)  => get(withQuery("/documents", { record })),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),
+    uploadDocument: (formData) => postForm("/documents", formData),
+    uploadDocumentRevision: (doc, formData) =>
+        postForm("/documents/" + encodeURIComponent(doc) + "/revisions", formData),
+    releaseDocumentRevision: (doc, revision) =>
+        request("POST", "/documents/" + encodeURIComponent(doc)
+                + "/revisions/" + encodeURIComponent(revision) + "/release"),
+    /* Not fetched through request() - this is a real file, and the
+       point is a plain browser navigation/download, not JSON the app
+       reads. The session cookie still travels with it automatically
+       (same-origin), so a signed-out tab still can't reach it. */
+    documentDownloadUrl: (doc, revision) =>
+        "/api/documents/" + encodeURIComponent(doc)
+        + "/revisions/" + encodeURIComponent(revision) + "/download",
     parts:        ()        => get("/parts"),
     lots:         (params)  => get(withQuery("/lots", params)),
     genealogy:    (lot)     => get("/lots/" + encodeURIComponent(lot) + "/genealogy"),

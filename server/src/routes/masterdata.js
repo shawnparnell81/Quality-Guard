@@ -8,9 +8,11 @@
    ============================================================ */
 
 import { Router } from "express";
+import multer from "multer";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { scoredVendors } from "../vendor-scoring.js";
+import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
 
 export const masterdata = Router();
 
@@ -484,9 +486,24 @@ masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate
     }
 });
 
-/* ---------- documents ---------- */
+/* ---------- documents ----------
+   ?record=APQP-2026-0002 narrows to the documents attached to one
+   record - the same query this endpoint always ran, with one more
+   condition, so a program or an 8D's own detail view can show just
+   its own documents through this one endpoint rather than a second,
+   parallel one. */
 masterdata.get("/documents", async (request, response, next) => {
     try {
+        const params = [request.user.org_id];
+        let recordFilter = "";
+
+        if (request.query.record) {
+            params.push(request.query.record);
+            recordFilter = `and d.record_id = (
+                select id from records where org_id = $1 and number = $${params.length}
+            )`;
+        }
+
         const result = await query(`
             select d.doc_number, d.title, d.current_revision, d.status,
                    u.full_name as owner,
@@ -494,9 +511,9 @@ masterdata.get("/documents", async (request, response, next) => {
                      where dr.document_id = d.id) as revision_count
               from documents d
          left join users u on u.id = d.owner_id
-             where d.org_id = $1
+             where d.org_id = $1 ${recordFilter}
              order by d.doc_number
-        `, [request.user.org_id]);
+        `, params);
 
         response.json({ count: result.rowCount, documents: result.rows });
     } catch (error) {
@@ -507,7 +524,8 @@ masterdata.get("/documents", async (request, response, next) => {
 masterdata.get("/documents/:docNumber/revisions", async (request, response, next) => {
     try {
         const result = await query(`
-            select dr.revision, dr.change_summary, dr.effective_date,
+            select dr.revision, dr.change_summary, dr.effective_date, dr.created_at,
+                   dr.original_filename, (dr.storage_path is not null) as has_file,
                    author.full_name   as author,
                    approver.full_name as approved_by
               from document_revisions dr
@@ -515,10 +533,246 @@ masterdata.get("/documents/:docNumber/revisions", async (request, response, next
          left join users author         on author.id = dr.author_id
          left join users approver       on approver.id = dr.approved_by
              where d.org_id = $1 and d.doc_number = $2
-             order by dr.revision desc
+             order by dr.created_at desc
         `, [request.user.org_id, request.params.docNumber]);
 
         response.json({ count: result.rowCount, revisions: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- documents: real files ----------
+   A document has always had a revision history (schema.sql); none of
+   it could ever be created, revised, or downloaded until now. */
+
+const documentUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }
+});
+
+/* Next after whatever the most recently created revision was, by
+   creation order rather than alphabetical - a revision letter is
+   assigned once and never resorted, so the newest one really is
+   "created_at desc limit 1", the same row the revisions list above
+   already treats as most recent. */
+function nextRevisionLetter(previous) {
+    if (!previous) return "A";
+    const code = previous.toUpperCase().charCodeAt(previous.length - 1);
+    return previous.slice(0, -1) + String.fromCharCode(code + 1);
+}
+
+/* POST /api/documents   multipart: doc_number, title, change_summary, file, record? */
+masterdata.post("/documents", requirePermission("document.create"), documentUpload.single("file"),
+    async (request, response, next) => {
+        try {
+            const { doc_number, title, change_summary, record } = request.body || {};
+
+            if (!doc_number || !title || !request.file) {
+                return response.status(400).json({ error: "doc_number, title, and file are required" });
+            }
+
+            const existing = await query(
+                "select 1 from documents where org_id = $1 and doc_number = $2",
+                [request.user.org_id, doc_number]
+            );
+            if (existing.rowCount > 0) {
+                return response.status(409).json({ error: "A document already exists with that number: " + doc_number });
+            }
+
+            let recordId = null;
+            if (record) {
+                const found = await query(
+                    "select id from records where org_id = $1 and number = $2",
+                    [request.user.org_id, record]
+                );
+                if (found.rowCount === 0) {
+                    return response.status(404).json({ error: "Record not found: " + record });
+                }
+                recordId = found.rows[0].id;
+            }
+
+            const storagePath = await saveDocumentFile(request.file.originalname, request.file.buffer);
+
+            const created = await withTransaction(async (client) => {
+                const doc = await client.query(`
+                    insert into documents (org_id, doc_number, title, owner_id, record_id)
+                    values ($1, $2, $3, $4, $5)
+                    returning id, doc_number, title, status, current_revision
+                `, [request.user.org_id, doc_number, title, request.user.id, recordId]);
+
+                const revision = await client.query(`
+                    insert into document_revisions
+                        (document_id, revision, change_summary, author_id,
+                         original_filename, mime_type, size_bytes, storage_path)
+                    values ($1, 'A', $2, $3, $4, $5, $6, $7)
+                    returning revision, change_summary, created_at
+                `, [doc.rows[0].id, change_summary || "Initial upload", request.user.id,
+                    request.file.originalname, request.file.mimetype, request.file.size, storagePath]);
+
+                return { document: doc.rows[0], revision: revision.rows[0] };
+            });
+
+            response.status(201).json(created);
+        } catch (error) {
+            /* assertAllowedFilename (document-storage.js) throws with
+               a real status - the app's own generic error handler
+               always answers 500 regardless of one, the same as every
+               other route in this file already works around by
+               answering directly rather than relying on it. */
+            if (error.status) return response.status(error.status).json({ error: error.message });
+            next(error);
+        }
+    }
+);
+
+/* POST /api/documents/FMEA-2026-0014/revisions   multipart: file, change_summary, revision? */
+masterdata.post("/documents/:docNumber/revisions", requirePermission("document.create"), documentUpload.single("file"),
+    async (request, response, next) => {
+        try {
+            if (!request.file) {
+                return response.status(400).json({ error: "file is required" });
+            }
+
+            const doc = await query(
+                "select id from documents where org_id = $1 and doc_number = $2",
+                [request.user.org_id, request.params.docNumber]
+            );
+            if (doc.rowCount === 0) {
+                return response.status(404).json({ error: "Document not found" });
+            }
+            const documentId = doc.rows[0].id;
+
+            const latest = await query(
+                "select revision from document_revisions where document_id = $1 order by created_at desc limit 1",
+                [documentId]
+            );
+
+            const revision = request.body?.revision || nextRevisionLetter(latest.rows[0]?.revision);
+
+            const clash = await query(
+                "select 1 from document_revisions where document_id = $1 and revision = $2",
+                [documentId, revision]
+            );
+            if (clash.rowCount > 0) {
+                return response.status(409).json({ error: "Revision " + revision + " already exists for this document" });
+            }
+
+            const storagePath = await saveDocumentFile(request.file.originalname, request.file.buffer);
+
+            /* Uploading a revision is not the same act as making it
+               official - see WI-0412 in this org's own seed data, a
+               drafted revision sitting unapproved while an earlier one
+               stays current. documents.status moves to in_approval so
+               the register reflects that something is now pending,
+               but current_revision - the one a plain download without
+               a revision number returns - does not change until
+               /release says so. */
+            const created = await withTransaction(async (client) => {
+                const inserted = await client.query(`
+                    insert into document_revisions
+                        (document_id, revision, change_summary, author_id,
+                         original_filename, mime_type, size_bytes, storage_path)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8)
+                    returning revision, change_summary, created_at
+                `, [documentId, revision, request.body?.change_summary || "Revision uploaded", request.user.id,
+                    request.file.originalname, request.file.mimetype, request.file.size, storagePath]);
+
+                await client.query(
+                    "update documents set status = 'in_approval' where id = $1 and status <> 'obsolete'",
+                    [documentId]
+                );
+
+                return inserted.rows[0];
+            });
+
+            response.status(201).json(created);
+        } catch (error) {
+            if (error.status) return response.status(error.status).json({ error: error.message });
+            next(error);
+        }
+    }
+);
+
+/* POST /api/documents/FMEA-2026-0014/revisions/B/release
+   The one place a revision becomes the official one. Either
+   permission in the catalog that names this act satisfies it -
+   document.approve ("Approve a document revision") and
+   document.release ("Release a revision to the shop floor") describe
+   the same real authority from two angles, not two separate gates to
+   clear. */
+masterdata.post("/documents/:docNumber/revisions/:revision/release", async (request, response, next) => {
+    try {
+        if (!request.can("document.release") && !request.can("document.approve")) {
+            return response.status(403).json({
+                error: "Your role does not permit this",
+                required: "document.release or document.approve"
+            });
+        }
+
+        const doc = await query(
+            "select id from documents where org_id = $1 and doc_number = $2",
+            [request.user.org_id, request.params.docNumber]
+        );
+        if (doc.rowCount === 0) {
+            return response.status(404).json({ error: "Document not found" });
+        }
+        const documentId = doc.rows[0].id;
+
+        const revision = await query(
+            "select id from document_revisions where document_id = $1 and revision = $2",
+            [documentId, request.params.revision]
+        );
+        if (revision.rowCount === 0) {
+            return response.status(404).json({ error: "Revision not found" });
+        }
+
+        await withTransaction(async (client) => {
+            await client.query(
+                "update document_revisions set approved_by = $1, effective_date = now() where id = $2",
+                [request.user.id, revision.rows[0].id]
+            );
+            await client.query(
+                "update documents set current_revision = $1, status = 'released' where id = $2",
+                [request.params.revision, documentId]
+            );
+        });
+
+        response.json({ doc_number: request.params.docNumber, current_revision: request.params.revision });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* GET /api/documents/FMEA-2026-0014/revisions/B/download
+   GET /api/documents/FMEA-2026-0014/revisions/current/download
+   Streams the real file back - Excel, or the OS's own PDF viewer for
+   a PDF, and printing after that is just that application's own
+   print function. No extra permission beyond being signed in, the
+   same as the two read-only routes above already allow: viewing a
+   controlled document is not gated the way authoring one is. */
+masterdata.get("/documents/:docNumber/revisions/:revision/download", async (request, response, next) => {
+    try {
+        const revisionKey = request.params.revision;
+
+        const result = await query(`
+            select dr.original_filename, dr.mime_type, dr.storage_path
+              from document_revisions dr
+              join documents d on d.id = dr.document_id
+             where d.org_id = $1 and d.doc_number = $2
+               and dr.revision = case when $3 = 'current' then d.current_revision else $3 end
+        `, [request.user.org_id, request.params.docNumber, revisionKey]);
+
+        if (result.rowCount === 0 || !result.rows[0].storage_path) {
+            return response.status(404).json({ error: "No file on that revision" });
+        }
+
+        const { original_filename, mime_type, storage_path } = result.rows[0];
+        const buffer = await readDocumentFile(storage_path);
+
+        response.setHeader("Content-Type", mime_type || "application/octet-stream");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + original_filename + "\"");
+        response.send(buffer);
     } catch (error) {
         next(error);
     }

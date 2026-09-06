@@ -13,6 +13,7 @@ import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind
 } from "../dom.js";
+import { renderDocumentsPanel } from "./resources.js";
 
 /* ============================================================
    8D
@@ -85,6 +86,8 @@ async function renderEightDDetail(number) {
 
         if (heading) heading.textContent = record.number;
         if (editButton) editButton.dataset.number = record.number;
+
+        renderDocumentsPanel(record.number, "eightd-documents-panel");
 
         /* The disciplines are workflow states, so "done" is simply
            everything before the one the record is sitting on. */

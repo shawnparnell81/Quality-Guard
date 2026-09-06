@@ -343,11 +343,200 @@ async function renderDocumentDetail(docNumber) {
             { className: "sm", render: (row) => row.author || "-" },
             { className: "sm dim", render: (row) => row.approved_by || "pending" },
             { className: "mono sm", render: (row) =>
-                row.effective_date ? formatDate(row.effective_date) : "-" }
+                row.effective_date ? formatDate(row.effective_date) : "-" },
+            { className: "nowrap", render: (row) => revisionActions(docNumber, row) }
         ], "No revision history recorded");
+
+        applyPermissions(revisionsBody);
     } catch (error) {
-        errorRow(revisionsBody, 5, error);
+        errorRow(revisionsBody, 6, error);
     }
+}
+
+/* Download - the entire reason this app opens the real file instead
+   of an in-page editor - and Release, shown only on a revision still
+   waiting (no approved_by yet) and only to someone who can actually
+   do it. Uploading a revision was deliberately never enough to make
+   it current (see the upload endpoint's own comment); this is where
+   that finishes. */
+function revisionActions(docNumber, row) {
+    const nodes = [];
+
+    if (row.has_file) {
+        nodes.push(el("a", {
+            class: "btn btn-xs no-print",
+            href: api.documentDownloadUrl(docNumber, row.revision),
+            text: "Download"
+        }));
+    }
+
+    if (!row.approved_by) {
+        const release = el("button", {
+            class: "btn btn-xs no-print", type: "button",
+            "data-requires": "document.release", text: "Release"
+        });
+        release.addEventListener("click", async () => {
+            release.disabled = true;
+            try {
+                await api.releaseDocumentRevision(docNumber, row.revision);
+                toast("Revision " + row.revision + " released");
+                await renderDocuments();
+            } catch (error) {
+                toast(error.message, "error");
+                release.disabled = false;
+            }
+        });
+        nodes.push(release);
+    }
+
+    return nodes;
+}
+
+/* ---------- uploading (a real file, every time) ---------- */
+
+function openUploadDocumentDialog(defaultRecord, onSaved) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const docNumberInput = el("input", { type: "text", id: "doc-number", placeholder: "e.g. FMEA-2210-C" });
+    const titleInput = el("input", { type: "text", id: "doc-title" });
+    const summaryInput = el("input", { type: "text", id: "doc-summary", value: "Initial upload" });
+    const recordInput = el("input", {
+        type: "text", id: "doc-record", value: defaultRecord || "",
+        readonly: defaultRecord ? "readonly" : undefined
+    });
+    const fileInput = el("input", { type: "file", id: "doc-file" });
+
+    const save = el("button", { class: "btn btn-primary", type: "button" }, "Upload");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Attach a document" })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("div", { class: "field-group" }, [
+                el("label", { for: "doc-number", text: "Document number" }), docNumberInput
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "doc-title", text: "Title" }), titleInput
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "doc-summary", text: "Change summary" }), summaryInput
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "doc-record", text: "Linked record" }), recordInput,
+                el("span", {
+                    class: "field-hint",
+                    text: defaultRecord ? "Attached to this record." : "Optional - a record number, if this belongs to one."
+                })
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "doc-file", text: "File" }), fileInput,
+                el("span", { class: "field-hint", text: "Excel, Word, PDF, or CSV." })
+            ])
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            save
+        ])
+    );
+
+    save.addEventListener("click", async () => {
+        errorBox.hidden = true;
+
+        if (!docNumberInput.value.trim() || !titleInput.value.trim() || !fileInput.files[0]) {
+            errorBox.textContent = "Document number, title, and a file are all required.";
+            errorBox.hidden = false;
+            return;
+        }
+
+        save.disabled = true;
+        save.textContent = "Uploading...";
+
+        const formData = new FormData();
+        formData.append("doc_number", docNumberInput.value.trim());
+        formData.append("title", titleInput.value.trim());
+        formData.append("change_summary", summaryInput.value.trim() || "Initial upload");
+        if (recordInput.value.trim()) formData.append("record", recordInput.value.trim());
+        formData.append("file", fileInput.files[0]);
+
+        try {
+            const result = await api.uploadDocument(formData);
+            node.close();
+            toast(result.document.doc_number + " uploaded");
+            if (onSaved) await onSaved();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Upload";
+        }
+    });
+
+    node.showModal();
+}
+
+function openUploadRevisionDialog(docNumber, onSaved) {
+    const node = ensureDialog();
+    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
+
+    const summaryInput = el("textarea", { id: "rev-summary", rows: 2, placeholder: "What changed in this revision?" });
+    const fileInput = el("input", { type: "file", id: "rev-file" });
+
+    const save = el("button", { class: "btn btn-primary", type: "button" }, "Upload revision");
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "New revision - " + docNumber })),
+        el("div", { class: "modal-body" }, [
+            errorBox,
+            el("div", { class: "field-group" }, [
+                el("label", { for: "rev-summary", text: "Change summary" }), summaryInput
+            ]),
+            el("div", { class: "field-group" }, [
+                el("label", { for: "rev-file", text: "File" }), fileInput,
+                el("span", {
+                    class: "field-hint",
+                    text: "Uploading does not make this the released revision - the current one stays in force until this is released."
+                })
+            ])
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
+            save
+        ])
+    );
+
+    save.addEventListener("click", async () => {
+        errorBox.hidden = true;
+
+        if (!fileInput.files[0]) {
+            errorBox.textContent = "A file is required.";
+            errorBox.hidden = false;
+            return;
+        }
+
+        save.disabled = true;
+        save.textContent = "Uploading...";
+
+        const formData = new FormData();
+        formData.append("change_summary", summaryInput.value.trim() || "Revision uploaded");
+        formData.append("file", fileInput.files[0]);
+
+        try {
+            const result = await api.uploadDocumentRevision(docNumber, formData);
+            node.close();
+            toast("Revision " + result.revision + " uploaded");
+            if (onSaved) await onSaved();
+        } catch (error) {
+            errorBox.textContent = error.message;
+            errorBox.hidden = false;
+        } finally {
+            save.disabled = false;
+            save.textContent = "Upload revision";
+        }
+    });
+
+    node.showModal();
 }
 
 export function wireDocuments() {
@@ -366,6 +555,78 @@ export function wireDocuments() {
         printButton.addEventListener("click", () => {
             printElement(document.getElementById("document-detail-panel"));
         });
+    }
+
+    const uploadButton = document.getElementById("document-upload");
+    if (uploadButton) {
+        uploadButton.addEventListener("click", () => {
+            openUploadDocumentDialog(null, renderDocuments);
+        });
+    }
+
+    const newRevisionButton = document.getElementById("document-new-revision");
+    if (newRevisionButton) {
+        newRevisionButton.addEventListener("click", () => {
+            if (!selectedDocument) return;
+            openUploadRevisionDialog(selectedDocument, () => renderDocumentDetail(selectedDocument));
+        });
+    }
+}
+
+/* ---------- a compact documents panel, embeddable on any record's
+   own detail view ----------
+
+   The general library above is a full register + revision-history
+   split; a record's own detail page needs something smaller - which
+   documents are attached, their current revision, one click to
+   download it, one to attach another. Reuses the exact same upload
+   dialog and the exact same API this whole file already uses -
+   "documents attached to a record" is not a different kind of thing
+   from "documents," just a filtered view of them. */
+export async function renderDocumentsPanel(recordNumber, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    container.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
+
+    try {
+        const { documents } = await api.documents(recordNumber);
+
+        const rows = documents.length === 0
+            ? [el("p", { class: "sm dim", text: "No documents attached." })]
+            : documents.map((doc) => {
+                const [label, kind] = DOC_STATUS[doc.status] || ["Unknown", "hold"];
+
+                return el("div", { class: "row", style: "justify-content:space-between;gap:8px" }, [
+                    el("div", {}, [
+                        el("span", { class: "mono sm", text: doc.doc_number }),
+                        el("span", { class: "sm", text: "  " + doc.title + "  " }),
+                        pill(label, kind)
+                    ]),
+                    doc.current_revision
+                        ? el("a", {
+                            class: "btn btn-xs no-print",
+                            href: api.documentDownloadUrl(doc.doc_number, "current"),
+                            text: "Download " + doc.current_revision
+                        })
+                        : el("span", { class: "sm dim", text: "No released revision yet" })
+                ]);
+            });
+
+        const uploadButton = el("button", {
+            class: "btn btn-xs no-print", type: "button", "data-requires": "document.create",
+            style: "margin-top:8px"
+        }, "+ Attach document");
+        uploadButton.addEventListener("click", () => {
+            openUploadDocumentDialog(recordNumber, () => renderDocumentsPanel(recordNumber, containerId));
+        });
+
+        container.replaceChildren(...rows, uploadButton);
+        applyPermissions(container);
+    } catch (error) {
+        container.replaceChildren(
+            el("p", { class: "sm", style: "color:var(--crit)", text: error.message })
+        );
     }
 }
 
