@@ -13,6 +13,7 @@ import { api } from "../api.js";
 import { can } from "../session.js";
 import { openRecordEditor, confirmStep, editDueDate } from "../forms.js";
 import { renderEightD, renderChange } from "./change.js";
+import { renderApqpDetail } from "./apqp.js";
 import { renderDocumentsPanel } from "./resources.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
@@ -24,7 +25,11 @@ import {
    the generic key/value detail every other type shares - so creating
    or editing one of these refreshes through those functions instead
    of REGISTERS/renderRecordDetail below. */
-const OWN_SCREEN_REFRESH = { eightd: renderEightD, ecn: renderChange };
+const OWN_SCREEN_REFRESH = {
+    eightd: renderEightD,
+    ecn: renderChange,
+    apqp: (number) => renderApqpDetail(number)
+};
 
 /* Which sidebar screen "New X" and "Edit X" should return to once the
    full-page editor is done - the nav-item data-view values, not the
@@ -478,6 +483,16 @@ const DETAIL_FIELDS = [
 ];
 
 export async function renderRecordDetail(type, number) {
+    /* APQP is not the generic key/value detail - it is built around its
+       three deliverable documents and a phase gate (apqp.js). */
+    if (type === "apqp") {
+        const pdfButton = document.getElementById("apqp-pdf");
+        if (pdfButton) pdfButton.dataset.number = number;
+        const editButton = document.getElementById("apqp-edit");
+        if (editButton) editButton.dataset.number = number;
+        return renderApqpDetail(number);
+    }
+
     const panel = document.getElementById(type + "-detail");
     const heading = document.getElementById(type + "-detail-number");
     const statusSlot = document.getElementById(type + "-detail-status");

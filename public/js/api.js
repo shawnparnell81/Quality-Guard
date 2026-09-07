@@ -265,5 +265,14 @@ export const api = {
     turtle:      (department) => get("/turtle/" + encodeURIComponent(department)),
     saveTurtle:  (department, payload) =>
         request("PUT", "/turtle/" + encodeURIComponent(department), payload),
-    turtlePdfUrl: (department) => "/api/turtle/" + encodeURIComponent(department) + "/pdf"
+    turtlePdfUrl: (department) => "/api/turtle/" + encodeURIComponent(department) + "/pdf",
+
+    apqpDeliverables: (number) =>
+        get("/apqp/" + encodeURIComponent(number) + "/deliverables"),
+    attachApqpDeliverable: (number, slot, formData) =>
+        postForm("/apqp/" + encodeURIComponent(number)
+                + "/deliverables/" + encodeURIComponent(slot), formData),
+    removeApqpDeliverable: (number, slot) =>
+        request("DELETE", "/apqp/" + encodeURIComponent(number)
+                + "/deliverables/" + encodeURIComponent(slot))
 };

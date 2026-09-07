@@ -22,6 +22,7 @@ import { engineering } from "./routes/engineering.js";
 import { operations } from "./routes/operations.js";
 import { evaluate } from "./routes/evaluate.js";
 import { turtle } from "./routes/turtle.js";
+import { apqp } from "./routes/apqp.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -120,6 +121,7 @@ app.use("/api", engineering);
 app.use("/api", operations);
 app.use("/api", evaluate);
 app.use("/api", turtle);
+app.use("/api", apqp);
 app.use("/api", masterdata);
 
 app.use((request, response) => {

@@ -66,8 +66,7 @@ export const NAV = [
     { dept: "Engineering", items: [
         { label: "Engineering Drawings", view: "drawings" },
         { label: "Change Control (ECN)", view: "change", countKey: "ecn" },
-        { label: "APQP Programs", view: "apqp", countKey: "apqp" },
-        { label: "FMEA", disabled: true }
+        { label: "APQP Programs", view: "apqp", countKey: "apqp" }
     ] },
 
     { dept: "Administration", items: [
