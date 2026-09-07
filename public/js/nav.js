@@ -7,11 +7,13 @@
    the count/badge code in app.js already looks for
    (.nav-item[data-view], .nav-count[data-nav-count], #nav-readiness-count).
 
-   Dropdowns are independent: opening one never closes another. A panel
-   is dismissed by clicking outside the bar, or by a second click on
-   its own department button. Picking a screen navigates and leaves the
-   panel open. On narrow screens the whole bar is an off-canvas drawer
-   (style.css) with every panel shown inline.
+   Dropdowns are independent: opening one never closes another. A click
+   opens a panel; it closes again as soon as the pointer leaves that
+   department (its button and its panel are one hover region), on a
+   second click of its own button, or on a click anywhere outside the
+   bar. Picking a screen navigates and leaves the panel as it is. On
+   narrow screens the whole bar is an off-canvas drawer (style.css)
+   with every panel shown inline and hover does nothing.
    ============================================================ */
 
 import { el } from "./dom.js";
@@ -147,14 +149,24 @@ function deptItem(section) {
         "aria-haspopup": "true", "aria-expanded": "false"
     }, [el("span", { text: section.dept }), caret()]);
 
-    /* Toggle THIS panel only. Opening it never touches the others. */
-    btn.addEventListener("click", () => {
-        const opening = menu.hidden;
-        menu.hidden = !opening;
-        btn.setAttribute("aria-expanded", opening ? "true" : "false");
-    });
+    const setOpen = (open) => {
+        menu.hidden = !open;
+        btn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
 
-    return el("div", { class: "deptbar-item", "data-dept": section.dept }, [btn, menu]);
+    /* Toggle THIS panel only. Opening it never touches the others. */
+    btn.addEventListener("click", () => setOpen(menu.hidden));
+
+    const wrapper = el("div", { class: "deptbar-item", "data-dept": section.dept }, [btn, menu]);
+
+    /* Leaving the department - button or panel, they are one region
+       because the panel is a child of the wrapper - closes it. Moving
+       between the button and the panel stays inside the wrapper, so it
+       never fires there. Pointer only: on the mobile drawer the panel
+       is shown inline regardless and there is nothing to hover. */
+    wrapper.addEventListener("mouseleave", () => setOpen(false));
+
+    return wrapper;
 }
 
 export function buildNav(mountEl) {
