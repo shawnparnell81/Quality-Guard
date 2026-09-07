@@ -24,6 +24,14 @@ const TYPE_VIEW = {
     di: "di", apqp: "apqp"
 };
 
+/* Built-in record types. One of these with no TYPE_VIEW entry (scar)
+   simply has no dedicated screen; anything else with no entry is a
+   type someone created, which the Custom Forms screen lists. */
+const BUILT_IN_TYPES = new Set([
+    "ncr", "capa", "eightd", "complaint", "scar",
+    "audit", "ecn", "risk", "apqp", "di"
+]);
+
 /* Records that are not in the `records` table - matched on their
    number prefix. The view may not exist in this build yet (the
    Customer Service screens ship separately); navigate() no-ops
@@ -78,9 +86,11 @@ export async function openRecord(number, typeHint) {
 
     const view = TYPE_VIEW[type];
     if (!view) {
-        /* A custom form type: the generic Custom Forms screen, if this
-           build has it. */
-        if (viewExists("form-record")) {
+        if (BUILT_IN_TYPES.has(type)) {
+            /* scar - a real type, but with no screen to open it on. */
+            toast(n + " has no dedicated screen yet", "error");
+        } else if (viewExists("form-record")) {
+            /* A type someone created: the generic Custom Forms screen. */
             document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "form-record" } }));
         } else {
             toast(n + " - open it from its own screen", "error");
