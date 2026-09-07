@@ -169,6 +169,12 @@ export const api = {
 
     drawings:      ()       => get("/drawings"),
     drawing:       (number) => get("/drawings/" + encodeURIComponent(number)),
+    createDrawing: (formData) => postForm("/drawings", formData),
+    addDrawingRevision: (number, formData) =>
+        postForm("/drawings/" + encodeURIComponent(number) + "/revisions", formData),
+    drawingFileUrl: (number, revision) =>
+        "/api/drawings/" + encodeURIComponent(number)
+        + "/revisions/" + encodeURIComponent(revision) + "/file",
     releaseDrawing: (number, revision, payload) =>
         request("POST", "/drawings/" + encodeURIComponent(number)
                 + "/revisions/" + encodeURIComponent(revision) + "/release", payload),
@@ -240,7 +246,8 @@ export const api = {
     gageCertificateUrl: (gageId, calId) =>
         "/api/gages/" + encodeURIComponent(gageId)
         + "/calibrations/" + encodeURIComponent(calId) + "/certificate",
-    documents:    (record)  => get(withQuery("/documents", { record })),
+    documents:    (params)  => get(withQuery("/documents",
+        typeof params === "string" ? { record: params } : (params || {}))),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),
     uploadDocument: (formData) => postForm("/documents", formData),
     uploadDocumentRevision: (doc, formData) =>

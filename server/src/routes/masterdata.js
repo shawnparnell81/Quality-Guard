@@ -776,6 +776,7 @@ masterdata.get("/documents", async (request, response, next) => {
     try {
         const params = [request.user.org_id];
         let recordFilter = "";
+        let categoryFilter = "";
 
         if (request.query.record) {
             params.push(request.query.record);
@@ -784,14 +785,19 @@ masterdata.get("/documents", async (request, response, next) => {
             )`;
         }
 
+        if (request.query.category) {
+            params.push(request.query.category);
+            categoryFilter = `and d.category = $${params.length}`;
+        }
+
         const result = await query(`
-            select d.doc_number, d.title, d.current_revision, d.status,
+            select d.doc_number, d.title, d.current_revision, d.status, d.category,
                    u.full_name as owner,
                    (select count(*) from document_revisions dr
                      where dr.document_id = d.id) as revision_count
               from documents d
          left join users u on u.id = d.owner_id
-             where d.org_id = $1 ${recordFilter}
+             where d.org_id = $1 ${recordFilter} ${categoryFilter}
              order by d.doc_number
         `, params);
 
@@ -842,7 +848,7 @@ function nextRevisionLetter(previous) {
 masterdata.post("/documents", requirePermission("document.create"), upload.single("file"),
     async (request, response, next) => {
         try {
-            const { doc_number, title, change_summary, record } = request.body || {};
+            const { doc_number, title, change_summary, record, category } = request.body || {};
 
             if (!doc_number || !title || !request.file) {
                 return response.status(400).json({ error: "doc_number, title, and file are required" });
@@ -872,10 +878,11 @@ masterdata.post("/documents", requirePermission("document.create"), upload.singl
 
             const created = await withTransaction(async (client) => {
                 const doc = await client.query(`
-                    insert into documents (org_id, doc_number, title, owner_id, record_id)
-                    values ($1, $2, $3, $4, $5)
+                    insert into documents (org_id, doc_number, title, owner_id, record_id, category)
+                    values ($1, $2, $3, $4, $5, $6)
                     returning id, doc_number, title, status, current_revision
-                `, [request.user.org_id, doc_number, title, request.user.id, recordId]);
+                `, [request.user.org_id, doc_number, title, request.user.id, recordId,
+                    (category || "").trim() || null]);
 
                 const revision = await client.query(`
                     insert into document_revisions
