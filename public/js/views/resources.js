@@ -175,69 +175,99 @@ export function wireCalibration() {
 }
 
 /* ---------- training ----------
-   The matrix is built from whatever documents come back, so adding a
-   controlled document to the requirements adds a column here without
-   any change to this file. */
+   The matrix and gaps list are computed by the server from
+   document_requirements + training_records. The records themselves are
+   now writable: "Record training" covers a whole session (one
+   document, one date, one sign-off sheet, one or many people), and any
+   matrix cell / gaps row / records row that has a record behind it
+   opens it. */
+
+/* Populated on each render so the forms and the record modal have the
+   people and documents to choose from without a second fetch. */
+let trainingPeople = [];   // [{ value: initials, label }]
+let trainingDocs = [];     // [doc_number]
 
 export async function renderTraining() {
     const table = document.getElementById("training-matrix-table");
     const gapsBody = document.getElementById("training-gaps-table");
+    const recordsBody = document.getElementById("training-records-table");
 
     if (gapsBody) loadingRow(gapsBody, 4);
+    if (recordsBody) loadingRow(recordsBody, 6);
 
     try {
-        const [{ matrix }, { gaps }] = await Promise.all([
+        const [{ matrix }, { gaps }, { records }] = await Promise.all([
             api.trainingMatrix(),
-            api.trainingGaps()
+            api.trainingGaps(),
+            api.training()
         ]);
 
-        if (table) {
-            const docNumbers = [...new Set(
-                matrix.flatMap((row) => Object.keys(row.documents))
-            )].sort();
+        trainingPeople = matrix
+            .map((row) => ({ value: row.operator_initials, label: row.operator }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+        trainingDocs = [...new Set(matrix.flatMap((row) => Object.keys(row.documents)))].sort();
 
+        if (table) {
             const head = el("tr", {}, [
                 el("th", { text: "Operator" }),
                 el("th", { text: "Role" }),
-                ...docNumbers.map((doc) => el("th", { text: doc })),
+                ...trainingDocs.map((doc) => el("th", { text: doc })),
                 el("th", { text: "Documents current" })
             ]);
 
             const body = matrix.map((row) => {
                 let current = 0;
 
-                const cells = docNumbers.map((doc) => {
+                const cells = trainingDocs.map((doc) => {
                     const entry = row.documents[doc];
 
-                    /* Not in the object at all means this document is not
-                       required for this person's role. Present with no
-                       trained_revision means it IS required and nobody
-                       has ever recorded training against it, which is a
-                       gap in its own right and distinct from a stale one. */
+                    /* Absent means the document is not required for this
+                       person's role. Present with a null trained_revision
+                       means it IS required and no training has ever been
+                       recorded - a gap of its own kind. */
                     if (!entry) return el("td", { class: "dim", text: "-" });
                     if (entry.ok) current++;
 
-                    if (entry.trained_revision === null) {
-                        return el("td", {}, pill("Never trained", "open"));
-                    }
+                    const cell = entry.trained_revision === null
+                        ? el("td", {}, pill("Never trained", "open"))
+                        : el("td", {}, entry.ok
+                            ? pill("rev " + entry.trained_revision, "done")
+                            : pill("rev " + entry.trained_revision + " stale", "open"));
 
-                    return el("td", {}, entry.ok
-                        ? pill("rev " + entry.trained_revision, "done")
-                        : pill("rev " + entry.trained_revision + " stale", "open"));
+                    if (entry.training_record_id) {
+                        cell.classList.add("row-clickable");
+                        cell.dataset.trainingId = entry.training_record_id;
+                    }
+                    return cell;
                 });
 
                 return el("tr", {}, [
                     el("td", { text: row.operator }),
                     el("td", { class: "sm dim", text: humanize(row.role) }),
                     ...cells,
-                    el("td", { class: "num", text: current + " / " + docNumbers.length })
+                    el("td", { class: "num", text: current + " / " + trainingDocs.length })
                 ]);
             });
 
-            table.replaceChildren(
-                el("thead", {}, head),
-                el("tbody", {}, body)
-            );
+            table.replaceChildren(el("thead", {}, head), el("tbody", {}, body));
+        }
+
+        if (recordsBody) {
+            fillTable(recordsBody, records, [
+                { render: (row) => row.user_name },
+                { className: "mono sm", render: (row) => row.doc_number },
+                { className: "mono sm", render: (row) => "rev " + row.revision_trained
+                    + (row.is_current ? "" : " (superseded)") },
+                { className: "sm", render: (row) => formatDate(row.trained_on) },
+                { className: "sm", render: (row) => row.next_review ? formatDate(row.next_review) : "-" },
+                { className: "sm dim", render: (row) => row.trained_by_name || "-" }
+            ], "No training recorded yet");
+
+            recordsBody.querySelectorAll("tr").forEach((tr, index) => {
+                if (!records[index]) return;
+                tr.dataset.trainingId = records[index].id;
+                tr.classList.add("row-clickable");
+            });
         }
 
         fillTable(gapsBody, gaps, [
@@ -249,8 +279,152 @@ export async function renderTraining() {
                 : pill("Superseded rev", "prog") }
         ], "No training gaps");
 
+        gapsBody.querySelectorAll("tr").forEach((tr, index) => {
+            const gap = gaps[index];
+            if (gap && gap.training_record_id) {
+                tr.dataset.trainingId = gap.training_record_id;
+                tr.classList.add("row-clickable");
+            }
+        });
     } catch (error) {
-        errorRow(gapsBody, 4, error);
+        if (gapsBody) errorRow(gapsBody, 4, error);
+        if (recordsBody) errorRow(recordsBody, 6, error);
+    }
+}
+
+/* One form for a whole session: pick the document, revision and date,
+   tick everyone who attended, attach the sign-off sheet once. Ticking
+   a single person is the "one person" case. */
+function openRecordTrainingForm() {
+    openEntityForm({
+        title: "Record training",
+        fields: [
+            { key: "document", label: "Document", type: "select", required: true, options: trainingDocs },
+            { key: "revision_trained", label: "Revision trained", type: "text", required: true,
+              hint: "The revision they were trained on - usually the current released one." },
+            { key: "trained_on", label: "Date", type: "date", required: true },
+            { key: "next_review", label: "Next review", type: "date" },
+            { key: "people", label: "People trained", type: "checklist", required: true,
+              options: trainingPeople },
+            { key: "notes", label: "Notes", type: "memo" },
+            { key: "evidence", label: "Sign-off sheet / certificate", type: "file",
+              accept: ".pdf,.xlsx,.xls,.docx,.doc,.csv" }
+        ],
+        values: { trained_on: new Date().toISOString().slice(0, 10) },
+        submitLabel: "Record",
+        successMessage: (result) => "Training recorded for " + result.count
+            + (result.count === 1 ? " person" : " people"),
+        onSubmit: ({ values, files }) => {
+            const form = new FormData();
+            form.append("document", values.document);
+            form.append("revision_trained", values.revision_trained);
+            form.append("trained_on", values.trained_on);
+            if (values.next_review) form.append("next_review", values.next_review);
+            if (values.notes) form.append("notes", values.notes);
+            form.append("users", JSON.stringify(values.people || []));
+            if (files.evidence) form.append("evidence", files.evidence);
+            return api.recordTraining(form);
+        },
+        onSaved: () => renderTraining()
+    });
+}
+
+function openTrainingEditForm(record) {
+    openEntityForm({
+        title: "Edit training - " + record.user_name + " / " + record.doc_number,
+        fields: [
+            { key: "revision_trained", label: "Revision trained", type: "text", required: true },
+            { key: "trained_on", label: "Date", type: "date", required: true },
+            { key: "next_review", label: "Next review", type: "date" },
+            { key: "notes", label: "Notes", type: "memo" },
+            { key: "evidence", label: "Replace sign-off sheet", type: "file",
+              accept: ".pdf,.xlsx,.xls,.docx,.doc,.csv",
+              hint: record.has_evidence ? "Leave blank to keep the current file." : undefined }
+        ],
+        values: {
+            revision_trained: record.revision_trained,
+            trained_on: record.trained_on ? String(record.trained_on).slice(0, 10) : "",
+            next_review: record.next_review ? String(record.next_review).slice(0, 10) : "",
+            notes: record.notes || ""
+        },
+        submitLabel: "Save changes",
+        successMessage: "Training record updated",
+        onSubmit: ({ values, files }) => {
+            const form = new FormData();
+            form.append("revision_trained", values.revision_trained);
+            form.append("trained_on", values.trained_on);
+            form.append("next_review", values.next_review || "");
+            form.append("notes", values.notes || "");
+            if (files.evidence) form.append("evidence", files.evidence);
+            return api.updateTraining(record.id, form);
+        },
+        onSaved: () => renderTraining()
+    });
+}
+
+async function openTrainingRecord(id) {
+    const node = ensureDialog();
+    node.replaceChildren(
+        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Training record" })),
+        el("div", { class: "modal-body" }, el("p", { class: "sm dim", text: "Loading..." }))
+    );
+    node.showModal();
+
+    try {
+        const record = await api.trainingRecord(id);
+
+        const rows = [
+            ["Person", record.user_name + " (" + record.user_initials + ")"],
+            ["Document", record.doc_number + " - " + record.doc_title],
+            ["Revision trained", record.revision_trained
+                + (record.revision_trained === record.current_revision ? " (current)" : " (superseded by " + record.current_revision + ")")],
+            ["Trained on", formatDate(record.trained_on)],
+            ["Next review", record.next_review ? formatDate(record.next_review) : "-"],
+            ["Recorded by", record.trained_by_name || "-"],
+            ["Notes", record.notes || "-"]
+        ];
+
+        const evidence = record.has_evidence
+            ? el("a", { class: "btn btn-xs", href: api.trainingEvidenceUrl(id), target: "_blank",
+                text: "Open evidence" + (record.evidence_filename ? " - " + record.evidence_filename : "") })
+            : el("span", { class: "sm dim", text: "No evidence attached" });
+
+        const editButton = el("button", { class: "btn btn-primary", type: "button",
+            dataset: { requires: "training.record" }, text: "Edit" });
+        editButton.addEventListener("click", () => { node.close(); openTrainingEditForm(record); });
+
+        node.replaceChildren(
+            el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Training record" })),
+            el("div", { class: "modal-body" }, [
+                el("dl", { class: "kv" }, rows.flatMap(([k, v]) => [
+                    el("dt", { text: k }), el("dd", { text: v })
+                ])),
+                el("div", { class: "row", style: "margin-top:12px", }, evidence)
+            ]),
+            el("div", { class: "modal-foot" }, [
+                el("button", { class: "btn", type: "button", text: "Close", onClick: () => node.close() }),
+                editButton
+            ])
+        );
+        applyPermissions(node);
+    } catch (error) {
+        node.querySelector(".modal-body").replaceChildren(
+            el("p", { class: "sm", style: "color:var(--crit)", text: error.message })
+        );
+    }
+}
+
+export function wireTraining() {
+    const recordButton = document.getElementById("training-record");
+    if (recordButton) recordButton.addEventListener("click", openRecordTrainingForm);
+
+    for (const id of ["training-matrix-table", "training-records-table", "training-gaps-table"]) {
+        const container = document.getElementById(id);
+        if (!container) continue;
+        container.addEventListener("click", (event) => {
+            const hit = event.target.closest("[data-training-id]");
+            if (hit) openTrainingRecord(hit.dataset.trainingId);
+        });
     }
 }
 

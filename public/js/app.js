@@ -30,7 +30,8 @@ import { renderFloorReport } from "./views/floorreport.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
-    renderVendors, renderWarehouse, wireDocuments, wireVendors, wireCalibration
+    renderVendors, renderWarehouse,
+    wireDocuments, wireVendors, wireCalibration, wireTraining
 } from "./views/resources.js";
 import { wirePalette } from "./palette.js";
 import { buildSidebar, expandDeptFor } from "./nav.js";
@@ -362,6 +363,7 @@ async function start() {
     wireDocuments();
     wireVendors();
     wireCalibration();
+    wireTraining();
     wirePalette();
     checkConnection();
     fillHeader();
