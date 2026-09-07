@@ -35,8 +35,9 @@ const TYPE_LABEL = {
 };
 
 /* A table column can only be one of these scalar types - matches the
-   server's TABLE_COLUMN_TYPES in masterdata.js. */
-const COLUMN_TYPES = ["text", "memo", "number", "date", "select"];
+   server's TABLE_COLUMN_TYPES in masterdata.js. "computed" is a
+   read-only cell derived from other number columns in the same row. */
+const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "computed"];
 
 /* Where a "link" field's options come from. The server enforces this
    list for real (LINK_SOURCES in masterdata.js); this copy only has
@@ -251,16 +252,42 @@ export function buildFieldRow(field) {
 
     const extra = el("div", { class: "field-row-extra" });
 
-    /* One column of a table field: a label and a scalar type. */
+    /* One column of a table field: a label, a scalar type, and a
+       type-dependent extra (pick-list options, or the recipe for a
+       computed column). */
     function columnRow(column = {}) {
         const cLabel = el("input", { type: "text", class: "col-label",
             placeholder: "Column label", value: column.label || "" });
         const cType = el("select", { class: "col-type" }, COLUMN_TYPES.map((t) =>
             el("option", { value: t, text: t, selected: t === column.type ? "selected" : undefined })));
-        const cOpts = el("input", { type: "text", class: "col-options",
-            placeholder: "Options (if pick list)", value: (column.options || []).join(", ") });
+        const cExtra = el("span", { class: "col-extra" });
         const del = el("button", { type: "button", class: "btn", text: "✕", "aria-label": "Remove column" });
-        const cr = el("div", { class: "table-col-row" }, [cLabel, cType, cOpts, del]);
+        const cr = el("div", { class: "table-col-row" }, [cLabel, cType, cExtra, del]);
+
+        function paintColExtra() {
+            cExtra.replaceChildren();
+            if (cType.value === "select") {
+                cExtra.append(el("input", { type: "text", class: "col-options",
+                    placeholder: "Options (if pick list)", value: (column.options || []).join(", ") }));
+            } else if (cType.value === "computed") {
+                cExtra.append(el("select", { class: "col-compute" }, [
+                    el("option", { value: "product", text: "× multiply",
+                        selected: column.compute === "sum" ? undefined : "selected" }),
+                    el("option", { value: "sum", text: "+ add",
+                        selected: column.compute === "sum" ? "selected" : undefined })
+                ]));
+                cExtra.append(el("input", { type: "text", class: "col-inputs",
+                    placeholder: "From columns (labels, comma separated)",
+                    value: (column._inputLabels || []).join(", ") }));
+                const t = column.thresholds || {};
+                cExtra.append(el("input", { type: "text", class: "col-thresholds",
+                    placeholder: "Amber, red (optional) — e.g. 100, 150",
+                    value: [t.warn, t.crit].filter((n) => n != null).join(", ") }));
+            }
+        }
+
+        cType.addEventListener("change", paintColExtra);
+        paintColExtra();
         del.addEventListener("click", () => cr.remove());
         return cr;
     }
@@ -284,8 +311,17 @@ export function buildFieldRow(field) {
             }));
         } else if (type.value === "table") {
             const cols = el("div", { class: "table-col-list" });
-            (field.columns && field.columns.length ? field.columns : [{ type: "text" }])
-                .forEach((c) => cols.append(columnRow(c)));
+            const srcCols = field.columns && field.columns.length ? field.columns : [{ type: "text" }];
+            /* A computed column stores input column *keys*; the editor
+               works in labels, so map them back for display. */
+            const keyToLabel = {};
+            for (const c of srcCols) if (c.key) keyToLabel[c.key] = c.label;
+            for (const c of srcCols) {
+                if (c.type === "computed" && Array.isArray(c.inputs)) {
+                    c._inputLabels = c.inputs.map((k) => keyToLabel[k] || k);
+                }
+            }
+            srcCols.forEach((c) => cols.append(columnRow(c)));
             const addCol = el("button", { type: "button", class: "btn", text: "+ Add column" });
             addCol.addEventListener("click", () => cols.append(columnRow()));
             extra.append(el("div", { class: "table-col-editor" }, [
@@ -343,16 +379,43 @@ export function readFieldRow(row, takenKeys) {
         if (raw !== "" && raw !== undefined) field.min = Number(raw);
     } else if (type === "table") {
         const colKeys = new Set();
-        field.columns = [...row.querySelectorAll(".table-col-row")].map((cr) => {
-            const cLabel = cr.querySelector(".col-label").value.trim();
-            const cType = cr.querySelector(".col-type").value;
-            const col = { key: slugify(cLabel, colKeys), label: cLabel, type: cType };
-            if (cType === "select") {
-                col.options = (cr.querySelector(".col-options").value || "")
+        const cells = [...row.querySelectorAll(".table-col-row")]
+            .map((cr) => ({
+                cr,
+                label: cr.querySelector(".col-label").value.trim(),
+                type: cr.querySelector(".col-type").value
+            }))
+            .filter((c) => c.label);
+
+        /* Assign keys first so a computed column can resolve the input
+           labels the user typed to their sibling columns' keys. */
+        const labelToKey = {};
+        for (const c of cells) {
+            c.key = slugify(c.label, colKeys);
+            labelToKey[c.label.toLowerCase()] = c.key;
+        }
+
+        field.columns = cells.map((c) => {
+            const col = { key: c.key, label: c.label, type: c.type };
+            if (c.type === "select") {
+                col.options = (c.cr.querySelector(".col-options")?.value || "")
                     .split(",").map((s) => s.trim()).filter(Boolean);
+            } else if (c.type === "computed") {
+                col.compute = c.cr.querySelector(".col-compute")?.value === "sum" ? "sum" : "product";
+                col.inputs = (c.cr.querySelector(".col-inputs")?.value || "")
+                    .split(",").map((s) => s.trim()).filter(Boolean)
+                    .map((lbl) => labelToKey[lbl.toLowerCase()]).filter(Boolean);
+                const nums = (c.cr.querySelector(".col-thresholds")?.value || "")
+                    .split(",").map((s) => s.trim()).filter((s) => s !== "")
+                    .map(Number).filter((n) => Number.isFinite(n));
+                if (nums.length) {
+                    col.thresholds = {};
+                    if (nums[0] != null) col.thresholds.warn = nums[0];
+                    if (nums[1] != null) col.thresholds.crit = nums[1];
+                }
             }
             return col;
-        }).filter((c) => c.label);
+        });
     }
 
     return field;
@@ -405,6 +468,15 @@ function openFieldEditor(definition) {
         const badTable = fields.find((f) => f.type === "table" && (!f.columns || f.columns.length === 0));
         if (badTable) {
             errorBox.textContent = "\"" + badTable.label + "\" needs at least one column.";
+            errorBox.hidden = false;
+            return;
+        }
+        const badComputed = fields
+            .flatMap((f) => (f.type === "table" ? f.columns || [] : []))
+            .find((c) => c.type === "computed" && (!c.inputs || c.inputs.length === 0));
+        if (badComputed) {
+            errorBox.textContent = "\"" + badComputed.label
+                + "\" must compute from at least one number column - check the column labels you listed.";
             errorBox.hidden = false;
             return;
         }

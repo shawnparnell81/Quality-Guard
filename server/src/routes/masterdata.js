@@ -209,14 +209,18 @@ const FIELD_TYPES = new Set([
 
 /* A table field's columns can only be scalars - a repeating grid of
    grids is not something any real QMS form needs and not something
-   the renderer supports. */
-const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select"]);
+   the renderer supports. "computed" is a read-only cell: the product
+   or sum of other number columns in the same row (RPN = severity x
+   occurrence x detection). */
+const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed"]);
+const COMPUTE_OPS = new Set(["product", "sum"]);
 
 function tableProblem(field) {
     if (!Array.isArray(field.columns) || field.columns.length === 0) {
         return "\"" + field.label + "\" needs at least one column";
     }
     const seen = new Set();
+    const byKey = new Map();
     for (const col of field.columns) {
         if (!col || typeof col !== "object") return "\"" + field.label + "\" has a bad column";
         if (!col.key || typeof col.key !== "string") return "\"" + field.label + "\" has a column with no key";
@@ -226,8 +230,40 @@ function tableProblem(field) {
         }
         if (seen.has(col.key)) return "\"" + field.label + "\" has two columns keyed \"" + col.key + "\"";
         seen.add(col.key);
+        byKey.set(col.key, col);
         if (col.type === "select" && (!Array.isArray(col.options) || col.options.length === 0)) {
             return "\"" + field.label + "\" column \"" + col.label + "\" needs options";
+        }
+    }
+
+    /* A second pass: a computed column can only be checked once every
+       column it might reference is known. */
+    for (const col of field.columns) {
+        if (col.type !== "computed") continue;
+        if (!COMPUTE_OPS.has(col.compute)) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" needs a compute of \"product\" or \"sum\"";
+        }
+        if (!Array.isArray(col.inputs) || col.inputs.length === 0) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" needs at least one input column";
+        }
+        for (const key of col.inputs) {
+            if (key === col.key) return "\"" + field.label + "\" column \"" + col.label + "\" cannot compute from itself";
+            const src = byKey.get(key);
+            if (!src) return "\"" + field.label + "\" column \"" + col.label + "\" refers to a missing column";
+            if (src.type !== "number") {
+                return "\"" + field.label + "\" column \"" + col.label + "\" can only compute from number columns";
+            }
+        }
+        if (col.thresholds !== undefined) {
+            const t = col.thresholds;
+            if (!t || typeof t !== "object" || Array.isArray(t)) {
+                return "\"" + field.label + "\" column \"" + col.label + "\" has bad thresholds";
+            }
+            for (const key of ["warn", "crit"]) {
+                if (t[key] !== undefined && typeof t[key] !== "number") {
+                    return "\"" + field.label + "\" column \"" + col.label + "\" threshold \"" + key + "\" must be a number";
+                }
+            }
         }
     }
     return null;

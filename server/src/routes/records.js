@@ -74,6 +74,46 @@ function withComputedRpn(typeKey, data) {
     return computed;
 }
 
+/* A form's table field may carry "computed" columns - a cell whose
+   value is the product or sum of other number columns in the same
+   row (RPN = severity x occurrence x detection). The in-app editor
+   fills these live; recomputed here from the schema so a stored value
+   can never disagree with the numbers it is made of, the same
+   guarantee withComputedRpn gives the built-in risk record. A no-op
+   unless the published form actually defines a computed column. */
+function applyComputedColumns(schema, data) {
+    const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
+    if (!data || typeof data !== "object" || fields.length === 0) return data;
+
+    let out = data;
+    for (const field of fields) {
+        if (field.type !== "table" || !Array.isArray(field.columns)) continue;
+        const computed = field.columns.filter((c) => c && c.type === "computed");
+        if (computed.length === 0) continue;
+
+        const rows = Array.isArray(out[field.key]) ? out[field.key] : null;
+        if (!rows) continue;
+
+        if (out === data) out = { ...data };
+        out[field.key] = rows.map((row) => {
+            if (!row || typeof row !== "object") return row;
+            const next = { ...row };
+            for (const col of computed) {
+                const nums = (col.inputs || []).map((k) => Number(next[k]));
+                if (nums.length === 0 || !nums.every((n) => Number.isFinite(n))) {
+                    delete next[col.key];
+                    continue;
+                }
+                next[col.key] = col.compute === "sum"
+                    ? nums.reduce((a, b) => a + b, 0)
+                    : nums.reduce((a, b) => a * b, 1);
+            }
+            return next;
+        });
+    }
+    return out;
+}
+
 /* Clause 9.2: an auditor must be independent of the area under
    review. "Area" is not an invented category here - it is the same
    discipline column every person record already carries, compared
@@ -616,7 +656,7 @@ records.get("/:number/pdf", async (request, response, next) => {
 records.post("/", requirePermission(createPermissionFor), async (request, response, next) => {
     try {
         const { type, title, owner, severity = "ok", due_at, idempotency_key } = request.body || {};
-        const data = withComputedRpn(type, request.body?.data || {});
+        let data = withComputedRpn(type, request.body?.data || {});
 
         if (!type || !title) {
             return response.status(400).json({
@@ -673,6 +713,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
 
         if (formRow.rowCount > 0) {
             formVersion = formRow.rows[0].version;
+            data = applyComputedColumns(formRow.rows[0].schema, data);
             const missing = (formRow.rows[0].schema.fields || [])
                 .filter((field) => {
                     if (!field.required) return false;
@@ -802,7 +843,8 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
         const updated = await withTransaction(async (client) => {
             const current = await client.query(`
-                select r.id, r.title, r.data, r.severity, r.due_at, rt.key as type
+                select r.id, r.title, r.data, r.severity, r.due_at, r.record_type_id,
+                       r.form_version, rt.key as type
                   from records r join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
                    for update of r
@@ -817,7 +859,15 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                server, not the caller, decides whose name goes on it. */
             const actorId = request.user.id;
 
-            const merged = withComputedRpn(record.type, { ...record.data, ...data });
+            let merged = withComputedRpn(record.type, { ...record.data, ...data });
+
+            /* Recompute any "computed" table columns against the form
+               version this record was raised under. */
+            const schemaRow = await client.query(
+                "select schema from form_versions where record_type_id = $1 and version = $2",
+                [record.record_type_id, record.form_version]
+            );
+            merged = applyComputedColumns(schemaRow.rows[0]?.schema || null, merged);
 
             if (record.type === "audit"
                 && await auditorConflict((text, params) => client.query(text, params), request.user.org_id, merged)) {
