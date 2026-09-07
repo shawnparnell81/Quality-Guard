@@ -158,10 +158,18 @@ logs.patch("/purchase-orders/:number", requirePermission("purchasing.log"),
 
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
-                    "select id, data from purchase_orders where org_id = $1 and po_number = $2 for update",
+                    "select id, status, data from purchase_orders where org_id = $1 and po_number = $2 for update",
                     [request.user.org_id, request.params.number]
                 );
                 if (found.rowCount === 0) return null;
+
+                /* A closed or cancelled PO is done. Its status can still
+                   be changed (to reopen it); nothing else. */
+                const editsBeyondStatus = Object.keys(body).some((k) => k !== "status");
+                if (["closed", "cancelled"].includes(found.rows[0].status) && editsBeyondStatus) {
+                    return { conflict: "This purchase order is " + found.rows[0].status
+                        + " - reopen it before editing" };
+                }
 
                 const mergedData = body.data && typeof body.data === "object"
                     ? { ...(found.rows[0].data || {}), ...body.data }
@@ -194,6 +202,7 @@ logs.patch("/purchase-orders/:number", requirePermission("purchasing.log"),
             });
 
             if (!result) return response.status(404).json({ error: "No such purchase order" });
+            if (result.conflict) return response.status(409).json({ error: result.conflict });
             response.json(result);
         } catch (error) {
             next(error);
@@ -301,10 +310,16 @@ logs.patch("/purchase-requests/:number", requirePermission("purchasing.log"),
 
             const result = await withTransaction(async (client) => {
                 const found = await client.query(
-                    "select id, data from purchase_requests where org_id = $1 and pr_number = $2 for update",
+                    "select id, status, data from purchase_requests where org_id = $1 and pr_number = $2 for update",
                     [request.user.org_id, request.params.number]
                 );
                 if (found.rowCount === 0) return null;
+
+                const editsBeyondStatus = Object.keys(body).some((k) => k !== "status");
+                if (["closed", "rejected"].includes(found.rows[0].status) && editsBeyondStatus) {
+                    return { conflict: "This request is " + found.rows[0].status
+                        + " - reopen it before editing" };
+                }
 
                 const mergedData = body.data && typeof body.data === "object"
                     ? { ...(found.rows[0].data || {}), ...body.data }
@@ -339,6 +354,7 @@ logs.patch("/purchase-requests/:number", requirePermission("purchasing.log"),
             });
 
             if (!result) return response.status(404).json({ error: "No such purchase request" });
+            if (result.conflict) return response.status(409).json({ error: result.conflict });
             response.json(result);
         } catch (error) {
             next(error);

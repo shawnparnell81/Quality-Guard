@@ -711,19 +711,25 @@
     <section class="view" id="view-po-log" hidden>
         <div class="view-head">
             <h1 class="view-title">Purchase Orders<span class="clause-ref">8.4.1</span></h1>
-            <p class="view-sub">A log of what has been ordered from suppliers. The full form is finessed later.</p>
+            <p class="view-sub">What has been ordered from suppliers. Open a row to view or edit it.</p>
         </div>
-        <div class="panel">
-            <div class="panel-head">
-                <h2 class="panel-title">Purchase order log</h2>
-                <span class="panel-note" id="po-log-note"></span>
-                <button class="btn btn-primary no-print" type="button" id="po-log-new" data-requires="purchasing.log" style="margin-left:auto">New purchase order</button>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Purchase order log</h2>
+                    <span class="panel-note" id="po-log-note"></span>
+                    <button class="btn btn-primary no-print" type="button" id="po-log-new" data-requires="purchasing.log" style="margin-left:auto">New purchase order</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>PO</th><th>Vendor</th><th>Ordered</th><th>Need by</th><th class="num">Amount</th><th>Status</th></tr></thead>
+                        <tbody id="po-log-table"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>PO</th><th>Vendor</th><th>Ordered</th><th>Need by</th><th class="num">Amount</th><th>Buyer</th><th>Status</th></tr></thead>
-                    <tbody id="po-log-table"></tbody>
-                </table>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title" id="po-detail-number">Select a purchase order</h2></div>
+                <div class="panel-body" id="po-detail"></div>
             </div>
         </div>
     </section>
@@ -732,19 +738,25 @@
     <section class="view" id="view-wo-log" hidden>
         <div class="view-head">
             <h1 class="view-title">Work Orders<span class="clause-ref">8.5.1</span></h1>
-            <p class="view-sub">Every work order on the books. Travellers and first article are added on the work order's own screen.</p>
+            <p class="view-sub">Every work order on the books. Open a row to view or edit it; the traveller and first article are on Production Control.</p>
         </div>
-        <div class="panel">
-            <div class="panel-head">
-                <h2 class="panel-title">Work order log</h2>
-                <span class="panel-note" id="wo-log-note"></span>
-                <button class="btn btn-primary no-print" type="button" id="wo-log-new" data-requires="wo.log" style="margin-left:auto">New work order</button>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Work order log</h2>
+                    <span class="panel-note" id="wo-log-note"></span>
+                    <button class="btn btn-primary no-print" type="button" id="wo-log-new" data-requires="wo.log" style="margin-left:auto">New work order</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>WO</th><th>Part</th><th>Customer</th><th class="num">Qty</th><th>Cell</th><th>Status</th></tr></thead>
+                        <tbody id="wo-log-table"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>WO</th><th>Part</th><th>Lot</th><th class="num">Qty</th><th>Cell</th><th>Ops</th><th>Status</th></tr></thead>
-                    <tbody id="wo-log-table"></tbody>
-                </table>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title" id="wo-detail-number">Select a work order</h2></div>
+                <div class="panel-body" id="wo-detail"></div>
             </div>
         </div>
     </section>
@@ -753,19 +765,25 @@
     <section class="view" id="view-pr-log" hidden>
         <div class="view-head">
             <h1 class="view-title">Purchase Requests<span class="clause-ref">8.4.1</span></h1>
-            <p class="view-sub">What the shop has asked to be ordered, and where each request stands.</p>
+            <p class="view-sub">What the shop has asked to be ordered, and where each request stands. Open a row to view or edit it.</p>
         </div>
-        <div class="panel">
-            <div class="panel-head">
-                <h2 class="panel-title">Purchase request log</h2>
-                <span class="panel-note" id="pr-log-note"></span>
-                <button class="btn btn-primary no-print" type="button" id="pr-log-new" data-requires="purchasing.log" style="margin-left:auto">New request</button>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Purchase request log</h2>
+                    <span class="panel-note" id="pr-log-note"></span>
+                    <button class="btn btn-primary no-print" type="button" id="pr-log-new" data-requires="purchasing.log" style="margin-left:auto">New request</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>PR</th><th>What is needed</th><th>Dept</th><th>Needed by</th><th>PO</th><th>Status</th></tr></thead>
+                        <tbody id="pr-log-table"></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>PR</th><th>What is needed</th><th>Dept</th><th>Requested by</th><th>Needed by</th><th>PO</th><th>Status</th></tr></thead>
-                    <tbody id="pr-log-table"></tbody>
-                </table>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title" id="pr-detail-number">Select a request</h2></div>
+                <div class="panel-body" id="pr-detail"></div>
             </div>
         </div>
     </section>

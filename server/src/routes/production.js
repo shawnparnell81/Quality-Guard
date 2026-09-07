@@ -108,12 +108,13 @@ production.post("/work-orders", requirePermission("wo.log"), async (request, res
 
             const inserted = await client.query(`
                 insert into work_orders
-                    (org_id, wo_number, part_id, lot_id, qty, current_op, total_ops, cell, status)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                returning wo_number, qty, current_op, total_ops, cell, status
+                    (org_id, wo_number, part_id, lot_id, qty, current_op, total_ops, cell, status, data)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                returning wo_number, qty, current_op, total_ops, cell, status, data
             `, [request.user.org_id, number, partId, lotId, qty,
                 (body.current_op || "").trim() || null, (body.total_ops || "").trim() || null,
-                (body.cell || "").trim() || null, status]);
+                (body.cell || "").trim() || null, status,
+                body.data && typeof body.data === "object" ? body.data : {}]);
 
             await client.query(`
                 insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
@@ -136,7 +137,7 @@ production.get("/work-orders/:wo", async (request, response, next) => {
     try {
         const found = await query(`
             select w.id, w.wo_number, w.qty, w.current_op, w.total_ops, w.cell,
-                   w.status, w.hold_reason, w.held_at,
+                   w.status, w.hold_reason, w.held_at, w.data,
                    p.part_number, p.description as part_description, p.revision,
                    l.lot_number, l.heat_number,
                    u.full_name as held_by
@@ -189,12 +190,105 @@ production.get("/work-orders/:wo", async (request, response, next) => {
             work_order: workOrder,
             traveller: traveller.rows,
             first_article: firstArticle.rows,
-            quality_events: events.rows
+            quality_events: events.rows,
+            can_edit: request.can("wo.log")
         });
     } catch (error) {
         next(error);
     }
 });
+
+/* ---------- edit the log fields ----------
+   PATCH /api/work-orders/WO-31882
+   { qty?, cell?, current_op?, total_ops?, status?, part_number?,
+     lot_number?, data?: {...} }
+
+   The same row the floor screens use. Holds still go through the
+   hold/release routes (they carry a reason and an audit trail);
+   this is for the header a buyer or planner maintains. `data`
+   merges. */
+production.patch("/work-orders/:wo", requirePermission("wo.log"),
+    async (request, response, next) => {
+        try {
+            const body = request.body || {};
+            if (body.status !== undefined && !WO_STATUS.has(body.status)) {
+                return response.status(422).json({ error: "Unknown status: " + body.status });
+            }
+
+            const result = await withTransaction(async (client) => {
+                const found = await client.query(
+                    "select id, status, data from work_orders where org_id = $1 and wo_number = $2 for update",
+                    [request.user.org_id, request.params.wo]
+                );
+                if (found.rowCount === 0) return null;
+
+                const editsBeyondStatus = Object.keys(body).some((k) => k !== "status");
+                if (found.rows[0].status === "complete" && editsBeyondStatus) {
+                    return { conflict: "This work order is complete - reopen it before editing" };
+                }
+
+                let partId;
+                if (body.part_number !== undefined) {
+                    const p = (body.part_number || "").trim()
+                        ? await client.query(
+                            "select id from parts where org_id = $1 and part_number = $2",
+                            [request.user.org_id, body.part_number.trim()])
+                        : { rows: [{ id: null }] };
+                    partId = p.rows[0]?.id ?? null;
+                }
+                let lotId;
+                if (body.lot_number !== undefined) {
+                    const l = (body.lot_number || "").trim()
+                        ? await client.query(
+                            "select id from lots where org_id = $1 and lot_number = $2",
+                            [request.user.org_id, body.lot_number.trim()])
+                        : { rows: [{ id: null }] };
+                    lotId = l.rows[0]?.id ?? null;
+                }
+
+                const mergedData = body.data && typeof body.data === "object"
+                    ? { ...(found.rows[0].data || {}), ...body.data }
+                    : (found.rows[0].data || {});
+
+                const qty = Number(body.qty);
+
+                const updated = await client.query(`
+                    update work_orders
+                       set qty        = case when $3::int > 0 then $3::int else qty end,
+                           cell       = coalesce($4, cell),
+                           current_op = coalesce($5, current_op),
+                           total_ops  = coalesce($6, total_ops),
+                           status     = coalesce($7, status),
+                           part_id    = case when $8 = 'set' then $9::uuid else part_id end,
+                           lot_id     = case when $10 = 'set' then $11::uuid else lot_id end,
+                           data       = $12
+                     where id = $1 and org_id = $2
+                    returning wo_number, qty, cell, current_op, total_ops, status, data
+                `, [found.rows[0].id, request.user.org_id,
+                    Number.isFinite(qty) ? qty : 0,
+                    (body.cell || "").trim() || null,
+                    (body.current_op || "").trim() || null,
+                    (body.total_ops || "").trim() || null,
+                    body.status || null,
+                    partId === undefined ? "keep" : "set", partId ?? null,
+                    lotId === undefined ? "keep" : "set", lotId ?? null,
+                    mergedData]);
+
+                await client.query(`
+                    insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'work_orders', $2, 'updated', $3, $4)
+                `, [request.user.org_id, found.rows[0].id, request.params.wo, request.user.id]);
+
+                return updated.rows[0];
+            });
+
+            if (!result) return response.status(404).json({ error: "No such work order" });
+            if (result.conflict) return response.status(409).json({ error: result.conflict });
+            response.json(result);
+        } catch (error) {
+            next(error);
+        }
+    });
 
 /* ---------- hold ----------
    POST /api/work-orders/WO-31890/hold  { reason } */

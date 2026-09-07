@@ -226,6 +226,73 @@ test("logging a work order needs wo.log", async () => {
     assert.equal(denied.status, 403);
 });
 
+/* ---------- detail view + edit (PR 1) ---------- */
+
+test("a purchase order carries data fields through PATCH and is read back", async () => {
+    const po = await api(adminCookie, "POST", "/api/purchase-orders", { vendor: "Detail Supplier" });
+    const number = po.body.po_number;
+
+    const patched = await api(adminCookie, "PATCH", "/api/purchase-orders/" + number, {
+        total_amount: 990, currency: "USD",
+        data: { ship_to: "Dock 4", payment_terms: "Net 30" }
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal(patched.body.data.ship_to, "Dock 4");
+
+    const got = await api(adminCookie, "GET", "/api/purchase-orders/" + number);
+    assert.equal(got.body.purchase_order.total_amount, "990.00");
+    assert.equal(got.body.purchase_order.data.payment_terms, "Net 30");
+});
+
+test("a closed purchase order cannot be edited beyond its status", async () => {
+    const po = await api(adminCookie, "POST", "/api/purchase-orders", { vendor: "Closing Supplier" });
+    const number = po.body.po_number;
+
+    await api(adminCookie, "PATCH", "/api/purchase-orders/" + number, { status: "closed" });
+
+    const edit = await api(adminCookie, "PATCH", "/api/purchase-orders/" + number, { total_amount: 1 });
+    assert.equal(edit.status, 409);
+
+    /* but reopening is allowed */
+    const reopen = await api(adminCookie, "PATCH", "/api/purchase-orders/" + number, { status: "open" });
+    assert.equal(reopen.status, 200);
+    assert.equal(reopen.body.status, "open");
+});
+
+test("a work order is edited through PATCH, data merges, and it links to the same row", async () => {
+    const wo = await api(adminCookie, "POST", "/api/work-orders", {
+        qty: 250, cell: "Cell 1", data: { customer: "Acme", priority: "high" }
+    });
+    const number = wo.body.wo_number;
+    assert.equal(wo.body.data.customer, "Acme");
+
+    const got = await api(adminCookie, "GET", "/api/work-orders/" + number);
+    assert.equal(got.body.work_order.data.customer, "Acme");
+    assert.equal(got.body.can_edit, true);
+    assert.ok(Array.isArray(got.body.traveller));
+
+    const patched = await api(adminCookie, "PATCH", "/api/work-orders/" + number, {
+        cell: "Cell 7", data: { customer_po: "PO-88" }
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal(patched.body.cell, "Cell 7");
+    assert.equal(patched.body.data.customer, "Acme");      // merged, not replaced
+    assert.equal(patched.body.data.customer_po, "PO-88");
+});
+
+test("editing a work order needs wo.log", async () => {
+    const wo = await api(adminCookie, "POST", "/api/work-orders", { qty: 10 });
+    const denied = await api(noLogCookie, "PATCH", "/api/work-orders/" + wo.body.wo_number, { cell: "x" });
+    assert.equal(denied.status, 403);
+});
+
+test("a completed work order cannot be edited beyond its status", async () => {
+    const wo = await api(adminCookie, "POST", "/api/work-orders", { qty: 10 });
+    await api(adminCookie, "PATCH", "/api/work-orders/" + wo.body.wo_number, { status: "complete" });
+    const edit = await api(adminCookie, "PATCH", "/api/work-orders/" + wo.body.wo_number, { cell: "x" });
+    assert.equal(edit.status, 409);
+});
+
 /* ---------- isolation ---------- */
 
 test("one tenant's logs are invisible to another", async () => {

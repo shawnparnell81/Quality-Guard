@@ -167,6 +167,8 @@ export const api = {
     workOrders:   (params)  => get(withQuery("/work-orders", params)),
     workOrder:    (wo)      => get("/work-orders/" + encodeURIComponent(wo)),
     createWorkOrder: (payload) => request("POST", "/work-orders", payload),
+    updateWorkOrder: (wo, payload) =>
+        request("PATCH", "/work-orders/" + encodeURIComponent(wo), payload),
     holdWorkOrder: (wo, payload) =>
         request("POST", "/work-orders/" + encodeURIComponent(wo) + "/hold", payload),
     releaseWorkOrder: (wo, payload) =>
