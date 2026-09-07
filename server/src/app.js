@@ -144,6 +144,28 @@ const server = app.listen(PORT, () => {
     console.log("  Health:  http://localhost:" + PORT + "/api/health");
 });
 
+/* A dev server that fails to bind looks identical to one that is
+   running - the old page stays on screen - right up until you notice
+   nothing you change takes effect. The usual cause is a second
+   `npm run dev` left over from earlier. Say that plainly and exit,
+   rather than dumping a listen EADDRINUSE stack trace that buries the
+   one useful line. Any other listen error is unexpected, so rethrow
+   it and let the process crash with its real trace. */
+server.on("error", (error) => {
+    if (error.code === "EADDRINUSE") {
+        console.error(
+            "\nPort " + PORT + " is already in use - another QualityGuard"
+            + " server is probably still running.\n"
+            + "Stop it first (Ctrl+C in its terminal), or on Windows:\n"
+            + "  powershell -Command \"$c = Get-NetTCPConnection -LocalPort "
+            + PORT + " -State Listen -ErrorAction SilentlyContinue;"
+            + " if ($c) { Stop-Process -Id $c.OwningProcess -Force }\"\n"
+        );
+        process.exit(1);
+    }
+    throw error;
+});
+
 /* Close the pool cleanly so Postgres does not keep the connections
    until they time out. */
 for (const signal of ["SIGINT", "SIGTERM"]) {
