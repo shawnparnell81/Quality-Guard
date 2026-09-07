@@ -240,5 +240,11 @@ export const api = {
     genealogy:    (lot)     => get("/lots/" + encodeURIComponent(lot) + "/genealogy"),
 
     trainingGaps:   ()      => get("/training/gaps"),
-    trainingMatrix: ()      => get("/training/matrix")
+    trainingMatrix: ()      => get("/training/matrix"),
+
+    turtles:     ()          => get("/turtle"),
+    turtle:      (department) => get("/turtle/" + encodeURIComponent(department)),
+    saveTurtle:  (department, payload) =>
+        request("PUT", "/turtle/" + encodeURIComponent(department), payload),
+    turtlePdfUrl: (department) => "/api/turtle/" + encodeURIComponent(department) + "/pdf"
 };

@@ -755,6 +755,79 @@ tr.row-selected:hover {
 
 .pipe { display: grid; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: var(--radius); overflow: hidden; }
 
+/* ---------- turtle diagram ---------- */
+.turtle-process {
+    text-align: center;
+    padding: 14px 18px;
+    border: 2px solid var(--accent, var(--brand));
+    border-radius: var(--radius);
+    background: var(--accent-tint, var(--brand-tint));
+    margin-bottom: 14px;
+}
+.turtle-process-name { font-size: 15px; font-weight: 600; color: var(--accent-fg, var(--brand)); }
+.turtle-process-desc { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; }
+
+.turtle-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-areas:
+        "resources .       people"
+        "inputs    process outputs"
+        "methods   .       metrics";
+    gap: 12px;
+    align-items: start;
+}
+.turtle-grid::before {
+    content: "PROCESS";
+    grid-area: process;
+    align-self: center;
+    text-align: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .16em;
+    color: var(--ink-3);
+    border: 1px dashed var(--hairline);
+    border-radius: var(--radius);
+    padding: 18px 8px;
+}
+.turtle-side { grid-area: var(--ta); }
+.turtle-side[data-side="resources"] { grid-area: resources; }
+.turtle-side[data-side="people"]    { grid-area: people; }
+.turtle-side[data-side="inputs"]    { grid-area: inputs; }
+.turtle-side[data-side="outputs"]   { grid-area: outputs; }
+.turtle-side[data-side="methods"]   { grid-area: methods; }
+.turtle-side[data-side="metrics"]   { grid-area: metrics; }
+
+.turtle-side {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    background: var(--surface);
+}
+.turtle-side-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-fg, var(--brand));
+}
+.turtle-side-hint { font-size: 10.5px; color: var(--ink-3); margin-bottom: 4px; }
+.turtle-list { margin: 4px 0 0; padding-left: 18px; font-size: 12.5px; }
+.turtle-list li { margin: 2px 0; }
+.turtle-doc {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    color: var(--ink-3);
+    margin-left: 6px;
+}
+
+@media (max-width: 900px) {
+    .turtle-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas: "process" "inputs" "outputs" "resources" "people" "methods" "metrics";
+    }
+}
+
 .pipe-step {
     display: grid;
     grid-template-columns: 26px 1fr auto;

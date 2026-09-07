@@ -27,6 +27,7 @@ import {
 import { renderForms, wireForms } from "./views/formbuilder.js";
 import { wireRecordEditor } from "./forms.js";
 import { renderFloorReport } from "./views/floorreport.js";
+import { renderTurtle, wireTurtle } from "./views/turtle.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -65,6 +66,7 @@ const LOADERS = {
     shipping:    renderShipping,
     onboarding:  renderOnboarding,
     review:      renderReview,
+    turtle:      renderTurtle,
     scorecards:  renderScorecards,
     forms:       renderForms
 };
@@ -359,6 +361,7 @@ async function start() {
     wireOperations();
     wireEvaluate();
     wireForms();
+    wireTurtle();
     wireDocuments();
     wireVendors();
     wireCalibration();
