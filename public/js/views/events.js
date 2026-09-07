@@ -17,6 +17,7 @@ import { renderApqpDetail } from "./apqp.js";
 import { renderDiDetail } from "./di.js";
 import { openEntityForm } from "../entity-form.js";
 import { renderDocumentsPanel } from "./resources.js";
+import { openFileWindow } from "../doc-windows.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind, printElement, toast
@@ -666,29 +667,67 @@ export async function renderRecordDetail(type, number) {
             ));
         }
 
-        /* Metadata only - what the evidence is and where it lives, not
-           the file's bytes. See the route comment in records.js for
-           why. A CAPA cannot close without at least one of these; the
-           disabled close button above already says so before this
+        /* An uploaded file is served straight back (openFileWindow); a
+           link-only row points at a network share and just carries the
+           path. A CAPA cannot close without at least one attachment;
+           the disabled close button above already says so before this
            section is even reached. */
         children.push(el("div", { class: "section-label", text: "Attachments" }));
 
         if (attachments.length > 0) {
             children.push(el("div", { class: "chip-list" },
-                attachments.map((a) => el("span", {
-                    class: "chip",
-                    title: a.storage_key,
-                    text: a.filename + "  " + formatDate(a.uploaded_at)
-                          + (a.uploaded_by ? "  " + a.uploaded_by : "")
-                }))
+                attachments.map((a) => {
+                    const meta = "  " + formatDate(a.uploaded_at)
+                        + (a.uploaded_by ? "  " + a.uploaded_by : "");
+                    if (a.has_file) {
+                        return el("button", {
+                            class: "chip chip-link no-print", type: "button",
+                            title: "Open " + a.filename,
+                            onClick: () => openFileWindow(
+                                api.attachmentFileUrl(record.number, a.id), a.filename, a.mime_type)
+                        }, a.filename + meta);
+                    }
+                    return el("span", {
+                        class: "chip", title: a.storage_key || "",
+                        text: a.filename + meta + "  (link)"
+                    });
+                })
             ));
         } else {
             children.push(el("p", { class: "sm dim", text: "No attachments yet." }));
         }
 
+        /* Browse for a file - the common case. */
+        const fileInput = el("input", { type: "file", class: "sm no-print" });
+        const uploadButton = el("button", { class: "btn no-print", type: "button" }, "Upload");
+
+        uploadButton.addEventListener("click", async () => {
+            if (!fileInput.files || !fileInput.files[0]) {
+                toast("Choose a file first", "error");
+                return;
+            }
+            const form = new FormData();
+            form.append("file", fileInput.files[0]);
+            uploadButton.disabled = true;
+            uploadButton.textContent = "Uploading...";
+            try {
+                await api.uploadAttachment(record.number, form);
+                await renderRecordDetail(type, number);
+            } catch (error) {
+                toast(error.message, "error");
+                uploadButton.disabled = false;
+                uploadButton.textContent = "Upload";
+            }
+        });
+
+        children.push(el("div", {
+            class: "row no-print", style: "gap:6px;margin:4px 0 6px;flex-wrap:wrap"
+        }, [fileInput, uploadButton]));
+
+        /* Or point at a file kept on a network share. */
         const addFilename = el("input", { type: "text", placeholder: "Filename", class: "sm" });
-        const addLocation = el("input", { type: "text", placeholder: "Where it lives (path or link)", class: "sm" });
-        const addButton = el("button", { class: "btn no-print", type: "button" }, "Add");
+        const addLocation = el("input", { type: "text", placeholder: "or a path / link on a share", class: "sm" });
+        const addButton = el("button", { class: "btn no-print", type: "button" }, "Link");
 
         addButton.addEventListener("click", async () => {
             const filename = addFilename.value.trim();
@@ -708,7 +747,7 @@ export async function renderRecordDetail(type, number) {
         });
 
         children.push(el("div", {
-            class: "row no-print", style: "gap:6px;margin:4px 0 12px;flex-wrap:wrap"
+            class: "row no-print", style: "gap:6px;margin:0 0 12px;flex-wrap:wrap"
         }, [addFilename, addLocation, addButton]));
 
         if (history.length > 0) {

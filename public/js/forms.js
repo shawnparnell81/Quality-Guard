@@ -138,7 +138,7 @@ export function buildField(field, options, currentValue) {
             wrapper.append(input);
             wrapper.append(el("span", {
                 class: "field-hint",
-                text: "Attachments are not built yet."
+                text: "Save the record, then attach files from its Attachments section."
             }));
             return { wrapper, input, field };
 

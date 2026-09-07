@@ -10,9 +10,23 @@ import { Router } from "express";
 import PDFDocument from "pdfkit";
 import { query, withTransaction } from "../db.js";
 import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
+import { upload } from "../uploads.js";
+import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 
 export const records = Router();
+
+/* Evidence attached to a record - a signed-off sheet, a photo of the
+   defect, a supplier's 8D. Generous by design: whatever the quality
+   file already holds. */
+const ATTACHMENT_EXTENSIONS = new Set([
+    ".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp", ".heic",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".csv", ".txt", ".rtf", ".zip", ".msg", ".eml"
+]);
+const INLINE_ATTACHMENT_MIME = new Set([
+    "application/pdf", "image/png", "image/jpeg", "image/tiff", "image/webp"
+]);
 
 /* due_at could not be set through this API at all before - it only
    ever got a value from seed data, which is why every overdue count
@@ -888,16 +902,19 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 /* ---------- attachments ----------
    GET  /api/records/NCR-2026-0142/attachments
    POST /api/records/NCR-2026-0142/attachments
-       { "filename": "capa-0042-verify.pdf", "storage_key": "\\\\qms\\evidence\\capa-0042-verify.pdf" }
+       multipart with a `file`  ->  the file is stored and served back
+       or JSON { filename, storage_key: "\\\\qms\\evidence\\x.pdf" }
+                                ->  a link to a file kept elsewhere
+   GET  /api/records/NCR-2026-0142/attachments/<id>/file
+       streams an uploaded file back
 
-   Metadata only - this records what the evidence is and where it
-   lives (a network path, a link into wherever the org already keeps
-   files), not the file's bytes. Storing and serving the bytes
-   themselves is a real storage-backend decision (local disk vs S3 vs
-   Azure Blob, retention policy, scanning) that has not been made yet,
-   same as the email-provider question sitting open for escalations.
-   An attachment row is real either way - closure gates that check for
-   one are not checking a stub. */
+   An uploaded file lives under server/storage via file-storage.js,
+   the same place drawings, controlled documents and receiving photos
+   go. The older "link to a file elsewhere" form still works for orgs
+   that keep evidence on a network share - such a row has a
+   storage_key and no storage_path. Either way the row is real, so the
+   closure gates that check for an attachment are not checking a
+   stub. */
 records.get("/:number/attachments", async (request, response, next) => {
     try {
         if (!request.user) return response.status(401).json({ error: "Not signed in" });
@@ -912,6 +929,7 @@ records.get("/:number/attachments", async (request, response, next) => {
 
         const result = await query(`
             select a.id, a.filename, a.mime_type, a.size_bytes, a.storage_key,
+                   (a.storage_path is not null) as has_file,
                    a.uploaded_at, u.full_name as uploaded_by
               from attachments a
          left join users u on u.id = a.uploaded_by
@@ -925,14 +943,9 @@ records.get("/:number/attachments", async (request, response, next) => {
     }
 });
 
-records.post("/:number/attachments", async (request, response, next) => {
+records.post("/:number/attachments", upload.single("file"), async (request, response, next) => {
     try {
         if (!request.user) return response.status(401).json({ error: "Not signed in" });
-
-        const { filename, storage_key, mime_type, size_bytes } = request.body || {};
-        if (!filename || !storage_key) {
-            return response.status(400).json({ error: "filename and storage_key are required" });
-        }
 
         const record = await query(
             "select id from records where org_id = $1 and number = $2",
@@ -942,13 +955,40 @@ records.post("/:number/attachments", async (request, response, next) => {
             return response.status(404).json({ error: "Record not found" });
         }
 
+        let filename;
+        let storagePath = null;
+        let storageKey = null;
+        let mimeType = null;
+        let sizeBytes = null;
+
+        if (request.file) {
+            filename = request.file.originalname;
+            mimeType = request.file.mimetype || null;
+            sizeBytes = request.file.size;
+            storagePath = await saveUploadedFile(
+                "record-attachments", ATTACHMENT_EXTENSIONS,
+                request.file.originalname, request.file.buffer);
+        } else {
+            const body = request.body || {};
+            filename = (body.filename || "").trim();
+            storageKey = (body.storage_key || "").trim();
+            mimeType = body.mime_type || null;
+            sizeBytes = Number.isFinite(Number(body.size_bytes)) ? Number(body.size_bytes) : null;
+            if (!filename || !storageKey) {
+                return response.status(400).json({
+                    error: "Attach a file, or give a filename and a storage_key (path or link)"
+                });
+            }
+        }
+
         const inserted = await query(`
-            insert into attachments (record_id, filename, mime_type, size_bytes, storage_key, uploaded_by)
-            values ($1, $2, $3, $4, $5, $6)
-            returning id, filename, mime_type, size_bytes, storage_key, uploaded_at
-        `, [record.rows[0].id, filename, mime_type || null,
-            Number.isFinite(Number(size_bytes)) ? Number(size_bytes) : null,
-            storage_key, request.user.id]);
+            insert into attachments
+                (record_id, filename, mime_type, size_bytes, storage_key, storage_path, uploaded_by)
+            values ($1, $2, $3, $4, $5, $6, $7)
+            returning id, filename, mime_type, size_bytes, storage_key,
+                      (storage_path is not null) as has_file, uploaded_at
+        `, [record.rows[0].id, filename, mimeType, sizeBytes,
+            storageKey, storagePath, request.user.id]);
 
         await query(`
             insert into audit_log
@@ -958,6 +998,39 @@ records.post("/:number/attachments", async (request, response, next) => {
 
         response.status(201).json(inserted.rows[0]);
     } catch (error) {
+        if (error.status) return response.status(error.status).json({ error: error.message });
+        next(error);
+    }
+});
+
+/* Streams an uploaded attachment back. A link-only row (storage_key,
+   no stored file) has nothing to serve - 404, the client shows the
+   path instead. */
+records.get("/:number/attachments/:id/file", async (request, response, next) => {
+    try {
+        if (!request.user) return response.status(401).json({ error: "Not signed in" });
+
+        const found = await query(`
+            select a.filename, a.mime_type, a.storage_path
+              from attachments a
+              join records r on r.id = a.record_id
+             where r.org_id = $1 and r.number = $2 and a.id = $3
+        `, [request.user.org_id, request.params.number, request.params.id]);
+
+        if (found.rowCount === 0 || !found.rows[0].storage_path) {
+            return response.status(404).json({ error: "No file on that attachment" });
+        }
+        const attachment = found.rows[0];
+
+        const buffer = await readUploadedFile(attachment.storage_path);
+        const disposition = INLINE_ATTACHMENT_MIME.has(attachment.mime_type) ? "inline" : "attachment";
+
+        response.setHeader("Content-Type", attachment.mime_type || "application/octet-stream");
+        response.setHeader("Content-Disposition",
+            disposition + "; filename=\"" + (attachment.filename || "attachment") + "\"");
+        response.send(buffer);
+    } catch (error) {
+        if (error.status) return response.status(error.status).json({ error: error.message });
         next(error);
     }
 });
