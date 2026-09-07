@@ -765,9 +765,23 @@
             <p class="view-sub">Competency matrix. Each operator against the revision of the work instruction they are qualified to run.</p>
         </div>
         <div class="panel">
-            <div class="panel-head"><h2 class="panel-title">Competency matrix</h2><span class="panel-note">operator against document revision</span></div>
+            <div class="panel-head">
+                <h2 class="panel-title">Competency matrix</h2>
+                <span class="panel-note">operator against document revision</span>
+                <button class="btn btn-primary no-print" type="button" id="training-record" data-requires="training.record" style="margin-left:auto">Record training</button>
+            </div>
             <div class="table-wrap">
                 <table id="training-matrix-table"></table>
+            </div>
+        </div>
+
+        <div class="section-label">Training records</div>
+        <div class="panel">
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Person</th><th>Document</th><th>Revision</th><th>Trained on</th><th>Next review</th><th>Trainer</th></tr></thead>
+                    <tbody id="training-records-table"></tbody>
+                </table>
             </div>
         </div>
 

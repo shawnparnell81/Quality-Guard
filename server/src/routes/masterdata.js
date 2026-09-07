@@ -8,22 +8,14 @@
    ============================================================ */
 
 import { Router } from "express";
-import multer from "multer";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { scoredVendors } from "../vendor-scoring.js";
 import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
+import { upload } from "../uploads.js";
 
 export const masterdata = Router();
-
-/* One in-memory upload handler for every multipart route in this file
-   - a controlled document, a calibration certificate. 25 MB ceiling;
-   the bytes go straight to file storage and are never held here. */
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 25 * 1024 * 1024 }
-});
 
 /* Field history stores plain strings. Dates arrive from pg as Date
    objects and the incoming edits as "YYYY-MM-DD"; normalise both so a
@@ -1181,6 +1173,7 @@ masterdata.get("/training/gaps", async (request, response, next) => {
                    d.title as document_title,
                    d.current_revision,
                    tr.revision_trained,
+                   tr.id as training_record_id,
                    case
                        when tr.id is null then 'never_trained'
                        else 'superseded_revision'
@@ -1214,12 +1207,13 @@ masterdata.get("/training/matrix", async (request, response, next) => {
            never trained on it still gets a row and a cell for it, rather
            than being absent from the matrix altogether. */
         const result = await query(`
-            select u.full_name as operator, u.role,
+            select u.full_name as operator, u.initials as operator_initials, u.role,
                    json_object_agg(
                        d.doc_number,
                        json_build_object(
                            'trained_revision', tr.revision_trained,
                            'current_revision', d.current_revision,
+                           'training_record_id', tr.id,
                            'ok', tr.revision_trained is not null
                                  and tr.revision_trained = d.current_revision
                        )
@@ -1231,11 +1225,285 @@ masterdata.get("/training/matrix", async (request, response, next) => {
          left join training_records tr
                 on tr.user_id = u.id and tr.document_id = d.id
              where u.org_id = $1 and u.active
-             group by u.id, u.full_name, u.role
+             group by u.id, u.full_name, u.initials, u.role
              order by u.full_name
         `, [request.user.org_id]);
 
         response.json({ count: result.rowCount, matrix: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- training records: the write side ----------
+   The matrix and gaps above are computed; these are the rows behind
+   them. One POST covers a whole training session (one document, one
+   date, one sign-off sheet, many people) as well as a single entry -
+   `users` is just a one-element list in that case. */
+
+const TRAINING_EVIDENCE_EXT = [".pdf", ".xlsx", ".xls", ".docx", ".doc", ".csv"];
+
+masterdata.get("/training", async (request, response, next) => {
+    try {
+        const result = await query(`
+            select tr.id,
+                   u.initials  as user_initials,
+                   u.full_name as user_name,
+                   d.doc_number,
+                   d.title     as doc_title,
+                   tr.revision_trained,
+                   d.current_revision,
+                   tr.trained_on,
+                   tr.next_review,
+                   tb.full_name as trained_by_name,
+                   (tr.evidence_path is not null) as has_evidence,
+                   (tr.revision_trained = d.current_revision) as is_current
+              from training_records tr
+              join users u     on u.id = tr.user_id
+              join documents d on d.id = tr.document_id
+         left join users tb    on tb.id = tr.trained_by
+             where tr.org_id = $1
+             order by tr.trained_on desc, u.full_name
+        `, [request.user.org_id]);
+
+        response.json({ count: result.rowCount, records: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+masterdata.get("/training/:id/evidence", async (request, response, next) => {
+    try {
+        const found = await query(
+            "select evidence_path, evidence_filename from training_records where org_id = $1 and id = $2",
+            [request.user.org_id, request.params.id]
+        );
+        if (found.rowCount === 0 || !found.rows[0].evidence_path) {
+            return response.status(404).json({ error: "No evidence on that training record" });
+        }
+
+        const { evidence_path, evidence_filename } = found.rows[0];
+        const buffer = await readUploadedFile(evidence_path);
+        const isPdf = (evidence_filename || "").toLowerCase().endsWith(".pdf");
+
+        response.setHeader("Content-Type", isPdf ? "application/pdf" : "application/octet-stream");
+        response.setHeader(
+            "Content-Disposition",
+            (isPdf ? "inline" : "attachment") + "; filename=\"" + (evidence_filename || "evidence") + "\""
+        );
+        response.send(buffer);
+    } catch (error) {
+        next(error);
+    }
+});
+
+masterdata.get("/training/:id", async (request, response, next) => {
+    try {
+        const result = await query(`
+            select tr.id,
+                   u.initials  as user_initials,
+                   u.full_name as user_name,
+                   d.doc_number,
+                   d.title     as doc_title,
+                   tr.revision_trained,
+                   d.current_revision,
+                   tr.trained_on,
+                   tr.next_review,
+                   tr.notes,
+                   tb.initials  as trained_by_initials,
+                   tb.full_name as trained_by_name,
+                   tr.evidence_filename,
+                   (tr.evidence_path is not null) as has_evidence
+              from training_records tr
+              join users u     on u.id = tr.user_id
+              join documents d on d.id = tr.document_id
+         left join users tb    on tb.id = tr.trained_by
+             where tr.org_id = $1 and tr.id = $2
+        `, [request.user.org_id, request.params.id]);
+
+        if (result.rowCount === 0) return response.status(404).json({ error: "No such training record" });
+        response.json(result.rows[0]);
+    } catch (error) {
+        next(error);
+    }
+});
+
+masterdata.post("/training", requirePermission("training.record"),
+    upload.single("evidence"), async (request, response, next) => {
+    try {
+        const body = request.body || {};
+        const docNumber = (body.document || "").trim();
+        const revisionTrained = (body.revision_trained || "").trim();
+        const trainedOn = body.trained_on || null;
+        const nextReview = body.next_review || null;
+
+        let people;
+        try { people = JSON.parse(body.users || "[]"); } catch { people = []; }
+        people = (Array.isArray(people) ? people : [])
+            .map((initials) => String(initials).trim().toUpperCase())
+            .filter(Boolean);
+
+        if (!docNumber || !revisionTrained) {
+            return response.status(400).json({ error: "document and revision_trained are required" });
+        }
+        if (!trainedOn || Number.isNaN(new Date(trainedOn).getTime())) {
+            return response.status(400).json({ error: "trained_on is required and must be a valid date" });
+        }
+        if (nextReview && Number.isNaN(new Date(nextReview).getTime())) {
+            return response.status(400).json({ error: "next_review is not a valid date" });
+        }
+        if (people.length === 0) {
+            return response.status(400).json({ error: "Name at least one person who was trained" });
+        }
+
+        const doc = await query(
+            "select id from documents where org_id = $1 and doc_number = $2",
+            [request.user.org_id, docNumber]
+        );
+        if (doc.rowCount === 0) return response.status(404).json({ error: "No such document: " + docNumber });
+
+        let trainerId = request.user.id;
+        if (body.trained_by) {
+            const trainer = await query(
+                "select id from users where org_id = $1 and upper(initials) = $2",
+                [request.user.org_id, String(body.trained_by).trim().toUpperCase()]
+            );
+            if (trainer.rowCount === 0) return response.status(404).json({ error: "No user with initials " + body.trained_by });
+            trainerId = trainer.rows[0].id;
+        }
+
+        const found = await query(
+            "select id, upper(initials) as initials from users where org_id = $1 and upper(initials) = any($2::text[])",
+            [request.user.org_id, people]
+        );
+        const byInitials = new Map(found.rows.map((r) => [r.initials, r.id]));
+        const missing = people.filter((p) => !byInitials.has(p));
+        if (missing.length > 0) {
+            return response.status(404).json({ error: "Unknown initials: " + missing.join(", ") });
+        }
+
+        let evidencePath = null;
+        let evidenceFilename = null;
+        if (request.file) {
+            evidenceFilename = request.file.originalname;
+            evidencePath = await saveUploadedFile(
+                "training", TRAINING_EVIDENCE_EXT, request.file.originalname, request.file.buffer
+            );
+        }
+
+        const count = await withTransaction(async (client) => {
+            for (const initials of people) {
+                const userId = byInitials.get(initials);
+                const inserted = await client.query(`
+                    insert into training_records
+                        (org_id, user_id, document_id, revision_trained, trained_on,
+                         next_review, trained_by, evidence_path, evidence_filename, notes)
+                    values ($1, $2, $3, $4, $5::date, $6::date, $7, $8, $9, $10)
+                    on conflict (user_id, document_id) do update set
+                        revision_trained  = excluded.revision_trained,
+                        trained_on        = excluded.trained_on,
+                        next_review       = excluded.next_review,
+                        trained_by        = excluded.trained_by,
+                        evidence_path     = excluded.evidence_path,
+                        evidence_filename = excluded.evidence_filename,
+                        notes             = excluded.notes
+                    returning id
+                `, [request.user.org_id, userId, doc.rows[0].id, revisionTrained, trainedOn,
+                    nextReview, trainerId, evidencePath, evidenceFilename,
+                    (body.notes || "").trim() || null]);
+
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'training_records', $2, 'recorded', $3, $4)
+                `, [request.user.org_id, inserted.rows[0].id,
+                    docNumber + " rev " + revisionTrained, request.user.id]);
+            }
+            return people.length;
+        });
+
+        response.status(201).json({ count, document: docNumber, revision: revisionTrained });
+    } catch (error) {
+        next(error);
+    }
+});
+
+masterdata.patch("/training/:id", requirePermission("training.record"),
+    upload.single("evidence"), async (request, response, next) => {
+    try {
+        const body = request.body || {};
+
+        const outcome = await withTransaction(async (client) => {
+            const found = await client.query(
+                "select * from training_records where org_id = $1 and id = $2 for update",
+                [request.user.org_id, request.params.id]
+            );
+            if (found.rowCount === 0) return null;
+            const record = found.rows[0];
+
+            const next = {};
+
+            if ("revision_trained" in body) {
+                const value = (body.revision_trained || "").trim();
+                if (!value) return { badRequest: "revision_trained cannot be empty" };
+                next.revision_trained = value;
+            }
+            for (const key of ["trained_on", "next_review"]) {
+                if (!(key in body)) continue;
+                const value = body[key] || null;
+                if (value && Number.isNaN(new Date(value).getTime())) {
+                    return { badRequest: key + " is not a valid date" };
+                }
+                next[key] = value;
+            }
+            if ("notes" in body) next.notes = (body.notes || "").trim() || null;
+            if ("trained_by" in body) {
+                if (!body.trained_by) {
+                    next.trained_by = null;
+                } else {
+                    const trainer = await client.query(
+                        "select id from users where org_id = $1 and upper(initials) = $2",
+                        [request.user.org_id, String(body.trained_by).trim().toUpperCase()]
+                    );
+                    if (trainer.rowCount === 0) return { badRequest: "No user with initials " + body.trained_by };
+                    next.trained_by = trainer.rows[0].id;
+                }
+            }
+            if (request.file) {
+                next.evidence_filename = request.file.originalname;
+                next.evidence_path = await saveUploadedFile(
+                    "training", TRAINING_EVIDENCE_EXT, request.file.originalname, request.file.buffer
+                );
+            }
+
+            const keys = Object.keys(next);
+            if (keys.length === 0) return { row: { id: record.id, unchanged: true } };
+
+            const setSql = keys.map((key, i) => `${key} = $${i + 2}`).join(", ");
+            const result = await client.query(
+                `update training_records set ${setSql} where id = $1
+                 returning id, revision_trained, trained_on, next_review, notes, evidence_filename`,
+                [record.id, ...keys.map((key) => next[key])]
+            );
+
+            for (const key of keys) {
+                if (key === "evidence_path") continue;
+                const before = auditText(record[key]);
+                const after = auditText(result.rows[0][key] ?? next[key]);
+                if (before === after) continue;
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, old_value, new_value, changed_by)
+                    values ($1, 'training_records', $2, $3, $4, $5, $6)
+                `, [request.user.org_id, record.id, key, before || null, after || null, request.user.id]);
+            }
+
+            return { row: result.rows[0] };
+        });
+
+        if (outcome === null) return response.status(404).json({ error: "No such training record" });
+        if (outcome.badRequest) return response.status(400).json({ error: outcome.badRequest });
+        response.json(outcome.row);
     } catch (error) {
         next(error);
     }

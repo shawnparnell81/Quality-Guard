@@ -69,12 +69,12 @@ const get = (path) => request("GET", path);
    JSON.stringify, FormData is already the wire format) rather than
    bending request() itself around a body shape most callers never
    send. */
-async function postForm(path, formData) {
+async function postForm(path, formData, method = "POST") {
     let response;
 
     try {
         response = await fetch(BASE + path, {
-            method: "POST",
+            method,
             credentials: "same-origin",
             body: formData
         });
@@ -240,5 +240,14 @@ export const api = {
     genealogy:    (lot)     => get("/lots/" + encodeURIComponent(lot) + "/genealogy"),
 
     trainingGaps:   ()      => get("/training/gaps"),
-    trainingMatrix: ()      => get("/training/matrix")
+    trainingMatrix: ()      => get("/training/matrix"),
+    training:       ()      => get("/training"),
+    trainingRecord: (id)    => get("/training/" + encodeURIComponent(id)),
+    /* multipart every time - one route handles a batch (users: JSON
+       array) and a single entry alike, with an optional evidence file. */
+    recordTraining: (formData) => postForm("/training", formData),
+    updateTraining: (id, formData) =>
+        postForm("/training/" + encodeURIComponent(id), formData, "PATCH"),
+    trainingEvidenceUrl: (id) =>
+        "/api/training/" + encodeURIComponent(id) + "/evidence"
 };

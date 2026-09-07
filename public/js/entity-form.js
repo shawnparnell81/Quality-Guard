@@ -14,7 +14,10 @@
 
      fields  - [{ key, label, type, required?, options?, min?,
                   pattern?, accept?, hint? }]. type "file" renders an
-                <input type=file>; every other type is whatever
+                <input type=file>; type "checklist" renders a box of
+                checkboxes from options ([{value,label}] or [string]),
+                and readValue returns the array of ticked values
+                (required = at least one). Every other type is whatever
                 buildField already understands.
      values  - current values, keyed by field.key (empty for a new one).
      options - passed straight to buildField (e.g. { users } for a
@@ -46,6 +49,7 @@ export function openEntityForm({
 
     const entries = [];       // { field, input } for buildField-backed fields
     const fileInputs = {};    // key -> <input type="file">
+    const checklists = {};    // key -> the .checklist container
     const groups = [];
 
     for (const field of fields) {
@@ -61,6 +65,34 @@ export function openEntityForm({
                     field.required ? el("span", { class: "req", text: " *" }) : null
                 ]),
                 input,
+                field.hint ? el("span", { class: "field-hint", text: field.hint }) : null
+            ]));
+            continue;
+        }
+
+        if (field.type === "checklist") {
+            const chosen = new Set(values[field.key] || []);
+            const box = el("div", { class: "checklist" },
+                (field.options || []).map((option) => {
+                    const value = typeof option === "string" ? option : option.value;
+                    const label = typeof option === "string" ? option : option.label;
+                    return el("label", { class: "checklist-row" }, [
+                        el("input", {
+                            type: "checkbox", value,
+                            checked: chosen.has(value) ? "checked" : undefined
+                        }),
+                        el("span", { text: label })
+                    ]);
+                })
+            );
+
+            checklists[field.key] = box;
+            groups.push(el("div", { class: "field-group" }, [
+                el("label", {}, [
+                    field.label,
+                    field.required ? el("span", { class: "req", text: " *" }) : null
+                ]),
+                box,
                 field.hint ? el("span", { class: "field-hint", text: field.hint }) : null
             ]));
             continue;
@@ -105,6 +137,10 @@ export function openEntityForm({
             if (field.type === "file" && field.required && !fileInputs[field.key].files[0]) {
                 problems.push(field.label + " is required");
             }
+            if (field.type === "checklist" && field.required
+                && checklists[field.key].querySelectorAll("input:checked").length === 0) {
+                problems.push("Pick at least one for " + field.label);
+            }
         }
         if (problems.length > 0) {
             showError(problems[0]);
@@ -115,6 +151,10 @@ export function openEntityForm({
         for (const entry of entries) {
             const value = readValue(entry);
             if (value !== undefined) outValues[entry.field.key] = value;
+        }
+        for (const [key, box] of Object.entries(checklists)) {
+            const picked = [...box.querySelectorAll("input:checked")].map((i) => i.value);
+            if (picked.length > 0) outValues[key] = picked;
         }
 
         const files = {};
@@ -145,6 +185,8 @@ export function openEntityForm({
 
     node.showModal();
 
-    const first = node.querySelector(".modal-body input:not([type=file]), .modal-body select, .modal-body textarea");
+    const first = node.querySelector(
+        ".modal-body input:not([type=file]):not([type=checkbox]), .modal-body select, .modal-body textarea"
+    );
     if (first) first.focus();
 }

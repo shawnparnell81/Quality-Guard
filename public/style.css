@@ -1004,6 +1004,26 @@ th.col-you { color: var(--brand); }
 
 .field-hint { font-size: 11px; color: var(--ink-3); }
 
+/* A box of checkboxes (openEntityForm "checklist" field). */
+.checklist {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--hairline);
+    border-radius: 5px;
+    padding: 4px;
+}
+.checklist-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.checklist-row:hover { background: var(--surface-2); }
+.checklist-row input { flex: none; }
+
 .signin-submit {
     width: 100%;
     font: inherit;
