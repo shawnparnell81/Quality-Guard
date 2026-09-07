@@ -1,7 +1,7 @@
 /* ============================================================
    QMS GUARDIAN - colour system (Palette C: Modern Tech / Clean UI)
 
-   Deep Indigo #3F51B5 for nav and brand, Electric Blue #2196F3 for
+   Deep Indigo #0E1861 for nav and brand, Electric Blue #2196F3 for
    accents and links, Soft Gray #F1F3F4 panels on a Pure White page,
    Slate #2C2C2C text. Light palette on bare :root, redefined for the
    two dark states. Components read tokens only, never raw hex.
@@ -24,9 +24,9 @@
     --ink-2:       #5F6368;
     --ink-3:       #5E6266;
 
-    --brand:       #3F51B5;
+    --brand:       #0E1861;
     --brand-tint:  #E8EAF6;
-    --brass:       #3F51B5;
+    --brass:       #0E1861;
 
     --accent:      #2196F3;
     --accent-fg:   #1565C0;
@@ -40,7 +40,7 @@
     --crit:        #D32F2F;
     --crit-tint:   #FDE7E7;
 
-    --sidebar-bg:  #3F51B5;
+    --sidebar-bg:  #0E1861;
     --sidebar-ink: #D5D9F2;
     --sidebar-hi:  #FFFFFF;
 
@@ -75,7 +75,7 @@
         --crit:        #EF5350;
         --crit-tint:   #331A1A;
 
-        --sidebar-bg:  #23244A;
+        --sidebar-bg:  #0E1861;
         --sidebar-ink: #9FA8DA;
         --sidebar-hi:  #E8EAF6;
     }
@@ -108,7 +108,7 @@
     --crit:        #EF5350;
     --crit-tint:   #331A1A;
 
-    --sidebar-bg:  #23244A;
+    --sidebar-bg:  #0E1861;
     --sidebar-ink: #9FA8DA;
     --sidebar-hi:  #E8EAF6;
 }
