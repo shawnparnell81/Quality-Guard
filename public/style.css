@@ -1,30 +1,42 @@
 /* ============================================================
-   QUALITYGUARD - 
-   Light palette is defined in full on bare :root, then redefined
-   for the two dark states. Components read tokens only, never raw
-   hex, so both themes stay in sync.
+   QMS GUARDIAN - colour system
+
+   Light palette on bare :root, redefined for the two dark states.
+   Components read tokens only, never raw hex.
+
+   The department accent (--accent*, defined below the neutrals) is
+   the moving part: it defaults to the brand teal and each department
+   overrides it through [data-dept] on .app, set by nav.js when you
+   navigate. --accent is the fill (text on it is --accent-ink),
+   --accent-fg is the accent used AS text on a light surface (AA on
+   --surface), --accent-tint is a pale wash.
    ============================================================ */
 :root {
-    --ground:      #EEF2F1;
+    --ground:      #ECF1EF;
     --surface:     #FFFFFF;
-    --surface-2:   #F6F9F8;
-    --hairline:    #D8E1DF;
-    --hairline-2:  #E9EFEE;
+    --surface-2:   #F4F8F6;
+    --hairline:    #D3DEDB;
+    --hairline-2:  #E7EEEC;
 
-    --ink:         #12201E;
-    --ink-2:       #4C5C59;
-    --ink-3:       #7A8A87;
+    --ink:         #10201D;
+    --ink-2:       #48584F;
+    --ink-3:       #778781;
 
     --brand:       #0D4F49;
-    --brand-tint:  #E2EDEB;
+    --brand-tint:  #E0EDEB;
     --brass:       #A8703A;
 
-    --ok:          #1C6E47;
-    --ok-tint:     #E0EFE7;
-    --warn:        #9E5A08;
-    --warn-tint:   #F7EBDA;
-    --crit:        #99241A;
-    --crit-tint:   #F7E3E1;
+    --accent:      #0D6E63;
+    --accent-fg:   #0B5C53;
+    --accent-tint: #DFEEEB;
+    --accent-ink:  #FFFFFF;
+
+    --ok:          #14794D;
+    --ok-tint:     #DEF0E7;
+    --warn:        #B4670A;
+    --warn-tint:   #F8EBD8;
+    --crit:        #B12518;
+    --crit-tint:   #F8E1DE;
 
     --sidebar-bg:  #0B3B36;
     --sidebar-ink: #C9DCD9;
@@ -32,6 +44,13 @@
 
     --radius: 6px;
 }
+
+/* ---------- per-department accent (light) ---------- */
+.app[data-dept="production"]  { --accent: #C2620C; --accent-fg: #9A4E08; --accent-tint: #F8EBDC; }
+.app[data-dept="engineering"] { --accent: #2E6E9E; --accent-fg: #2A5C86; --accent-tint: #E3EDF4; }
+.app[data-dept="purchasing"]  { --accent: #2E7D48; --accent-fg: #276A3E; --accent-tint: #E3F1E8; }
+.app[data-dept="tooling"]     { --accent: #B06A3C; --accent-fg: #8A5330; --accent-tint: #F4E9DF; }
+.app[data-dept="admin"]       { --accent: #7A3E63; --accent-fg: #6A3556; --accent-tint: #F0E6ED; }
 
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
@@ -49,17 +68,27 @@
         --brand-tint:  #14302D;
         --brass:       #D69A5C;
 
-        --ok:          #4FB483;
-        --ok-tint:     #122C21;
-        --warn:        #D69A4A;
-        --warn-tint:   #2E2314;
-        --crit:        #E27166;
-        --crit-tint:   #331916;
+        --accent:      #45C4B3;
+        --accent-fg:   #45C4B3;
+        --accent-tint: #123330;
+        --accent-ink:  #0C1413;
+
+        --ok:          #52B786;
+        --ok-tint:     #123020;
+        --warn:        #DDA054;
+        --warn-tint:   #2F2413;
+        --crit:        #E5776B;
+        --crit-tint:   #35191A;
 
         --sidebar-bg:  #0A1917;
         --sidebar-ink: #93A8A5;
         --sidebar-hi:  #EAF3F1;
     }
+    :root:not([data-theme="light"]) .app[data-dept="production"]  { --accent: #E0913F; --accent-fg: #E0913F; --accent-tint: #33240F; }
+    :root:not([data-theme="light"]) .app[data-dept="engineering"] { --accent: #6BAEDD; --accent-fg: #6BAEDD; --accent-tint: #152A3A; }
+    :root:not([data-theme="light"]) .app[data-dept="purchasing"]  { --accent: #5FBE7E; --accent-fg: #5FBE7E; --accent-tint: #123020; }
+    :root:not([data-theme="light"]) .app[data-dept="tooling"]     { --accent: #D2915F; --accent-fg: #D2915F; --accent-tint: #33241A; }
+    :root:not([data-theme="light"]) .app[data-dept="admin"]       { --accent: #C489AC; --accent-fg: #C489AC; --accent-tint: #2E1E2A; }
 }
 
 :root[data-theme="dark"] {
@@ -77,17 +106,27 @@
     --brand-tint:  #14302D;
     --brass:       #D69A5C;
 
-    --ok:          #4FB483;
-    --ok-tint:     #122C21;
-    --warn:        #D69A4A;
-    --warn-tint:   #2E2314;
-    --crit:        #E27166;
-    --crit-tint:   #331916;
+    --accent:      #45C4B3;
+    --accent-fg:   #45C4B3;
+    --accent-tint: #123330;
+    --accent-ink:  #0C1413;
+
+    --ok:          #52B786;
+    --ok-tint:     #123020;
+    --warn:        #DDA054;
+    --warn-tint:   #2F2413;
+    --crit:        #E5776B;
+    --crit-tint:   #35191A;
 
     --sidebar-bg:  #0A1917;
     --sidebar-ink: #93A8A5;
     --sidebar-hi:  #EAF3F1;
 }
+:root[data-theme="dark"] .app[data-dept="production"]  { --accent: #E0913F; --accent-fg: #E0913F; --accent-tint: #33240F; }
+:root[data-theme="dark"] .app[data-dept="engineering"] { --accent: #6BAEDD; --accent-fg: #6BAEDD; --accent-tint: #152A3A; }
+:root[data-theme="dark"] .app[data-dept="purchasing"]  { --accent: #5FBE7E; --accent-fg: #5FBE7E; --accent-tint: #123020; }
+:root[data-theme="dark"] .app[data-dept="tooling"]     { --accent: #D2915F; --accent-fg: #D2915F; --accent-tint: #33241A; }
+:root[data-theme="dark"] .app[data-dept="admin"]       { --accent: #C489AC; --accent-fg: #C489AC; --accent-tint: #2E1E2A; }
 
 /* ============================================================
    Base
@@ -111,7 +150,7 @@ body {
 }
 
 :focus-visible {
-    outline: 2px solid var(--brand);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
     border-radius: 3px;
 }
@@ -232,7 +271,7 @@ body {
 
 .nav-item[aria-current="true"] {
     background: rgba(255,255,255,.08);
-    border-left-color: var(--brass);
+    border-left-color: var(--accent);
     color: var(--sidebar-hi);
     font-weight: 500;
 }
@@ -317,7 +356,9 @@ body {
     padding: 0 20px;
     height: 56px;
     background: var(--surface);
-    border-bottom: 1px solid var(--hairline);
+    /* A thin department-coloured strip under the header - the ambient
+       cue for which part of the shop you are looking at. */
+    border-bottom: 2px solid var(--accent);
     position: sticky;
     top: 0;
     z-index: 10;
@@ -396,8 +437,8 @@ body {
     display: inline-block;
     font-family: "IBM Plex Mono", monospace;
     font-size: 10.5px;
-    color: var(--brand);
-    background: var(--brand-tint);
+    color: var(--accent-fg);
+    background: var(--accent-tint);
     border-radius: 3px;
     padding: 2px 6px;
     margin-left: 8px;
@@ -410,7 +451,7 @@ body {
     font-size: 10px;
     letter-spacing: .12em;
     text-transform: uppercase;
-    color: var(--ink-3);
+    color: var(--accent-fg);
     margin: 26px 0 10px;
 }
 
@@ -566,8 +607,8 @@ tr.row-clickable { cursor: pointer; }
 
 tr.row-selected,
 tr.row-selected:hover {
-    background: var(--brand-tint);
-    box-shadow: inset 2px 0 0 var(--brand);
+    background: var(--accent-tint);
+    box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* ---------- status pills ---------- */
@@ -671,11 +712,8 @@ tr.row-selected:hover {
 }
 .filter-open input { cursor: pointer; }
 
-.btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
-:root[data-theme="dark"] .btn-primary { color: #08201D; }
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .btn-primary { color: #08201D; }
-}
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 
 /* Row-level actions in the people directory: a few small buttons
    per row rather than a single one, so each needs less padding to
@@ -1000,7 +1038,7 @@ th.col-you { color: var(--brand); }
 
 .field-group textarea:focus,
 .field-group select:focus,
-.field-group input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+.field-group input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .field-hint { font-size: 11px; color: var(--ink-3); }
 
