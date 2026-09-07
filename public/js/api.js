@@ -204,9 +204,22 @@ export const api = {
     addVendorEvaluation: (name, payload) =>
         request("POST", "/vendors/" + encodeURIComponent(name) + "/evaluations", payload),
     gages:        ()        => get("/gages"),
+    createGage:    (payload) => request("POST", "/gages", payload),
+    updateGage:    (gageId, payload) =>
+        request("PATCH", "/gages/" + encodeURIComponent(gageId), payload),
+    retireGage:    (gageId, payload) =>
+        request("POST", "/gages/" + encodeURIComponent(gageId) + "/retire", payload),
     gageCalibrations: (gageId) => get("/gages/" + encodeURIComponent(gageId) + "/calibrations"),
-    recordCalibration: (gageId, payload) =>
-        request("POST", "/gages/" + encodeURIComponent(gageId) + "/calibrations", payload),
+    /* A calibration is recorded as multipart every time - the same
+       shape whether or not a certificate PDF rides along - so the
+       caller always hands over a FormData. */
+    recordCalibration: (gageId, formData) =>
+        postForm("/gages/" + encodeURIComponent(gageId) + "/calibrations", formData),
+    /* Plain browser navigation to the cert file, same reasoning as
+       documentDownloadUrl - the session cookie travels on its own. */
+    gageCertificateUrl: (gageId, calId) =>
+        "/api/gages/" + encodeURIComponent(gageId)
+        + "/calibrations/" + encodeURIComponent(calId) + "/certificate",
     documents:    (record)  => get(withQuery("/documents", { record })),
     revisions:    (doc)     => get("/documents/" + encodeURIComponent(doc) + "/revisions"),
     uploadDocument: (formData) => postForm("/documents", formData),
