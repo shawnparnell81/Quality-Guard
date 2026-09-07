@@ -25,7 +25,7 @@ import { pool, query } from "../src/db.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverRoot = join(__dirname, "..");
 
-const PORT = 3096;
+const PORT = 3100;
 const BASE = "http://localhost:" + PORT;
 
 let serverProcess;

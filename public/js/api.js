@@ -182,10 +182,17 @@ export const api = {
     receipts:      ()       => get("/receipts"),
     receipt:       (number) => get("/receipts/" + encodeURIComponent(number)),
     createReceipt: (payload) => request("POST", "/receipts", payload),
+    updateReceipt: (number, payload) =>
+        request("PATCH", "/receipts/" + encodeURIComponent(number), payload),
     addReceiptMeasurement: (number, payload) =>
         request("POST", "/receipts/" + encodeURIComponent(number) + "/measurements", payload),
     dispositionReceipt: (number, payload) =>
         request("POST", "/receipts/" + encodeURIComponent(number) + "/disposition", payload),
+    uploadReceiptPhoto: (number, formData) =>
+        postForm("/receipts/" + encodeURIComponent(number) + "/photos", formData),
+    receiptPhotoUrl: (number, index) =>
+        "/api/receipts/" + encodeURIComponent(number)
+        + "/photos/" + encodeURIComponent(index),
 
     shipments:     ()       => get("/shipments"),
     shipment:      (number) => get("/shipments/" + encodeURIComponent(number)),
