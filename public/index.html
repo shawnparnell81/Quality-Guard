@@ -15,10 +15,9 @@
 
 <div class="app">
 
-<!-- ==================== SIDEBAR ==================== -->
 <!-- ==================== HEADER ==================== -->
 <header class="topbar">
-    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="main-sidebar">
+    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="dept-nav">
         <span></span><span></span><span></span>
     </button>
     <div class="brand">
@@ -46,14 +45,13 @@
     </div>
 </header>
 
-<!-- ==================== SIDEBAR ==================== -->
-<aside class="sidebar" id="main-sidebar">
-    <nav id="dept-nav" aria-label="Departments"></nav>
-</aside>
+<!-- ============ DEPARTMENT MENU BAR ============ -->
+<!-- A horizontal bar of department buttons, each with its own dropdown
+     panel (public/js/nav.js). Below the mobile breakpoint (style.css)
+     the whole bar becomes an off-canvas drawer. -->
+<nav class="deptbar" id="dept-nav" aria-label="Departments"></nav>
 
-<!-- Only rendered visible below the mobile breakpoint (style.css), and
-     only present in the DOM at all so there is something for the
-     sidebar's open state to dim behind - clicking it closes the menu. -->
+<!-- Dims the page behind the mobile drawer; clicking it closes the menu. -->
 <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
 
 <!-- ==================== MAIN ==================== -->

@@ -33,11 +33,11 @@ import {
     renderVendors, renderWarehouse, wireDocuments, wireVendors, wireCalibration
 } from "./views/resources.js";
 import { wirePalette } from "./palette.js";
-import { buildSidebar, expandDeptFor } from "./nav.js";
+import { buildNav, markActiveDept } from "./nav.js";
 
-/* The sidebar is data-driven now (nav.js). Render it before anything
-   queries .nav-item. */
-buildSidebar(document.getElementById("dept-nav"));
+/* The department menu bar is data-driven (nav.js). Render it before
+   anything queries .nav-item. */
+buildNav(document.getElementById("dept-nav"));
 
 /* view name -> the function that populates it */
 const LOADERS = {
@@ -70,7 +70,7 @@ const LOADERS = {
 };
 
 const views = document.querySelectorAll(".view");
-const sidebar = document.querySelector(".sidebar");
+const deptbar = document.querySelector(".deptbar");
 
 /* Exported so the command palette can await a view switch finishing
    before it deep-selects a specific record - the "navigate" custom
@@ -87,7 +87,7 @@ export async function show(name) {
         view.hidden = (view !== target);
     });
 
-    /* Re-queried every call: the sidebar is rendered by nav.js, so a
+    /* Re-queried every call: the menu bar is rendered by nav.js, so a
        NodeList captured once could go stale. */
     document.querySelectorAll(".nav-item").forEach((button) => {
         button.setAttribute(
@@ -96,11 +96,11 @@ export async function show(name) {
         );
     });
 
-    /* Open the department this screen lives in (accordion in nav.js). */
-    expandDeptFor(name);
+    /* Underline the department button this screen belongs to. */
+    markActiveDept(name);
 
     /* Send focus to the new heading so keyboard and screen reader
-       users land in the content rather than staying on the sidebar. */
+       users land in the content rather than staying on the menu bar. */
     const heading = target.querySelector(".view-title");
     if (heading) {
         heading.setAttribute("tabindex", "-1");
@@ -122,13 +122,16 @@ export async function show(name) {
     }
 }
 
-/* One delegated listener. Adding a module is a markup change plus one
-   line in LOADERS, never a change here. */
-sidebar.addEventListener("click", (event) => {
+/* One delegated listener for the leaf buttons. Adding a module is a
+   markup change plus one line in LOADERS, never a change here. The
+   department-button dropdown toggles are wired inside nav.js. */
+deptbar.addEventListener("click", (event) => {
     const button = event.target.closest(".nav-item");
-    if (!button) return;
+    if (!button || !button.dataset.view) return;
 
     show(button.dataset.view);
+    /* On mobile the whole bar is a drawer - close it. On desktop the
+       dropdown deliberately stays open. */
     closeMobileNav();
 });
 
@@ -141,26 +144,26 @@ document.addEventListener("navigate", (event) => {
 });
 
 /* ---------- mobile nav ----------
-   Below the breakpoint (style.css) the sidebar is an off-canvas
-   overlay rather than part of the page flow, so it needs an explicit
-   open/close rather than just being there. Above the breakpoint none
-   of this does anything: the toggle button is display:none and the
-   sidebar is never given the "open" class. */
+   Below the breakpoint (style.css) the whole department bar is an
+   off-canvas drawer rather than part of the page flow, so it needs an
+   explicit open/close. Above the breakpoint none of this does
+   anything: the toggle button is display:none and the bar is never
+   given the "open" class. */
 const navToggle = document.getElementById("nav-toggle");
 const sidebarBackdrop = document.getElementById("sidebar-backdrop");
 
 function openMobileNav() {
-    sidebar.classList.add("open");
+    deptbar.classList.add("open");
     navToggle?.setAttribute("aria-expanded", "true");
 }
 
 function closeMobileNav() {
-    sidebar.classList.remove("open");
+    deptbar.classList.remove("open");
     navToggle?.setAttribute("aria-expanded", "false");
 }
 
 navToggle?.addEventListener("click", () => {
-    sidebar.classList.contains("open") ? closeMobileNav() : openMobileNav();
+    deptbar.classList.contains("open") ? closeMobileNav() : openMobileNav();
 });
 
 sidebarBackdrop?.addEventListener("click", closeMobileNav);
