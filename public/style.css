@@ -932,6 +932,15 @@ tr.row-selected:hover {
     padding: 3px 8px;
 }
 
+/* A chip that opens something - an uploaded attachment, mostly. */
+button.chip-link {
+    cursor: pointer;
+    color: var(--accent-fg);
+    border-color: var(--accent);
+}
+button.chip-link:hover { background: var(--accent-tint); }
+button.chip-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .demo-flag {
     font-family: "IBM Plex Mono", monospace;
     font-size: 10px;

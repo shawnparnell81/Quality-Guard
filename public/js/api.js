@@ -154,6 +154,11 @@ export const api = {
     attachments:      (number)  => get("/records/" + encodeURIComponent(number) + "/attachments"),
     addAttachment: (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/attachments", payload),
+    uploadAttachment: (number, formData) =>
+        postForm("/records/" + encodeURIComponent(number) + "/attachments", formData),
+    attachmentFileUrl: (number, id) =>
+        "/api/records/" + encodeURIComponent(number)
+        + "/attachments/" + encodeURIComponent(id) + "/file",
 
     workOrders:   (params)  => get(withQuery("/work-orders", params)),
     workOrder:    (wo)      => get("/work-orders/" + encodeURIComponent(wo)),
