@@ -274,5 +274,14 @@ export const api = {
                 + "/deliverables/" + encodeURIComponent(slot), formData),
     removeApqpDeliverable: (number, slot) =>
         request("DELETE", "/apqp/" + encodeURIComponent(number)
-                + "/deliverables/" + encodeURIComponent(slot))
+                + "/deliverables/" + encodeURIComponent(slot)),
+
+    raiseDi:       (payload) => request("POST", "/di", payload),
+    diForms:       (number)  => get("/di/" + encodeURIComponent(number) + "/forms"),
+    attachDiForm:  (number, slot, formData) =>
+        postForm("/di/" + encodeURIComponent(number)
+                + "/forms/" + encodeURIComponent(slot), formData),
+    removeDiForm:  (number, slot) =>
+        request("DELETE", "/di/" + encodeURIComponent(number)
+                + "/forms/" + encodeURIComponent(slot))
 };

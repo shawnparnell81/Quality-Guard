@@ -57,15 +57,16 @@ const GRANTS = {
     quality_inspector: [
         "ncr.read", "ncr.create", "ncr.contain", "capa.read", "complaint.read",
         "document.read", "drawing.read", "production.read", "shipping.read",
-        "shipping.release", "gage.read", "training.read", "audit.read", "receiving.log"],
+        "shipping.release", "gage.read", "training.read", "audit.read", "di.read",
+        "receiving.log"],
 
     quality_tech: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition",
         "capa.read", "capa.create", "complaint.read", "complaint.create",
         "document.read", "drawing.read", "production.read", "production.hold",
         "shipping.read", "gage.read", "gage.calibrate", "training.read",
-        "training.record", "audit.read", "risk.read", "vendor.read", "scar.issue",
-        "receiving.log"],
+        "training.record", "audit.read", "di.read", "risk.read", "vendor.read",
+        "scar.issue", "receiving.log"],
 
     quality_engineer: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "mrb.signoff",
@@ -73,7 +74,7 @@ const GRANTS = {
         "document.read", "document.create", "drawing.read",
         "production.read", "production.hold", "shipping.read",
         "gage.read", "gage.calibrate", "training.read", "training.record",
-        "audit.read", "audit.schedule", "risk.read", "risk.manage",
+        "audit.read", "audit.schedule", "di.read", "di.manage", "risk.read", "risk.manage",
         "vendor.read", "scar.issue", "apqp.manage", "receiving.log"],
 
     design_engineer: [
@@ -86,12 +87,12 @@ const GRANTS = {
         "ncr.read", "ncr.create", "capa.read", "capa.create",
         "document.read", "document.create", "drawing.read",
         "change.create", "production.read", "production.hold", "production.release",
-        "gage.read", "training.read", "training.record", "apqp.manage"],
+        "gage.read", "training.read", "training.record", "di.read", "di.manage", "apqp.manage"],
 
     document_controller: [
         "ncr.read", "document.read", "document.create", "document.approve",
         "document.release", "document.obsolete", "drawing.read",
-        "training.read", "training.record", "audit.read"],
+        "training.read", "training.record", "audit.read", "di.read"],
 
     purchasing_manager: [
         "ncr.read", "capa.read", "document.read",
@@ -111,7 +112,7 @@ const GRANTS = {
         "drawing.read", "drawing.create", "drawing.edit", "drawing.release",
         "change.create", "change.approve",
         "production.read", "production.release", "training.read",
-        "audit.read", "risk.read", "risk.manage", "user.read", "apqp.manage"],
+        "audit.read", "di.read", "di.manage", "risk.read", "risk.manage", "user.read", "apqp.manage"],
 
     quality_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "ncr.use_as_is",
@@ -126,6 +127,7 @@ const GRANTS = {
         "gage.read", "gage.calibrate", "gage.retire",
         "training.read", "training.record",
         "audit.read", "audit.schedule", "audit.close",
+        "di.read", "di.manage", "di.close",
         "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log"]
 
     /* general_manager and admin are not listed here: general_manager
@@ -149,7 +151,8 @@ const RECORD_TYPES = [
     { key: "audit",     name: "Internal Audit",      prefix: "AUD",  clause: "9.2" },
     { key: "ecn",       name: "Engineering Change",  prefix: "ECN",  clause: "8.5.6" },
     { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" },
-    { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" }
+    { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" },
+    { key: "di",        name: "Discrepancy Investigation", prefix: "DI", clause: "9.2" }
 ];
 
 const WORKFLOWS = {
@@ -269,6 +272,21 @@ const WORKFLOWS = {
             ["validation", "production", "apqp.manage"],
             ["production", "closed", "apqp.manage"]
         ]
+    },
+
+    di: {
+        states: [
+            ["open", "Open", 1, false],
+            ["investigating", "Investigating", 2, false],
+            ["linked_closure", "Awaiting form closure", 3, false],
+            ["closed", "Closed", 4, true]
+        ],
+        transitions: [
+            ["open", "investigating", "di.manage"],
+            ["investigating", "linked_closure", "di.manage"],
+            ["linked_closure", "investigating", "di.manage"],
+            ["linked_closure", "closed", "di.close"]
+        ]
     }
 };
 
@@ -339,6 +357,14 @@ const FORMS = {
           options: ["Not submitted", "Submitted", "Interim Approval", "Approved", "Rejected"] },
         { key: "program_risk_summary", label: "Top program risks",           type: "memo" },
         { key: "lessons_learned",      label: "Lessons learned",             type: "memo" }
+    ],
+    di: [
+        { key: "department",      label: "Department under review",       type: "text", required: true },
+        { key: "finding",         label: "What the audit found",          type: "memo", required: true },
+        { key: "investigator",    label: "Investigator",                  type: "text" },
+        { key: "root_cause",      label: "Root cause",                    type: "memo" },
+        { key: "containment",     label: "Containment / interim action",  type: "memo" },
+        { key: "corrective_plan", label: "Corrective plan",               type: "memo" }
     ]
 };
 

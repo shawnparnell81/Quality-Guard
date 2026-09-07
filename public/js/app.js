@@ -29,6 +29,7 @@ import { renderForms, wireForms } from "./views/formbuilder.js";
 import { wireRecordEditor } from "./forms.js";
 import { renderFloorReport } from "./views/floorreport.js";
 import { renderTurtle, wireTurtle } from "./views/turtle.js";
+import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -53,6 +54,8 @@ const LOADERS = {
     audit:       () => renderRegister("audit"),
     risk:        () => renderRegister("risk"),
     apqp:        () => renderRegister("apqp"),
+    di:          () => renderRegister("di"),
+    "audit-workflow": renderWorkflowHelp,
     calibration: renderCalibration,
     training:    renderTraining,
     documents:   renderDocuments,
@@ -249,6 +252,7 @@ async function updateNavCounts() {
             ecn: summary.events.ecn?.open,
             audit: summary.events.audit?.overdue,
             apqp: summary.events.apqp?.open,
+            di: summary.events.di?.open,
             calibration_due: summary.calibration?.due_soon
         };
 

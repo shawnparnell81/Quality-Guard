@@ -834,6 +834,39 @@ tr.row-selected:hover {
 }
 .apqp-deliverable-name { font-weight: 600; font-size: 13px; }
 
+/* ---------- discrepancy investigation: form slots ---------- */
+
+.di-forms {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 4px 0 12px;
+}
+.di-form-slot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--accent, var(--brand));
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+.di-form-name { font-weight: 600; font-size: 13px; }
+
+/* ---------- audit -> CAPA workflow reference page ---------- */
+
+.awf-svg {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    height: auto;
+    margin: 4px auto;
+}
+.awf-notes { margin: 0; padding-left: 18px; font-size: 13px; }
+.awf-notes li { margin: 6px 0; }
+
 .scaffold {
     border: 1px dashed var(--hairline);
     border-radius: var(--radius);
