@@ -77,12 +77,112 @@ export const NAV = [
     { dept: "Administration", items: [
         { label: "People & Access", view: "people" },
         { label: "Form Builder", view: "forms" },
-        { label: "Roles & Permissions", view: "workflows" }
+        { label: "Roles & Permissions", view: "workflows" },
+        { label: "Menu Layout", view: "menu-layout", requires: "layout.manage" }
     ] }
 ];
 
+/* The Menu Layout editor lives in Administration and must always be
+   reachable there, so a stored layout can never move or hide it. */
+const LOCKED_VIEW = "menu-layout";
+const LOCKED_DEPT = "Administration";
+
 let mount = null;
 let outsideCloseWired = false;
+let navLayout = null;   // the org's stored menu layout, applied by buildNav
+
+/* Flat index of every leaf in the default catalog, keyed by view. The
+   stored layout carries only view keys and an order; label, count
+   badge and "hot" flag are looked up here. */
+function catalogLeaves() {
+    const byView = new Map();
+    for (const section of NAV) {
+        if (section.flat) continue;
+        const leaves = section.groups
+            ? section.groups.flatMap((g) => g.items)
+            : section.items;
+        for (const leaf of leaves) byView.set(leaf.view, leaf);
+    }
+    return byView;
+}
+
+/* view -> label, for the editor to show a human name next to each
+   view key. */
+export function navItemLabels() {
+    const map = {};
+    for (const [view, leaf] of catalogLeaves()) map[view] = leaf.label;
+    return map;
+}
+
+export { LOCKED_VIEW as NAV_LOCKED_VIEW, LOCKED_DEPT as NAV_LOCKED_DEPT };
+
+/* The default department order and each department's flat item list,
+   used both as the starting point for the editor and as the fallback
+   for anything a stored layout does not mention. */
+export function defaultNavDepartments() {
+    return NAV.filter((s) => !s.flat).map((section) => ({
+        dept: section.dept,
+        items: (section.groups
+            ? section.groups.flatMap((g) => g.items)
+            : section.items).map((leaf) => leaf.view)
+    }));
+}
+
+/* Turns the default NAV plus a stored layout into the section list
+   buildNav renders. A stored layout is
+   { order: [{ dept, items: [view] }], hidden: [view] }. Groups inside
+   a department are flattened once any custom layout is in play. */
+function effectiveNav(layout) {
+    const flatSections = NAV.filter((s) => s.flat);
+    if (!layout || !Array.isArray(layout.order)) return NAV;
+
+    const byView = catalogLeaves();
+    const hidden = new Set((layout.hidden || []).filter((v) => v !== LOCKED_VIEW));
+    const placed = new Set();
+
+    const defaults = defaultNavDepartments();
+    const defaultByDept = new Map(defaults.map((d) => [d.dept, d]));
+
+    const departments = [];
+    const seenDept = new Set();
+
+    for (const entry of layout.order) {
+        const def = defaultByDept.get(entry.dept);
+        if (!def) continue;                 // unknown dept - ignore
+        seenDept.add(entry.dept);
+        const items = [];
+        for (const view of (entry.items || [])) {
+            if (placed.has(view) || hidden.has(view) || !byView.has(view)) continue;
+            placed.add(view);
+            items.push(byView.get(view));
+        }
+        departments.push({ dept: entry.dept, items });
+    }
+
+    /* Any department the layout left out keeps its default position at
+       the end; any leaf not placed anywhere goes back to its default
+       department. */
+    for (const def of defaults) {
+        let target = departments.find((d) => d.dept === def.dept);
+        if (!target && !seenDept.has(def.dept)) {
+            target = { dept: def.dept, items: [] };
+            departments.push(target);
+        }
+        for (const view of def.items) {
+            if (placed.has(view) || hidden.has(view) || !byView.has(view)) continue;
+            placed.add(view);
+            (target || departments.find((d) => d.dept === def.dept)).items.push(byView.get(view));
+        }
+    }
+
+    /* menu-layout can never be lost. */
+    const admin = departments.find((d) => d.dept === LOCKED_DEPT);
+    if (admin && !admin.items.some((l) => l.view === LOCKED_VIEW)) {
+        admin.items.push(byView.get(LOCKED_VIEW));
+    }
+
+    return [...flatSections, ...departments.filter((d) => d.items.length > 0)];
+}
 
 function leafButton(leaf) {
     if (leaf.disabled) {
@@ -106,7 +206,10 @@ function leafButton(leaf) {
         }));
     }
 
-    return el("button", { class: "nav-item", type: "button", "data-view": leaf.view }, children);
+    return el("button", {
+        class: "nav-item", type: "button", "data-view": leaf.view,
+        "data-requires": leaf.requires || undefined
+    }, children);
 }
 
 function caret() {
@@ -172,12 +275,22 @@ function deptItem(section) {
     return wrapper;
 }
 
-export function buildNav(mountEl) {
+/* Re-render the menu bar under the org's stored layout (or the
+   default when passed null). Called once at startup with the default,
+   then again once the layout has been fetched, and by the Menu Layout
+   editor after a save. */
+export function applyNavLayout(layout) {
+    navLayout = layout || null;
+    if (mount) buildNav(mount, navLayout);
+}
+
+export function buildNav(mountEl, layout) {
     if (!mountEl) return;
     mount = mountEl;
+    if (layout !== undefined) navLayout = layout;
     mount.replaceChildren();
 
-    for (const section of NAV) {
+    for (const section of effectiveNav(navLayout)) {
         if (section.flat) {
             for (const leaf of section.items) {
                 const link = leafButton(leaf);

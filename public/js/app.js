@@ -32,6 +32,7 @@ import { renderTurtle, wireTurtle } from "./views/turtle.js";
 import { wireReviewCharts } from "./views/review-charts.js";
 import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { renderEngDocuments } from "./views/eng-documents.js";
+import { renderMenuLayout } from "./views/menu-layout.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -39,7 +40,7 @@ import {
     wireDocuments, wireVendors, wireCalibration, wireTraining
 } from "./views/resources.js";
 import { wirePalette } from "./palette.js";
-import { buildNav, markActiveDept } from "./nav.js";
+import { buildNav, markActiveDept, applyNavLayout } from "./nav.js";
 
 /* The department menu bar is data-driven (nav.js). Render it before
    anything queries .nav-item. */
@@ -64,6 +65,7 @@ const LOADERS = {
     avl:         renderVendors,
     warehouse:   renderWarehouse,
     workflows:   renderRoles,
+    "menu-layout": renderMenuLayout,
     people:      renderPeople,
     production:  renderProduction,
     d8:          renderEightD,
@@ -361,6 +363,20 @@ async function start() {
     paintCurrentUser();
     applyPermissions();
     wireSignOut();
+
+    /* Re-render the menu bar under the org's saved layout, if any,
+       before counts and the active-department underline are wired to
+       its buttons. The default bar is already on screen from the
+       module-level buildNav call, so this is invisible when there is
+       no custom layout. */
+    try {
+        const response = await fetch("/api/layout/nav", { credentials: "same-origin" });
+        const nav = response.ok ? await response.json() : null;
+        if (nav && nav.layout) {
+            applyNavLayout(nav.layout);
+            applyPermissions();   // re-gate the freshly rebuilt menu buttons
+        }
+    } catch { /* keep the default menu */ }
 
     badgePlaceholders();
 
