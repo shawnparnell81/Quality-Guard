@@ -548,10 +548,14 @@ body {
     font-weight: 500;
     padding: 4px 6px;
     border-bottom: 1px solid var(--hairline);
+    white-space: nowrap;
 }
 .dim-repeater td { padding: 3px 6px; vertical-align: top; }
 .dim-repeater input,
-.dim-repeater select { width: 100%; }
+.dim-repeater select,
+.dim-repeater textarea { width: 100%; min-width: 7rem; }
+/* trailing delete-row column has no input - keep it tight */
+.dim-repeater td:last-child, .dim-repeater th:last-child { min-width: 0; width: 1%; white-space: nowrap; }
 
 /* ---------- KPI strip ---------- */
 
@@ -1520,7 +1524,7 @@ th.col-you { color: var(--brand); }
 .signin-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
 .signin-sub   { font-size: 12.5px; color: var(--ink-2); margin: 0 0 20px; }
 
-.field-group { display: grid; gap: 5px; margin-bottom: 14px; }
+.field-group { display: grid; gap: 5px; margin-bottom: 14px; min-width: 0; }
 
 .field-group label { font-size: 11.5px; font-weight: 500; color: var(--ink-2); }
 
