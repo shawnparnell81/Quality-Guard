@@ -1649,6 +1649,14 @@ th.col-you { color: var(--brand); }
     border: 0;
 }
 
+/* While a window is being dragged, no iframe may swallow the pointer
+   stream - the drag is driven by pointer capture on the header, and an
+   iframe under the cursor would otherwise take the move and mouseup for
+   itself, stranding the drag. Restored the moment the button comes up. */
+body.doc-window-dragging .doc-window-body iframe {
+    pointer-events: none;
+}
+
 .doc-window-placeholder {
     margin: auto;
     padding: 24px;

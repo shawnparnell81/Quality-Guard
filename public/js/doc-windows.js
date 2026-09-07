@@ -34,15 +34,30 @@ function bringToFront(node) {
 /* Dragging by the header only, the same convention every real
    window manager uses - the close button living inside that same
    header is excluded explicitly, or every click on it would also
-   start a drag. */
+   start a drag.
+
+   The move is driven by pointer capture on the header, not by
+   window-level listeners. Every window body is an <iframe>, and while
+   the mouse is over an iframe its events go to that iframe's document
+   rather than this page - so a window-listener drag freezes the moment
+   the pointer crosses any window, then keeps chasing the cursor because
+   the mouseup was swallowed too. setPointerCapture keeps the whole
+   gesture on this handle regardless of what it passes over, and the
+   body.doc-window-dragging class (see style.css) makes the iframes
+   inert for the duration as a belt-and-braces measure. The listeners
+   live on the handle, which is removed with the window, so closing a
+   window leaves nothing behind. */
 function makeDraggable(node, handle) {
     let dragging = false;
+    let pointerId = null;
     let startX, startY, originX, originY;
 
-    handle.addEventListener("mousedown", (event) => {
+    handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
         if (event.target.closest("[data-doc-window-close]")) return;
 
         dragging = true;
+        pointerId = event.pointerId;
         startX = event.clientX;
         startY = event.clientY;
 
@@ -50,17 +65,38 @@ function makeDraggable(node, handle) {
         originX = rect.left;
         originY = rect.top;
 
-        bringToFront(node);
+        handle.setPointerCapture(pointerId);
+        document.body.classList.add("doc-window-dragging");
         event.preventDefault();
     });
 
-    window.addEventListener("mousemove", (event) => {
-        if (!dragging) return;
-        node.style.left = Math.max(0, originX + (event.clientX - startX)) + "px";
-        node.style.top = Math.max(0, originY + (event.clientY - startY)) + "px";
+    handle.addEventListener("pointermove", (event) => {
+        if (!dragging || event.pointerId !== pointerId) return;
+
+        const maxLeft = window.innerWidth - node.offsetWidth;
+        const maxTop = window.innerHeight - node.offsetHeight;
+
+        const left = originX + (event.clientX - startX);
+        const top = originY + (event.clientY - startY);
+
+        node.style.left = Math.min(Math.max(0, left), Math.max(0, maxLeft)) + "px";
+        node.style.top = Math.min(Math.max(0, top), Math.max(0, maxTop)) + "px";
     });
 
-    window.addEventListener("mouseup", () => { dragging = false; });
+    /* pointerup stops the move at once. lostpointercapture is the
+       backstop: the spec guarantees it fires whenever capture ends -
+       normal release, the pointer going away, the node being removed -
+       so the dragging flag and the body class can never get stuck on,
+       which was the old bug's worst symptom. */
+    handle.addEventListener("pointerup", (event) => {
+        if (event.pointerId === pointerId) dragging = false;
+    });
+
+    handle.addEventListener("lostpointercapture", () => {
+        dragging = false;
+        pointerId = null;
+        document.body.classList.remove("doc-window-dragging");
+    });
 }
 
 function canRenderInline(mimeType) {
@@ -110,7 +146,10 @@ export async function openDocumentWindow(docNumber, revision, title) {
     openWindows.set(key, node);
     bringToFront(node);
 
-    node.addEventListener("mousedown", () => bringToFront(node));
+    /* A press anywhere on the window raises it. This bubbles up from
+       the header too, so the drag handler below does not raise it
+       again - one bump per interaction. */
+    node.addEventListener("pointerdown", () => bringToFront(node));
     makeDraggable(node, head);
 
     closeButton.addEventListener("click", () => {
