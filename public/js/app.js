@@ -32,6 +32,7 @@ import { renderTurtle, wireTurtle } from "./views/turtle.js";
 import { wireReviewCharts } from "./views/review-charts.js";
 import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { renderEngDocuments } from "./views/eng-documents.js";
+import { renderPoLog, renderWoLog, renderPrLog, wireLogs } from "./views/logs.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -71,6 +72,9 @@ const LOADERS = {
     drawings:    renderDrawings,
     "eng-documents": renderEngDocuments,
     receiving:   renderReceiving,
+    "po-log":    renderPoLog,
+    "wo-log":    renderWoLog,
+    "pr-log":    renderPrLog,
     shipping:    renderShipping,
     onboarding:  renderOnboarding,
     "onboarding-packet": renderOnboardingPacket,
@@ -372,6 +376,7 @@ async function start() {
     wireProduction();
     wireChangeScreens();
     wireOperations();
+    wireLogs();
     wireEvaluate();
     wireReviewCharts();
     wireForms();

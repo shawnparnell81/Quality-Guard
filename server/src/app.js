@@ -25,6 +25,7 @@ import { turtle } from "./routes/turtle.js";
 import { apqp } from "./routes/apqp.js";
 import { reviewCharts } from "./routes/review-charts.js";
 import { di } from "./routes/di.js";
+import { logs } from "./routes/logs.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -126,6 +127,7 @@ app.use("/api", turtle);
 app.use("/api", apqp);
 app.use("/api", reviewCharts);
 app.use("/api", di);
+app.use("/api", logs);
 app.use("/api", masterdata);
 
 app.use((request, response) => {

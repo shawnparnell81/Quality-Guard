@@ -87,7 +87,8 @@ const GRANTS = {
         "ncr.read", "ncr.create", "capa.read", "capa.create",
         "document.read", "document.create", "drawing.read",
         "change.create", "production.read", "production.hold", "production.release",
-        "gage.read", "training.read", "training.record", "di.read", "di.manage", "apqp.manage"],
+        "gage.read", "training.read", "training.record", "di.read", "di.manage", "apqp.manage",
+        "wo.log"],
 
     document_controller: [
         "ncr.read", "document.read", "document.create", "document.approve",
@@ -97,13 +98,14 @@ const GRANTS = {
     purchasing_manager: [
         "ncr.read", "capa.read", "document.read",
         "vendor.read", "vendor.approve", "vendor.suspend", "scar.issue",
-        "production.read", "audit.read", "risk.read"],
+        "production.read", "audit.read", "risk.read", "purchasing.log"],
 
     production_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "capa.read",
         "document.read", "drawing.read",
         "production.read", "production.hold", "production.release",
-        "shipping.read", "training.read", "training.record", "risk.read"],
+        "shipping.read", "training.read", "training.record", "risk.read",
+        "purchasing.log", "wo.log"],
 
     engineering_manager: [
         "ncr.read", "ncr.create", "ncr.disposition", "mrb.signoff",
@@ -128,7 +130,8 @@ const GRANTS = {
         "training.read", "training.record",
         "audit.read", "audit.schedule", "audit.close",
         "di.read", "di.manage", "di.close",
-        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log"]
+        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
+        "purchasing.log", "wo.log"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
