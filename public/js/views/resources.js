@@ -8,6 +8,7 @@
 import { api } from "../api.js";
 import { can, applyPermissions } from "../session.js";
 import { ensureDialog } from "../forms.js";
+import { openEntityForm } from "../entity-form.js";
 import { openDocumentWindow } from "../doc-windows.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, printElement, toast
@@ -21,6 +22,43 @@ const CAL_STATUS = {
     current:  ["Current",  "done"]
 };
 
+/* The one declarative bit. Everything else about the gage form -
+   layout, validation, the modal - is openEntityForm's job. gage_id is
+   dropped from the field list when editing (the ID is the key and
+   shows in the title instead). */
+const GAGE_FIELDS = [
+    { key: "gage_id",        label: "Gage ID",                     type: "text",   required: true },
+    { key: "description",    label: "Description",                  type: "text",   required: true },
+    { key: "manufacturer",   label: "Manufacturer",                type: "text" },
+    { key: "model",          label: "Model",                       type: "text" },
+    { key: "serial_number",  label: "Serial number",               type: "text" },
+    { key: "location",       label: "Location",                    type: "text" },
+    { key: "range_text",     label: "Range",                       type: "text",   hint: "e.g. 0-6 in" },
+    { key: "interval_months", label: "Calibration interval (months)", type: "number", required: true, min: 1 },
+    { key: "cal_supplier",   label: "Calibration supplier",        type: "text" },
+    { key: "last_cal",       label: "Last calibrated",             type: "date" },
+    { key: "next_due",       label: "Next due",                    type: "date",
+      hint: "Leave blank to compute from the last-cal date and interval." }
+];
+
+const CAL_FIELDS = [
+    { key: "result",       label: "Result", type: "select", required: true, options: ["pass", "fail"],
+      hint: "A fail puts the gage on hold until a later result passes." },
+    { key: "performed_on", label: "Calibration date", type: "date" },
+    { key: "cal_supplier", label: "Calibration supplier", type: "text" },
+    { key: "standard_used", label: "Standard used", type: "text",
+      hint: "The reference standard or master this was checked against." },
+    { key: "as_found",     label: "As found", type: "text" },
+    { key: "as_left",      label: "As left", type: "text" },
+    { key: "reading",      label: "Reading", type: "text", hint: "What the instrument actually measured." },
+    { key: "notes",        label: "Notes", type: "memo" },
+    { key: "certificate",  label: "Certificate (PDF)", type: "file", accept: "application/pdf" }
+];
+
+/* Kept from the last render so the row Edit button has the full gage
+   to seed its form without another fetch. */
+let gagesByIdCache = new Map();
+
 export async function renderCalibration() {
     const tbody = document.getElementById("calibration-table");
     const note = document.getElementById("calibration-note");
@@ -28,6 +66,7 @@ export async function renderCalibration() {
 
     try {
         const { gages } = await api.gages();
+        gagesByIdCache = new Map(gages.map((g) => [g.gage_id, g]));
 
         if (note) {
             const pastDue = gages.filter((g) => g.status === "past_due").length;
@@ -50,13 +89,22 @@ export async function renderCalibration() {
                gage can be well within its calibration interval and
                still be on hold because the last result was a fail.
                Neither fact can stand in for the other. */
-            { render: (row) => row.availability === "hold"
-                ? pill("On hold", "open")
-                : pill("Available", "done") },
-            { render: (row) => el("button", {
-                class: "btn btn-xs", type: "button", text: "Record",
-                dataset: { requires: "gage.calibrate", gage: row.gage_id }
-            }) }
+            { render: (row) => {
+                if (row.availability === "retired") return pill("Retired", "hold");
+                return row.availability === "hold"
+                    ? pill("On hold", "open")
+                    : pill("Available", "done");
+            } },
+            { render: (row) => el("div", { class: "row-actions" }, [
+                el("button", {
+                    class: "btn btn-xs", type: "button", text: "Edit",
+                    dataset: { requires: "gage.edit", gageEdit: row.gage_id }
+                }),
+                el("button", {
+                    class: "btn btn-xs", type: "button", text: "Record",
+                    dataset: { requires: "gage.calibrate", gage: row.gage_id }
+                })
+            ]) }
         ], "No gages tracked yet");
 
         applyPermissions(tbody);
@@ -65,88 +113,64 @@ export async function renderCalibration() {
     }
 }
 
+/* ---------- add / edit a gage ---------- */
+
+function openGageForm(existing) {
+    const editing = Boolean(existing);
+
+    openEntityForm({
+        title: editing ? "Edit gage " + existing.gage_id : "New gage",
+        fields: editing ? GAGE_FIELDS.filter((f) => f.key !== "gage_id") : GAGE_FIELDS,
+        values: existing || {},
+        submitLabel: editing ? "Save changes" : "Add gage",
+        successMessage: (row) => row.gage_id + (editing ? " updated" : " added"),
+        onSubmit: ({ values }) => editing
+            ? api.updateGage(existing.gage_id, values)
+            : api.createGage(values),
+        onSaved: () => renderCalibration()
+    });
+}
+
 /* ---------- recording a calibration result ---------- */
 
-function openCalibrationDialog(gageId, onSaved) {
-    const node = ensureDialog();
-    const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
-
-    const resultSelect = el("select", { id: "cal-result" }, [
-        el("option", { value: "pass", text: "Pass" }),
-        el("option", { value: "fail", text: "Fail" })
-    ]);
-    const readingInput = el("input", { type: "text", id: "cal-reading",
-        placeholder: "e.g. 0.0002 in high" });
-    const notesInput = el("textarea", { id: "cal-notes", rows: 2 });
-
-    const save = el("button", { class: "btn btn-primary", type: "button" }, "Save result");
-
-    node.replaceChildren(
-        el("div", { class: "modal-head" }, el("h2", { class: "modal-title", text: "Record calibration - " + gageId })),
-        el("div", { class: "modal-body" }, [
-            errorBox,
-            el("div", { class: "field-group" }, [
-                el("label", { for: "cal-result", text: "Result" }),
-                resultSelect
-            ]),
-            el("div", { class: "field-group" }, [
-                el("label", { for: "cal-reading", text: "Reading" }),
-                readingInput,
-                el("span", { class: "field-hint", text: "Optional - what the instrument actually measured." })
-            ]),
-            el("div", { class: "field-group" }, [
-                el("label", { for: "cal-notes", text: "Notes" }),
-                notesInput
-            ]),
-            el("p", { class: "sm dim", id: "cal-fail-note", hidden: "hidden",
-                text: "A fail puts this gage on hold immediately - it will not be selectable on new records until a later result passes." })
-        ]),
-        el("div", { class: "modal-foot" }, [
-            el("button", { class: "btn", type: "button", onClick: () => node.close() }, "Cancel"),
-            save
-        ])
-    );
-
-    const failNote = node.querySelector("#cal-fail-note");
-    resultSelect.addEventListener("change", () => {
-        failNote.hidden = resultSelect.value !== "fail";
+function openCalibrationForm(gageId) {
+    openEntityForm({
+        title: "Record calibration - " + gageId,
+        fields: CAL_FIELDS,
+        values: { result: "pass" },
+        submitLabel: "Save result",
+        successMessage: (row) => gageId
+            + (row.availability === "hold" ? " on hold - failed calibration" : " calibration recorded"),
+        onSubmit: ({ values, files }) => {
+            const form = new FormData();
+            for (const [key, value] of Object.entries(values)) form.append(key, value);
+            if (files.certificate) form.append("certificate", files.certificate);
+            return api.recordCalibration(gageId, form);
+        },
+        onSaved: () => renderCalibration()
     });
-
-    save.addEventListener("click", async () => {
-        save.disabled = true;
-        save.textContent = "Saving...";
-
-        try {
-            const result = await api.recordCalibration(gageId, {
-                result: resultSelect.value,
-                reading: readingInput.value.trim() || undefined,
-                notes: notesInput.value.trim() || undefined
-            });
-
-            node.close();
-            toast(gageId + (result.availability === "hold" ? " on hold - failed calibration" : " calibration recorded"));
-            if (onSaved) onSaved();
-        } catch (error) {
-            errorBox.textContent = error.message;
-            errorBox.hidden = false;
-        } finally {
-            save.disabled = false;
-            save.textContent = "Save result";
-        }
-    });
-
-    node.showModal();
 }
 
 export function wireCalibration() {
     const tbody = document.getElementById("calibration-table");
     if (!tbody) return;
 
-    tbody.addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-gage]");
-        if (!button || button.disabled) return;
+    const newButton = document.getElementById("gage-new");
+    if (newButton) {
+        newButton.addEventListener("click", () => openGageForm(null));
+    }
 
-        openCalibrationDialog(button.dataset.gage, () => renderCalibration());
+    tbody.addEventListener("click", (event) => {
+        const editButton = event.target.closest("button[data-gage-edit]");
+        if (editButton && !editButton.disabled) {
+            openGageForm(gagesByIdCache.get(editButton.dataset.gageEdit) || { gage_id: editButton.dataset.gageEdit });
+            return;
+        }
+
+        const recordButton = event.target.closest("button[data-gage]");
+        if (recordButton && !recordButton.disabled) {
+            openCalibrationForm(recordButton.dataset.gage);
+        }
     });
 }
 

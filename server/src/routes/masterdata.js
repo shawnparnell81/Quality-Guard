@@ -13,8 +13,26 @@ import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { scoredVendors } from "../vendor-scoring.js";
 import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
+import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 
 export const masterdata = Router();
+
+/* One in-memory upload handler for every multipart route in this file
+   - a controlled document, a calibration certificate. 25 MB ceiling;
+   the bytes go straight to file storage and are never held here. */
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }
+});
+
+/* Field history stores plain strings. Dates arrive from pg as Date
+   objects and the incoming edits as "YYYY-MM-DD"; normalise both so a
+   no-op edit is not logged as a change. */
+function auditText(value) {
+    if (value === null || value === undefined) return "";
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    return String(value);
+}
 
 /* ---------- organization ----------
    Everything the page header needs: who this is, which site, and the
@@ -76,8 +94,9 @@ const LINK_SOURCES = {
 
     gages: `select gage_id as value,
                    gage_id || '  ' || description as label,
-                   (next_due < current_date or availability = 'hold') as disabled,
+                   (next_due < current_date or availability in ('hold', 'retired')) as disabled,
                    case
+                       when availability = 'retired' then 'retired'
                        when availability = 'hold' then 'failed calibration'
                        when next_due < current_date then 'calibration expired'
                        else null
@@ -379,6 +398,7 @@ masterdata.get("/gages", async (request, response, next) => {
     try {
         const result = await query(`
             select gage_id, description, range_text, interval_months,
+                   manufacturer, model, serial_number, location, cal_supplier,
                    last_cal, next_due, availability,
                    case
                        when next_due < current_date then 'past_due'
@@ -397,6 +417,216 @@ masterdata.get("/gages", async (request, response, next) => {
     }
 });
 
+/* POST /api/gages
+   Add a tool to the register. When a last_cal is given without an
+   explicit next_due, the due date is computed from it and the
+   interval - the same arithmetic a passing calibration does - so a
+   gage entered with its last result already known lands with the
+   right due date and no second step. */
+masterdata.post("/gages", requirePermission("gage.create"), async (request, response, next) => {
+    try {
+        const body = request.body || {};
+        const gageId = (body.gage_id || "").trim();
+        const description = (body.description || "").trim();
+        const intervalMonths = Number(body.interval_months);
+
+        if (!gageId || !description) {
+            return response.status(400).json({ error: "gage_id and description are required" });
+        }
+        if (!Number.isInteger(intervalMonths) || intervalMonths < 1) {
+            return response.status(400).json({ error: "interval_months must be a whole number of months, at least 1" });
+        }
+
+        const lastCal = body.last_cal || null;
+        if (lastCal && Number.isNaN(new Date(lastCal).getTime())) {
+            return response.status(400).json({ error: "last_cal is not a valid date" });
+        }
+        const nextDue = body.next_due || null;
+        if (nextDue && Number.isNaN(new Date(nextDue).getTime())) {
+            return response.status(400).json({ error: "next_due is not a valid date" });
+        }
+
+        const clash = await query(
+            "select 1 from gages where org_id = $1 and gage_id = $2",
+            [request.user.org_id, gageId]
+        );
+        if (clash.rowCount > 0) {
+            return response.status(409).json({ error: "A gage with that ID already exists" });
+        }
+
+        const text = (key) => (body[key] || "").trim() || null;
+
+        const created = await withTransaction(async (client) => {
+            const inserted = await client.query(`
+                insert into gages
+                    (org_id, gage_id, description, range_text, interval_months,
+                     manufacturer, model, serial_number, location, cal_supplier,
+                     last_cal, next_due)
+                values ($1, $2, $3, $4, $5::int, $6, $7, $8, $9, $10, $11::date,
+                        coalesce($12::date,
+                                 case when $11::date is not null
+                                      then $11::date + make_interval(months => $5::int)
+                                 end))
+                returning id, gage_id, description, range_text, interval_months,
+                          manufacturer, model, serial_number, location, cal_supplier,
+                          last_cal, next_due, availability
+            `, [request.user.org_id, gageId, description, text("range_text"), intervalMonths,
+                text("manufacturer"), text("model"), text("serial_number"),
+                text("location"), text("cal_supplier"), lastCal, nextDue]);
+
+            await client.query(`
+                insert into audit_log
+                    (org_id, entity, entity_id, field, new_value, changed_by)
+                values ($1, 'gages', $2, 'created', $3, $4)
+            `, [request.user.org_id, inserted.rows[0].id, gageId, request.user.id]);
+
+            return inserted.rows[0];
+        });
+
+        response.status(201).json(created);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* PATCH /api/gages/BG-0221
+   Any detail except the ID. If the interval or last-cal date is part
+   of the change and no explicit next_due is sent, the due date is
+   recomputed from the two, so editing an interval never leaves the
+   old date silently in force. */
+masterdata.patch("/gages/:gageId", requirePermission("gage.edit"), async (request, response, next) => {
+    try {
+        const body = request.body || {};
+        const TEXT_FIELDS = ["description", "range_text", "manufacturer", "model",
+            "serial_number", "location", "cal_supplier"];
+        const DATE_FIELDS = ["last_cal", "next_due"];
+
+        const outcome = await withTransaction(async (client) => {
+            const found = await client.query(
+                "select * from gages where org_id = $1 and gage_id = $2 for update",
+                [request.user.org_id, request.params.gageId]
+            );
+            if (found.rowCount === 0) return null;
+            const gage = found.rows[0];
+
+            const next = {};
+
+            for (const key of TEXT_FIELDS) {
+                if (!(key in body)) continue;
+                if (key === "description" && !(body[key] || "").trim()) {
+                    return { badRequest: "description cannot be empty" };
+                }
+                next[key] = typeof body[key] === "string" ? body[key].trim() || null : body[key];
+            }
+
+            if ("interval_months" in body) {
+                const value = Number(body.interval_months);
+                if (!Number.isInteger(value) || value < 1) {
+                    return { badRequest: "interval_months must be a whole number of months, at least 1" };
+                }
+                next.interval_months = value;
+            }
+
+            for (const key of DATE_FIELDS) {
+                if (!(key in body)) continue;
+                const value = body[key] || null;
+                if (value && Number.isNaN(new Date(value).getTime())) {
+                    return { badRequest: key + " is not a valid date" };
+                }
+                next[key] = value;
+            }
+
+            if (("interval_months" in next || "last_cal" in next) && !("next_due" in next)) {
+                const baseLastCal = "last_cal" in next ? next.last_cal : auditText(gage.last_cal) || null;
+                const interval = "interval_months" in next ? next.interval_months : gage.interval_months;
+                if (baseLastCal) {
+                    const due = new Date(baseLastCal + "T00:00:00Z");
+                    due.setUTCMonth(due.getUTCMonth() + interval);
+                    next.next_due = due.toISOString().slice(0, 10);
+                }
+            }
+
+            const keys = Object.keys(next);
+            if (keys.length === 0) {
+                return { row: {
+                    gage_id: gage.gage_id, description: gage.description, range_text: gage.range_text,
+                    interval_months: gage.interval_months, manufacturer: gage.manufacturer,
+                    model: gage.model, serial_number: gage.serial_number, location: gage.location,
+                    cal_supplier: gage.cal_supplier, last_cal: gage.last_cal, next_due: gage.next_due,
+                    availability: gage.availability
+                } };
+            }
+
+            const setSql = keys.map((key, i) => `${key} = $${i + 2}`).join(", ");
+            const result = await client.query(
+                `update gages set ${setSql} where id = $1
+                 returning id, gage_id, description, range_text, interval_months,
+                           manufacturer, model, serial_number, location, cal_supplier,
+                           last_cal, next_due, availability`,
+                [gage.id, ...keys.map((key) => next[key])]
+            );
+
+            for (const key of keys) {
+                const before = auditText(gage[key]);
+                const after = auditText(result.rows[0][key]);
+                if (before === after) continue;
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, old_value, new_value, changed_by)
+                    values ($1, 'gages', $2, $3, $4, $5, $6)
+                `, [request.user.org_id, gage.id, key, before || null, after || null, request.user.id]);
+            }
+
+            return { row: result.rows[0] };
+        });
+
+        if (outcome === null) return response.status(404).json({ error: "No such gage" });
+        if (outcome.badRequest) return response.status(400).json({ error: outcome.badRequest });
+        response.json(outcome.row);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/gages/BG-0221/retire
+   Out of service for good. The gage and its whole calibration history
+   stay in place, but it drops out of the pickers on new records the
+   same way a hold does. */
+masterdata.post("/gages/:gageId/retire", requirePermission("gage.retire"), async (request, response, next) => {
+    try {
+        const done = await withTransaction(async (client) => {
+            const found = await client.query(
+                "select id, availability from gages where org_id = $1 and gage_id = $2 for update",
+                [request.user.org_id, request.params.gageId]
+            );
+            if (found.rowCount === 0) return null;
+            const gage = found.rows[0];
+
+            if (gage.availability === "retired") {
+                return { gage_id: request.params.gageId, availability: "retired" };
+            }
+
+            const result = await client.query(
+                "update gages set availability = 'retired' where id = $1 returning gage_id, availability",
+                [gage.id]
+            );
+            await client.query(`
+                insert into audit_log
+                    (org_id, entity, entity_id, field, old_value, new_value, reason, changed_by)
+                values ($1, 'gages', $2, 'availability', $3, 'retired', $4, $5)
+            `, [request.user.org_id, gage.id, gage.availability,
+                (request.body && request.body.reason) || "Retired from service", request.user.id]);
+
+            return result.rows[0];
+        });
+
+        if (!done) return response.status(404).json({ error: "No such gage" });
+        response.json(done);
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* GET /api/gages/BG-0221/calibrations
    History, most recent first - what "historical calibration records"
    actually means, as opposed to the single last_cal/next_due pair on
@@ -404,7 +634,10 @@ masterdata.get("/gages", async (request, response, next) => {
 masterdata.get("/gages/:gageId/calibrations", async (request, response, next) => {
     try {
         const result = await query(`
-            select c.performed_at, c.result, c.reading, c.notes,
+            select c.id, c.performed_at, c.performed_on, c.result, c.reading, c.notes,
+                   c.cal_supplier, c.as_found, c.as_left, c.standard_used,
+                   c.certificate_filename,
+                   (c.certificate_path is not null) as has_certificate,
                    u.full_name as performed_by
               from gage_calibrations c
               join gages g on g.id = c.gage_id
@@ -419,21 +652,73 @@ masterdata.get("/gages/:gageId/calibrations", async (request, response, next) =>
     }
 });
 
-/* POST /api/gages/BG-0221/calibrations   { result, reading, notes }
-
-   A pass extends next_due by the gage's own interval and clears any
-   hold. A fail does the opposite: next_due is left alone (there is no
-   "next due date" for a gage that is not fit to use right now, only
-   a hold that recording another result - hopefully a pass - lifts),
-   and the gage is set unavailable immediately, in the same
-   transaction that records the failure, not as a separate step
-   something could skip. */
-masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate"), async (request, response, next) => {
+/* GET /api/gages/BG-0221/calibrations/<id>/certificate
+   The calibration certificate PDF, streamed back the way a document
+   revision is. Being signed in is enough, same as viewing a
+   controlled document. */
+masterdata.get("/gages/:gageId/calibrations/:calId/certificate", async (request, response, next) => {
     try {
-        const { result, reading, notes } = request.body || {};
+        const found = await query(`
+            select c.certificate_path, c.certificate_filename
+              from gage_calibrations c
+              join gages g on g.id = c.gage_id
+             where g.org_id = $1 and g.gage_id = $2 and c.id = $3
+        `, [request.user.org_id, request.params.gageId, request.params.calId]);
+
+        if (found.rowCount === 0 || !found.rows[0].certificate_path) {
+            return response.status(404).json({ error: "No certificate on that calibration" });
+        }
+
+        const { certificate_path, certificate_filename } = found.rows[0];
+        const buffer = await readUploadedFile(certificate_path);
+
+        response.setHeader("Content-Type", "application/pdf");
+        response.setHeader(
+            "Content-Disposition",
+            "inline; filename=\"" + (certificate_filename || "certificate.pdf") + "\""
+        );
+        response.send(buffer);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/gages/BG-0221/calibrations
+   multipart or JSON: result (req), performed_on, cal_supplier,
+   standard_used, as_found, as_left, reading, notes, certificate (PDF)
+
+   A pass sets last_cal to the calibration date (today if none given)
+   and extends next_due by the gage's own interval from that date. A
+   fail leaves next_due alone - there is no "next due" for a gage that
+   is not fit to use, only a hold that a later pass lifts - and sets
+   the gage on hold in the same transaction that records the failure,
+   not as a separate step something could skip. The certificate, if
+   one is attached, is written to file storage first so a storage
+   failure never leaves a half-recorded result. */
+masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate"),
+    upload.single("certificate"), async (request, response, next) => {
+    try {
+        const body = request.body || {};
+        const { result, reading, notes } = body;
 
         if (result !== "pass" && result !== "fail") {
             return response.status(400).json({ error: "result must be 'pass' or 'fail'" });
+        }
+
+        const performedOn = body.performed_on || null;
+        if (performedOn && Number.isNaN(new Date(performedOn).getTime())) {
+            return response.status(400).json({ error: "performed_on is not a valid date" });
+        }
+
+        const text = (key) => (body[key] || "").trim() || null;
+
+        let certificatePath = null;
+        let certificateFilename = null;
+        if (request.file) {
+            certificateFilename = request.file.originalname;
+            certificatePath = await saveUploadedFile(
+                "calibrations", [".pdf"], request.file.originalname, request.file.buffer
+            );
         }
 
         const updated = await withTransaction(async (client) => {
@@ -445,27 +730,30 @@ masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate
             if (found.rowCount === 0) return null;
             const gage = found.rows[0];
 
-            const performedAt = new Date();
             const nextAvailability = result === "fail" ? "hold" : "available";
 
             await client.query(`
                 insert into gage_calibrations
-                    (org_id, gage_id, performed_by, result, reading, notes)
-                values ($1, $2, $3, $4, $5, $6)
-            `, [request.user.org_id, gage.id, request.user.id, result, reading || null, notes || null]);
-
-            const nextDueClause = result === "pass"
-                ? "current_date + make_interval(months => interval_months)"
-                : "next_due";
+                    (org_id, gage_id, performed_by, result, reading, notes,
+                     performed_on, cal_supplier, as_found, as_left, standard_used,
+                     certificate_path, certificate_filename)
+                values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13)
+            `, [request.user.org_id, gage.id, request.user.id, result, reading || null, notes || null,
+                performedOn, text("cal_supplier"), text("as_found"), text("as_left"),
+                text("standard_used"), certificatePath, certificateFilename]);
 
             const record = await client.query(`
                 update gages
-                   set last_cal = current_date,
-                       next_due = ${nextDueClause},
+                   set last_cal = coalesce($3::date, current_date),
+                       next_due = case
+                           when $4 = 'pass'
+                           then coalesce($3::date, current_date) + make_interval(months => interval_months)
+                           else next_due
+                       end,
                        availability = $2
                  where id = $1
                 returning gage_id, last_cal, next_due, availability
-            `, [gage.id, nextAvailability]);
+            `, [gage.id, nextAvailability, performedOn, result]);
 
             if (gage.availability !== nextAvailability) {
                 await client.query(`
@@ -476,7 +764,7 @@ masterdata.post("/gages/:gageId/calibrations", requirePermission("gage.calibrate
                     result === "fail" ? "Failed calibration" : "Passed calibration", request.user.id]);
             }
 
-            return record.rows[0];
+            return { ...record.rows[0], certificate: certificateFilename };
         });
 
         if (!updated) return response.status(404).json({ error: "No such gage" });
@@ -544,12 +832,8 @@ masterdata.get("/documents/:docNumber/revisions", async (request, response, next
 
 /* ---------- documents: real files ----------
    A document has always had a revision history (schema.sql); none of
-   it could ever be created, revised, or downloaded until now. */
-
-const documentUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 25 * 1024 * 1024 }
-});
+   it could ever be created, revised, or downloaded until now. Uses
+   the shared `upload` handler defined at the top of this file. */
 
 /* Next after whatever the most recently created revision was, by
    creation order rather than alphabetical - a revision letter is
@@ -563,7 +847,7 @@ function nextRevisionLetter(previous) {
 }
 
 /* POST /api/documents   multipart: doc_number, title, change_summary, file, record? */
-masterdata.post("/documents", requirePermission("document.create"), documentUpload.single("file"),
+masterdata.post("/documents", requirePermission("document.create"), upload.single("file"),
     async (request, response, next) => {
         try {
             const { doc_number, title, change_summary, record } = request.body || {};
@@ -627,7 +911,7 @@ masterdata.post("/documents", requirePermission("document.create"), documentUplo
 );
 
 /* POST /api/documents/FMEA-2026-0014/revisions   multipart: file, change_summary, revision? */
-masterdata.post("/documents/:docNumber/revisions", requirePermission("document.create"), documentUpload.single("file"),
+masterdata.post("/documents/:docNumber/revisions", requirePermission("document.create"), upload.single("file"),
     async (request, response, next) => {
         try {
             if (!request.file) {
