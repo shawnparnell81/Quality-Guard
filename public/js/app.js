@@ -31,6 +31,7 @@ import { renderFloorReport } from "./views/floorreport.js";
 import { renderTurtle, wireTurtle } from "./views/turtle.js";
 import { wireReviewCharts } from "./views/review-charts.js";
 import { renderWorkflowHelp } from "./views/workflow-help.js";
+import { renderEngDocuments } from "./views/eng-documents.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -68,6 +69,7 @@ const LOADERS = {
     d8:          renderEightD,
     change:      renderChange,
     drawings:    renderDrawings,
+    "eng-documents": renderEngDocuments,
     receiving:   renderReceiving,
     shipping:    renderShipping,
     onboarding:  renderOnboarding,

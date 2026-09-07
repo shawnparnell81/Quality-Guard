@@ -75,7 +75,7 @@ async function renderDrawing(number) {
     const revBody = document.getElementById("revision-table");
     const panel = document.getElementById("drawing-detail");
 
-    if (revBody) loadingRow(revBody, 5);
+    if (revBody) loadingRow(revBody, 6);
 
     try {
         const { drawing, revisions, can_release } = await api.drawing(number);
@@ -89,11 +89,21 @@ async function renderDrawing(number) {
             { className: "sm dim", render: (row) => row.released_by
                 ? row.released_by + ", " + formatDate(row.released_at) : "-" },
             { render: (row) => {
+                if (!row.has_file) return el("span", { class: "sm dim", text: "-" });
+                const view = el("button", { class: "btn btn-xs", type: "button", text: "View" });
+                view.addEventListener("click", () => openFileWindow(
+                    api.drawingFileUrl(number, row.revision),
+                    row.original_filename || drawing.drawing_number + " rev " + row.revision,
+                    row.mime_type
+                ));
+                return view;
+            } },
+            { render: (row) => {
                 if (row.status === "released") return pill("Released", "done");
                 if (row.status === "superseded") return pill("Superseded", "hold");
                 if (!can_release) return pill(humanize(row.status), "prog");
 
-                const button = el("button", { class: "btn btn-primary", type: "button" }, "Release");
+                const button = el("button", { class: "btn btn-primary btn-xs", type: "button" }, "Release");
                 button.addEventListener("click", () => {
                     confirmStep({
                         title: "Release " + drawing.drawing_number + " rev " + row.revision,
@@ -110,6 +120,12 @@ async function renderDrawing(number) {
                 return button;
             } }
         ], "No revision history");
+
+        const uploadRev = el("button", {
+            class: "btn no-print", type: "button", dataset: { requires: "drawing.create" },
+            text: "+ Upload a revision"
+        });
+        uploadRev.addEventListener("click", () => openUploadRevisionForm(number));
 
         const children = [
             el("dl", { class: "kv" }, [
@@ -130,13 +146,76 @@ async function renderDrawing(number) {
                     ? "Readable across the plant. Production sees the released revision only."
                     : drawing.access_level === "eng_only"
                         ? "Engineering only while the change is in work."
-                        : "Engineering and quality. Production sees the released revision only." })
+                        : "Engineering and quality. Production sees the released revision only." }),
+            uploadRev
         ];
 
-        if (panel) panel.replaceChildren(...children);
+        if (panel) {
+            panel.replaceChildren(...children);
+            applyPermissions(panel);
+        }
     } catch (error) {
-        errorRow(revBody, 5, error);
+        errorRow(revBody, 6, error);
     }
+}
+
+const DRAWING_ACCEPT = ".pdf,.dxf,.dwg,.step,.stp,.igs,.iges,.png,.jpg,.jpeg,.tif,.tiff";
+
+/* The app has no CAD tool - a drawing is created by uploading the file
+   it was drawn in, plus a number and a title. It lands as revision A,
+   status draft, until someone with drawing.release releases it. */
+function openNewDrawingForm() {
+    openEntityForm({
+        title: "New drawing",
+        fields: [
+            { key: "drawing_number", label: "Drawing number", type: "text", required: true },
+            { key: "title", label: "Title", type: "text", required: true },
+            { key: "customer", label: "Customer", type: "text" },
+            { key: "access_level", label: "Who may see it", type: "select",
+              options: ["Engineering & quality", "All plant", "Engineering only"] },
+            { key: "change_summary", label: "Notes on this revision", type: "memo" },
+            { key: "file", label: "Drawing file", type: "file", required: true, accept: DRAWING_ACCEPT }
+        ],
+        submitLabel: "Create drawing",
+        successMessage: "Drawing created",
+        onSubmit: ({ values, files }) => {
+            const form = new FormData();
+            form.append("drawing_number", values.drawing_number);
+            form.append("title", values.title);
+            if (values.customer) form.append("customer", values.customer);
+            const access = { "All plant": "all_plant", "Engineering only": "eng_only" }[values.access_level];
+            if (access) form.append("access_level", access);
+            if (values.change_summary) form.append("change_summary", values.change_summary);
+            form.append("file", files.file);
+            return api.createDrawing(form);
+        },
+        onSaved: (created) => { selectedDrawing = created.drawing_number; renderDrawings(); }
+    });
+}
+
+/* A new draft revision with its own file. The revision letter is the
+   next one up unless a specific one is given. */
+function openUploadRevisionForm(number) {
+    openEntityForm({
+        title: "Upload a revision of " + number,
+        fields: [
+            { key: "revision", label: "Revision", type: "text", hint: "Leave blank for the next letter." },
+            { key: "change_summary", label: "What changed", type: "memo", required: true },
+            { key: "ecn_number", label: "ECN", type: "text", hint: "If a change notice drove this." },
+            { key: "file", label: "Drawing file", type: "file", required: true, accept: DRAWING_ACCEPT }
+        ],
+        submitLabel: "Upload revision",
+        successMessage: "Revision uploaded",
+        onSubmit: ({ values, files }) => {
+            const form = new FormData();
+            if (values.revision) form.append("revision", values.revision);
+            form.append("change_summary", values.change_summary);
+            if (values.ecn_number) form.append("ecn_number", values.ecn_number);
+            form.append("file", files.file);
+            return api.addDrawingRevision(number, form);
+        },
+        onSaved: () => renderDrawing(number)
+    });
 }
 
 /* ============================================================
@@ -586,4 +665,7 @@ export function wireEvaluate() {
             window.location.href = "/api/objectives/pdf";
         });
     }
+
+    const newDrawing = document.getElementById("new-drawing");
+    if (newDrawing) newDrawing.addEventListener("click", openNewDrawingForm);
 }

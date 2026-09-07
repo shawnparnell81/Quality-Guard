@@ -69,6 +69,7 @@ export const NAV = [
 
     { dept: "Engineering", items: [
         { label: "Engineering Drawings", view: "drawings" },
+        { label: "Engineering Documents", view: "eng-documents" },
         { label: "Change Control (ECN)", view: "change", countKey: "ecn" },
         { label: "APQP Programs", view: "apqp", countKey: "apqp" }
     ] },

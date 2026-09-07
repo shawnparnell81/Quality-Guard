@@ -474,7 +474,10 @@
         </div>
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Drawing register</h2></div>
+                <div class="panel-head">
+                    <h2 class="panel-title">Drawing register</h2>
+                    <button class="btn btn-primary no-print" type="button" id="new-drawing" data-requires="drawing.create">New drawing</button>
+                </div>
                 <div class="table-wrap">
                     <table>
                         <thead><tr><th>Drawing</th><th>Title</th><th>Rev</th><th>Customer</th><th>Open ECN</th><th>Access</th></tr></thead>
@@ -491,11 +494,31 @@
                     <div class="panel-head"><h2 class="panel-title">Revision history</h2><span class="panel-note">clause 7.5.3</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Rev</th><th>Change</th><th>ECN</th><th>Released</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Rev</th><th>Change</th><th>ECN</th><th>Released</th><th>File</th><th>Status</th></tr></thead>
                             <tbody id="revision-table"></tbody>
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ ENGINEERING DOCUMENTS ============ -->
+    <section class="view" id="view-eng-documents" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Engineering Documents<span class="clause-ref">7.5</span></h1>
+            <p class="view-sub">Engineering's own controlled documents &mdash; specs, calculations, standards, analysis reports. Upload a file and open it here; revision history and release stay in Document Control.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Documents</h2>
+                <button class="btn btn-primary no-print" type="button" id="eng-doc-upload" data-requires="document.create">Upload document</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Number</th><th>Title</th><th>Rev</th><th>Owner</th><th>Status</th></tr></thead>
+                    <tbody id="eng-doc-table"></tbody>
+                </table>
             </div>
         </div>
     </section>
