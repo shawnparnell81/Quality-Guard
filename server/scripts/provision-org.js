@@ -128,7 +128,8 @@ const GRANTS = {
         "training.read", "training.record",
         "audit.read", "audit.schedule", "audit.close",
         "di.read", "di.manage", "di.close",
-        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log"]
+        "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
+        "layout.manage"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
@@ -420,7 +421,7 @@ export async function provisionOrganization({ companyName, adminEmail, adminName
         await client.query(`
             insert into role_permissions (org_id, role_key, permission_key)
             select $1, 'admin', key from permissions
-             where action = 'read' or resource in ('user', 'roles', 'forms')
+             where action = 'read' or resource in ('user', 'roles', 'forms', 'layout')
         `, [orgId]);
 
         for (const type of RECORD_TYPES) {

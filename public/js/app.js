@@ -15,7 +15,7 @@ import { getOrganization, describeCountdown } from "./org.js";
 import {
     loadSession, applyPermissions, paintCurrentUser, wireSignOut
 } from "./session.js";
-import { renderDashboard, renderReadiness, wireReadiness } from "./views/dashboard.js";
+import { renderDashboard, renderReadiness, wireReadiness, wireDashboard } from "./views/dashboard.js";
 import { renderRegister, wireRegisterClicks } from "./views/events.js";
 import { renderRoles, renderPeople, wireMatrixEditing, wirePeopleActions } from "./views/access.js";
 import { renderProduction, wireProduction } from "./views/production.js";
@@ -366,6 +366,7 @@ async function start() {
 
     wireRegisterClicks();
     wireReadiness();
+    wireDashboard();
     wireMatrixEditing();
     wirePeopleActions();
     wireRecordEditor();

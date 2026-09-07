@@ -138,6 +138,10 @@ export const api = {
     escalations:  (days)    => get(withQuery("/dashboard/escalations", { days })),
     readiness:    ()        => get("/dashboard/readiness"),
 
+    layout:       (kind)    => get("/layout/" + encodeURIComponent(kind)),
+    saveLayout:   (kind, layout) =>
+        request("PUT", "/layout/" + encodeURIComponent(kind), { layout }),
+
     recordTypes:  ()        => get("/record-types"),
     recordForm:   (typeKey) => get("/record-types/" + encodeURIComponent(typeKey) + "/form"),
     updateRecordForm: (typeKey, fields) =>

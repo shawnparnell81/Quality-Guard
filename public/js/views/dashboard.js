@@ -11,10 +11,229 @@ import { getOrganization, describeCountdown } from "../org.js";
 import { VENDOR_STATUS } from "./resources.js";
 import { show } from "../app.js";
 import { renderRecordDetail } from "./events.js";
+import { can } from "../session.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     setText, formatDate, humanize, statusKind, drawSparkline, toast
 } from "../dom.js";
+
+/* ============================================================
+   Dashboard layout (org-level, admin-set - see routes/layout.js).
+
+   The panels ship in a default arrangement (captured from the markup
+   the first time the dashboard renders). An admin with layout.manage
+   can reorder them across the two columns and hide the ones the org
+   does not use; that arrangement is saved for everyone. A stored
+   layout is { order: [{ key, col }], hidden: [key] }.
+   ============================================================ */
+
+/* The KPI strip stays pinned at the top; these six panels are the
+   ones an org arranges. */
+const DASH_WIDGETS = [
+    "events", "coming-due", "suppliers",
+    "clause-readiness", "calibration-due", "training-gaps"
+];
+const DASH_MOVABLE = DASH_WIDGETS;
+
+let defaultDashLayout = null;   // captured once from the markup
+let dashLayout = undefined;     // the org's stored layout, or null; undefined = not fetched
+let dashEditing = false;
+
+function dashWidgetEl(key) {
+    return document.querySelector('#view-dashboard [data-widget="' + key + '"]');
+}
+
+function captureDefaultDashLayout() {
+    if (defaultDashLayout) return;
+    const order = [];
+    document.querySelectorAll("#view-dashboard [data-col]").forEach((col) => {
+        const c = Number(col.dataset.col);
+        col.querySelectorAll('.panel[data-widget]').forEach((panel) => {
+            order.push({ key: panel.dataset.widget, col: c });
+        });
+    });
+    defaultDashLayout = { order, hidden: [] };
+}
+
+/* Places every movable panel into the column and position the layout
+   asks for; anything the layout does not mention keeps its default
+   spot. Hidden panels are removed from view unless the editor is
+   open, where they show greyed so they can be brought back. */
+function applyDashLayout(layout) {
+    captureDefaultDashLayout();
+
+    const effective = layout && Array.isArray(layout.order) ? layout : defaultDashLayout;
+    const hidden = new Set((layout && Array.isArray(layout.hidden)) ? layout.hidden : []);
+    const cols = [
+        document.getElementById("dash-col-0"),
+        document.getElementById("dash-col-1")
+    ];
+    if (!cols[0] || !cols[1]) return;
+
+    const placed = new Set();
+    for (const entry of effective.order) {
+        if (!DASH_MOVABLE.includes(entry.key) || placed.has(entry.key)) continue;
+        const panel = dashWidgetEl(entry.key);
+        const target = cols[entry.col] || cols[0];
+        if (panel && target) {
+            target.appendChild(panel);   // append in layout order
+            placed.add(entry.key);
+        }
+    }
+    /* A widget added to the app after this layout was saved: leave it
+       in its markup column, at the end. */
+    for (const key of DASH_MOVABLE) {
+        if (placed.has(key)) continue;
+        const fallback = defaultDashLayout.order.find((o) => o.key === key);
+        const panel = dashWidgetEl(key);
+        if (panel && fallback && cols[fallback.col]) cols[fallback.col].appendChild(panel);
+    }
+
+    for (const key of DASH_WIDGETS) {
+        const node = dashWidgetEl(key);
+        if (!node) continue;
+        const isHidden = hidden.has(key);
+        node.classList.toggle("widget-hidden", isHidden);
+        node.hidden = isHidden && !dashEditing;
+    }
+}
+
+/* Reads the current arrangement back out of the DOM into a layout
+   object to save. */
+function readDashLayoutFromDom() {
+    const order = [];
+    [0, 1].forEach((c) => {
+        const col = document.getElementById("dash-col-" + c);
+        col.querySelectorAll('.panel[data-widget]').forEach((panel) => {
+            order.push({ key: panel.dataset.widget, col: c });
+        });
+    });
+    const hidden = DASH_WIDGETS.filter((key) => {
+        const node = dashWidgetEl(key);
+        return node && node.classList.contains("widget-hidden");
+    });
+    return { order, hidden };
+}
+
+/* ---------- the drag-and-drop editor ---------- */
+
+function panelAfterPoint(col, y) {
+    const panels = [...col.querySelectorAll(".panel[data-widget]:not(.dragging)")];
+    return panels.reduce((closest, panel) => {
+        const box = panel.getBoundingClientRect();
+        const offset = y - box.top - box.height / 2;
+        if (offset < 0 && offset > closest.offset) return { offset, panel };
+        return closest;
+    }, { offset: Number.NEGATIVE_INFINITY, panel: null }).panel;
+}
+
+function decoratePanelForEdit(panel) {
+    if (panel.querySelector(".widget-edit-bar")) return;
+    const key = panel.dataset.widget;
+
+    const handle = el("span", { class: "widget-handle", title: "Drag to move", text: "⠿" });
+    const hideBtn = el("button", {
+        class: "widget-hide", type: "button",
+        title: panel.classList.contains("widget-hidden") ? "Show this panel" : "Hide this panel",
+        text: panel.classList.contains("widget-hidden") ? "Show" : "Hide"
+    });
+    hideBtn.addEventListener("click", () => {
+        const nowHidden = !panel.classList.contains("widget-hidden");
+        panel.classList.toggle("widget-hidden", nowHidden);
+        hideBtn.textContent = nowHidden ? "Show" : "Hide";
+        hideBtn.title = nowHidden ? "Show this panel" : "Hide this panel";
+    });
+
+    const bar = el("div", { class: "widget-edit-bar" }, [
+        handle, el("span", { class: "widget-key", text: key }), hideBtn
+    ]);
+    panel.prepend(bar);
+
+    panel.setAttribute("draggable", "true");
+    panel.addEventListener("dragstart", (e) => {
+        panel.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", key);
+    });
+    panel.addEventListener("dragend", () => panel.classList.remove("dragging"));
+}
+
+function stripPanelEditDecoration(panel) {
+    panel.querySelector(".widget-edit-bar")?.remove();
+    panel.removeAttribute("draggable");
+}
+
+function wireColumnDrop(col) {
+    if (col.dataset.dropWired) return;
+    col.dataset.dropWired = "1";
+    col.addEventListener("dragover", (e) => {
+        if (!dashEditing) return;
+        e.preventDefault();
+        const dragging = document.querySelector("#view-dashboard .panel.dragging");
+        if (!dragging) return;
+        const after = panelAfterPoint(col, e.clientY);
+        if (after) col.insertBefore(dragging, after);
+        else col.appendChild(dragging);
+    });
+}
+
+function setEditControls(on) {
+    document.getElementById("dash-edit").hidden = on;
+    document.getElementById("dash-save").hidden = !on;
+    document.getElementById("dash-reset").hidden = !on;
+    document.getElementById("dash-cancel").hidden = !on;
+    const hint = document.getElementById("dash-edit-hint");
+    if (hint) hint.hidden = !on;
+}
+
+function enterDashEdit() {
+    if (!can("layout.manage")) return;
+    dashEditing = true;
+    document.getElementById("view-dashboard").classList.add("dash-editing");
+    applyDashLayout(dashLayout);           // reveal hidden panels, greyed
+    document.querySelectorAll("#view-dashboard .panel[data-widget]").forEach(decoratePanelForEdit);
+    [0, 1].forEach((c) => wireColumnDrop(document.getElementById("dash-col-" + c)));
+    setEditControls(true);
+}
+
+function exitDashEdit() {
+    dashEditing = false;
+    document.getElementById("view-dashboard").classList.remove("dash-editing");
+    document.querySelectorAll("#view-dashboard .panel[data-widget]").forEach(stripPanelEditDecoration);
+    applyDashLayout(dashLayout);
+    setEditControls(false);
+}
+
+export function wireDashboard() {
+    const editBtn = document.getElementById("dash-edit");
+    if (!editBtn) return;
+
+    editBtn.addEventListener("click", enterDashEdit);
+    document.getElementById("dash-cancel").addEventListener("click", exitDashEdit);
+
+    document.getElementById("dash-save").addEventListener("click", async () => {
+        const layout = readDashLayoutFromDom();
+        try {
+            const saved = await api.saveLayout("dashboard", layout);
+            dashLayout = saved.layout;
+            toast("Dashboard layout saved for the organisation");
+            exitDashEdit();
+        } catch (error) {
+            toast(error.message, "error");
+        }
+    });
+
+    document.getElementById("dash-reset").addEventListener("click", async () => {
+        try {
+            await api.saveLayout("dashboard", null);
+            dashLayout = null;
+            toast("Dashboard layout reset to default");
+            exitDashEdit();
+        } catch (error) {
+            toast(error.message, "error");
+        }
+    });
+}
 
 /* A sparkline point's record numbers are oldest-first within the
    week; the most recent one is the most useful thing to land on.
@@ -169,6 +388,16 @@ export async function renderDashboard() {
             { className: "sm", render: (row) => row.operator },
             { className: "mono sm dim", render: (row) => row.doc_number + " rev " + row.current_revision }
         ], "No training gaps");
+
+        /* ---- apply the org's saved arrangement ---- */
+        if (dashLayout === undefined) {
+            try {
+                dashLayout = (await api.layout("dashboard")).layout;
+            } catch {
+                dashLayout = null;
+            }
+        }
+        applyDashLayout(dashLayout);
 
     } catch (error) {
         errorRow(events, 5, error);
