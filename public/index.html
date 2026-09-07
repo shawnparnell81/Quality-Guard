@@ -948,6 +948,31 @@
         </div>
     </section>
 
+    <!-- ============ TURTLE DIAGRAMS ============ -->
+    <section class="view" id="view-turtle" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Turtle Diagrams<span class="clause-ref">4.4</span></h1>
+            <p class="view-sub">Each department process end to end: inputs, outputs, resources, people, methods and measures. The artefact an auditor walks a process against.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Process</h2>
+                <select id="turtle-dept" class="filter-severity">
+                    <option value="purchasing">Purchasing</option>
+                    <option value="production">Production</option>
+                    <option value="tooling">Tooling</option>
+                    <option value="quality">Quality</option>
+                    <option value="engineering">Engineering</option>
+                    <option value="management">Management</option>
+                </select>
+                <span style="margin-left:auto"></span>
+                <button class="btn no-print" type="button" id="turtle-pdf">Print / PDF</button>
+                <button class="btn btn-primary no-print" type="button" id="turtle-edit" data-requires="turtle.manage">Edit</button>
+            </div>
+            <div class="panel-body" id="turtle-canvas"></div>
+        </div>
+    </section>
+
     <!-- ============ RISK REGISTER ============ -->
     <section class="view" id="view-risk" hidden>
         <div class="view-head">
