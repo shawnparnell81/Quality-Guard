@@ -1,24 +1,25 @@
 /* ============================================================
-   The department sidebar.
+   The department menu bar.
 
-   One data structure describes the whole tree; buildSidebar() renders
-   it into #dept-nav. Rearranging a screen is an edit to NAV below,
-   nothing else - the leaf markup it produces is exactly what the
-   count/badge code in app.js already looks for
+   One data structure describes the whole tree; buildNav() renders it
+   into #dept-nav as a horizontal bar of department buttons, each with
+   its own dropdown panel. The leaf markup it produces is exactly what
+   the count/badge code in app.js already looks for
    (.nav-item[data-view], .nav-count[data-nav-count], #nav-readiness-count).
 
-   Departments are an accordion: opening one closes the others, and a
-   department header only ever expands/collapses - it never navigates.
-   The department holding the current screen is opened by
-   expandDeptFor(), called from app.js's show().
+   Dropdowns are independent: opening one never closes another. A panel
+   is dismissed by clicking outside the bar, or by a second click on
+   its own department button. Picking a screen navigates and leaves the
+   panel open. On narrow screens the whole bar is an off-canvas drawer
+   (style.css) with every panel shown inline.
    ============================================================ */
 
 import { el } from "./dom.js";
 
 /* leaf:  { label, view, countKey?, countId?, hot?, disabled? }
-   group: { label, items: leaf[] }        (a sub-folder inside a dept)
+   group: { label, items: leaf[] }        (a labelled section in a panel)
    dept:  { dept, items?: leaf[], groups?: group[] }
-   flat:  { flat: true, items: leaf[] }   (always-visible, no toggle) */
+   flat:  { flat: true, items: leaf[] }   (bar links, no dropdown) */
 export const NAV = [
     { flat: true, items: [
         { label: "Dashboard", view: "dashboard" },
@@ -76,6 +77,7 @@ export const NAV = [
 ];
 
 let mount = null;
+let outsideCloseWired = false;
 
 function leafButton(leaf) {
     if (leaf.disabled) {
@@ -102,13 +104,13 @@ function leafButton(leaf) {
     return el("button", { class: "nav-item", type: "button", "data-view": leaf.view }, children);
 }
 
-function chevron() {
+function caret() {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("class", "nav-chevron");
+    svg.setAttribute("class", "nav-caret");
     svg.setAttribute("viewBox", "0 0 12 12");
     svg.setAttribute("aria-hidden", "true");
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", "M4 2 L8 6 L4 10");
+    path.setAttribute("d", "M2 4 L6 8 L10 4");
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", "currentColor");
     path.setAttribute("stroke-width", "1.5");
@@ -118,65 +120,82 @@ function chevron() {
     return svg;
 }
 
-function deptBlock(section) {
-    const body = el("div", { class: "nav-dept-body" });
-
-    if (section.groups) {
-        for (const group of section.groups) {
-            body.append(el("div", { class: "nav-subgroup" }, [
-                el("div", { class: "nav-subgroup-label", text: group.label }),
-                ...group.items.map(leafButton)
-            ]));
-        }
-    } else {
-        for (const leaf of section.items) body.append(leafButton(leaf));
+function closeAllMenus() {
+    if (!mount) return;
+    for (const menu of mount.querySelectorAll(".deptbar-menu")) menu.hidden = true;
+    for (const btn of mount.querySelectorAll(".deptbar-btn")) {
+        btn.setAttribute("aria-expanded", "false");
     }
-
-    const toggle = el("button", {
-        class: "nav-dept-toggle", type: "button", "aria-expanded": "false"
-    }, [el("span", { text: section.dept }), chevron()]);
-
-    const wrapper = el("div", { class: "nav-dept", "data-dept": section.dept }, [toggle, body]);
-
-    toggle.addEventListener("click", () => {
-        const willOpen = !wrapper.classList.contains("open");
-        for (const other of mount.querySelectorAll(".nav-dept")) {
-            other.classList.toggle("open", other === wrapper && willOpen);
-            other.querySelector(".nav-dept-toggle")
-                .setAttribute("aria-expanded", other === wrapper && willOpen ? "true" : "false");
-        }
-    });
-
-    return wrapper;
 }
 
-export function buildSidebar(mountEl) {
+function deptItem(section) {
+    const menu = el("div", { class: "deptbar-menu", hidden: "hidden" });
+
+    if (section.groups) {
+        section.groups.forEach((group) => {
+            menu.append(el("div", { class: "deptbar-section" }, [
+                el("div", { class: "deptbar-section-label", text: group.label }),
+                ...group.items.map(leafButton)
+            ]));
+        });
+    } else {
+        for (const leaf of section.items) menu.append(leafButton(leaf));
+    }
+
+    const btn = el("button", {
+        class: "deptbar-btn", type: "button",
+        "aria-haspopup": "true", "aria-expanded": "false"
+    }, [el("span", { text: section.dept }), caret()]);
+
+    /* Toggle THIS panel only. Opening it never touches the others. */
+    btn.addEventListener("click", () => {
+        const opening = menu.hidden;
+        menu.hidden = !opening;
+        btn.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+
+    return el("div", { class: "deptbar-item", "data-dept": section.dept }, [btn, menu]);
+}
+
+export function buildNav(mountEl) {
     if (!mountEl) return;
     mount = mountEl;
     mount.replaceChildren();
 
     for (const section of NAV) {
         if (section.flat) {
-            mount.append(el("div", { class: "nav-flat" }, section.items.map(leafButton)));
+            for (const leaf of section.items) {
+                const link = leafButton(leaf);
+                link.classList.add("deptbar-link");
+                mount.append(link);
+            }
         } else {
-            mount.append(deptBlock(section));
+            mount.append(deptItem(section));
         }
+    }
+
+    /* One listener for the life of the page: a click anywhere that is
+       not inside the bar closes every open panel. The click that opens
+       a panel lands on a button inside #dept-nav, so it is naturally
+       excluded - no set-timeout dance needed. */
+    if (!outsideCloseWired) {
+        document.addEventListener("click", (event) => {
+            if (!event.target.closest("#dept-nav")) closeAllMenus();
+        });
+        outsideCloseWired = true;
     }
 }
 
-/* Open the department that contains `view`, closing the others. A flat
-   item (Dashboard, Audit Readiness) has no department - leave whatever
-   is open as it is. */
-export function expandDeptFor(view) {
+/* Underline the department button whose panel contains the current
+   screen. Never opens a panel - a dropdown appearing over the content
+   on every screen switch would be intrusive. */
+export function markActiveDept(view) {
     if (!mount) return;
 
     const leaf = mount.querySelector('.nav-item[data-view="' + view + '"]');
-    const dept = leaf ? leaf.closest(".nav-dept") : null;
-    if (!dept) return;
+    const item = leaf ? leaf.closest(".deptbar-item") : null;
 
-    for (const other of mount.querySelectorAll(".nav-dept")) {
-        const on = other === dept;
-        other.classList.toggle("open", on);
-        other.querySelector(".nav-dept-toggle").setAttribute("aria-expanded", on ? "true" : "false");
+    for (const btn of mount.querySelectorAll(".deptbar-btn")) {
+        btn.classList.toggle("is-active", Boolean(item) && item.contains(btn));
     }
 }
