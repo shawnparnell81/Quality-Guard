@@ -164,14 +164,28 @@ export function buildSidebar(mountEl) {
     }
 }
 
-/* Open the department that contains `view`, closing the others. A flat
-   item (Dashboard, Audit Readiness) has no department - leave whatever
-   is open as it is. */
+/* Purchasing / Production etc. -> the [data-dept] slug style.css keys
+   its accent off. */
+const DEPT_SLUG = { administration: "admin" };
+
+/* Open the department that contains `view`, closing the others, and
+   set the per-department accent on .app. A flat item (Dashboard,
+   Audit Readiness) has no department - it leaves the open one alone
+   and clears the accent back to the brand default. */
 export function expandDeptFor(view) {
     if (!mount) return;
 
     const leaf = mount.querySelector('.nav-item[data-view="' + view + '"]');
     const dept = leaf ? leaf.closest(".nav-dept") : null;
+
+    const app = document.querySelector(".app");
+    if (app) {
+        const raw = dept ? (dept.dataset.dept || "").toLowerCase() : "";
+        const slug = DEPT_SLUG[raw] || raw;
+        if (slug) app.dataset.dept = slug;
+        else app.removeAttribute("data-dept");
+    }
+
     if (!dept) return;
 
     for (const other of mount.querySelectorAll(".nav-dept")) {
