@@ -1,132 +1,117 @@
 /* ============================================================
-   QMS GUARDIAN - colour system
+   QMS GUARDIAN - colour system (Palette C: Modern Tech / Clean UI)
 
-   Light palette on bare :root, redefined for the two dark states.
-   Components read tokens only, never raw hex.
+   Deep Indigo #3F51B5 for nav and brand, Electric Blue #2196F3 for
+   accents and links, Soft Gray #F1F3F4 panels on a Pure White page,
+   Slate #2C2C2C text. Light palette on bare :root, redefined for the
+   two dark states. Components read tokens only, never raw hex.
 
-   The department accent (--accent*, defined below the neutrals) is
-   the moving part: it defaults to the brand teal and each department
-   overrides it through [data-dept] on .app, set by nav.js when you
-   navigate. --accent is the fill (text on it is --accent-ink),
-   --accent-fg is the accent used AS text on a light surface (AA on
-   --surface), --accent-tint is a pale wash.
+   Two blues on purpose: --brand (indigo) is structural - nav, brand,
+   section rules, the required-field marker; --accent (electric blue)
+   is action - links, focus rings, the active-nav underline. Solid
+   primary buttons use a darkened blue (#1976D2) in the .btn-primary
+   rule so white label text clears WCAG AA - the bright --accent stays
+   the brighter blue for text-on-light and hairline use.
    ============================================================ */
 :root {
-    --ground:      #ECF1EF;
-    --surface:     #FFFFFF;
-    --surface-2:   #F4F8F6;
-    --hairline:    #D3DEDB;
-    --hairline-2:  #E7EEEC;
+    --ground:      #FFFFFF;
+    --surface:     #F1F3F4;
+    --surface-2:   #E8EAED;
+    --hairline:    #DADCE0;
+    --hairline-2:  #E8EAED;
 
-    --ink:         #10201D;
-    --ink-2:       #48584F;
-    --ink-3:       #778781;
+    --ink:         #2C2C2C;
+    --ink-2:       #5F6368;
+    --ink-3:       #5E6266;
 
-    --brand:       #0D4F49;
-    --brand-tint:  #E0EDEB;
-    --brass:       #A8703A;
+    --brand:       #3F51B5;
+    --brand-tint:  #E8EAF6;
+    --brass:       #3F51B5;
 
-    --accent:      #0D6E63;
-    --accent-fg:   #0B5C53;
-    --accent-tint: #DFEEEB;
+    --accent:      #2196F3;
+    --accent-fg:   #1565C0;
+    --accent-tint: #E3F2FD;
     --accent-ink:  #FFFFFF;
 
-    --ok:          #14794D;
-    --ok-tint:     #DEF0E7;
-    --warn:        #B4670A;
-    --warn-tint:   #F8EBD8;
-    --crit:        #B12518;
-    --crit-tint:   #F8E1DE;
+    --ok:          #2E7D32;
+    --ok-tint:     #E8F5E9;
+    --warn:        #FFB300;
+    --warn-tint:   #FFF3D6;
+    --crit:        #D32F2F;
+    --crit-tint:   #FDE7E7;
 
-    --sidebar-bg:  #0B3B36;
-    --sidebar-ink: #C9DCD9;
+    --sidebar-bg:  #3F51B5;
+    --sidebar-ink: #D5D9F2;
     --sidebar-hi:  #FFFFFF;
 
     --radius: 6px;
 }
 
-/* ---------- per-department accent (light) ---------- */
-.app[data-dept="production"]  { --accent: #C2620C; --accent-fg: #9A4E08; --accent-tint: #F8EBDC; }
-.app[data-dept="engineering"] { --accent: #2E6E9E; --accent-fg: #2A5C86; --accent-tint: #E3EDF4; }
-.app[data-dept="purchasing"]  { --accent: #2E7D48; --accent-fg: #276A3E; --accent-tint: #E3F1E8; }
-.app[data-dept="tooling"]     { --accent: #B06A3C; --accent-fg: #8A5330; --accent-tint: #F4E9DF; }
-.app[data-dept="admin"]       { --accent: #7A3E63; --accent-fg: #6A3556; --accent-tint: #F0E6ED; }
-
 @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-        --ground:      #0C1413;
-        --surface:     #131E1C;
-        --surface-2:   #182523;
-        --hairline:    #263532;
-        --hairline-2:  #1D2B29;
+        --ground:      #121317;
+        --surface:     #1C1D22;
+        --surface-2:   #24252B;
+        --hairline:    #33343B;
+        --hairline-2:  #26272D;
 
-        --ink:         #E4EDEB;
-        --ink-2:       #9FB0AD;
-        --ink-3:       #748582;
+        --ink:         #E8EAED;
+        --ink-2:       #B0B3B8;
+        --ink-3:       #85888E;
 
-        --brand:       #4FBFB0;
-        --brand-tint:  #14302D;
-        --brass:       #D69A5C;
+        --brand:       #7986CB;
+        --brand-tint:  #283040;
+        --brass:       #7986CB;
 
-        --accent:      #45C4B3;
-        --accent-fg:   #45C4B3;
-        --accent-tint: #123330;
-        --accent-ink:  #0C1413;
+        --accent:      #64B5F6;
+        --accent-fg:   #64B5F6;
+        --accent-tint: #16324A;
+        --accent-ink:  #0E0F12;
 
-        --ok:          #52B786;
-        --ok-tint:     #123020;
-        --warn:        #DDA054;
-        --warn-tint:   #2F2413;
-        --crit:        #E5776B;
-        --crit-tint:   #35191A;
+        --ok:          #66BB6A;
+        --ok-tint:     #17301A;
+        --warn:        #FFCA28;
+        --warn-tint:   #2E2410;
+        --crit:        #EF5350;
+        --crit-tint:   #331A1A;
 
-        --sidebar-bg:  #0A1917;
-        --sidebar-ink: #93A8A5;
-        --sidebar-hi:  #EAF3F1;
+        --sidebar-bg:  #23244A;
+        --sidebar-ink: #9FA8DA;
+        --sidebar-hi:  #E8EAF6;
     }
-    :root:not([data-theme="light"]) .app[data-dept="production"]  { --accent: #E0913F; --accent-fg: #E0913F; --accent-tint: #33240F; }
-    :root:not([data-theme="light"]) .app[data-dept="engineering"] { --accent: #6BAEDD; --accent-fg: #6BAEDD; --accent-tint: #152A3A; }
-    :root:not([data-theme="light"]) .app[data-dept="purchasing"]  { --accent: #5FBE7E; --accent-fg: #5FBE7E; --accent-tint: #123020; }
-    :root:not([data-theme="light"]) .app[data-dept="tooling"]     { --accent: #D2915F; --accent-fg: #D2915F; --accent-tint: #33241A; }
-    :root:not([data-theme="light"]) .app[data-dept="admin"]       { --accent: #C489AC; --accent-fg: #C489AC; --accent-tint: #2E1E2A; }
 }
 
 :root[data-theme="dark"] {
-    --ground:      #0C1413;
-    --surface:     #131E1C;
-    --surface-2:   #182523;
-    --hairline:    #263532;
-    --hairline-2:  #1D2B29;
+    --ground:      #121317;
+    --surface:     #1C1D22;
+    --surface-2:   #24252B;
+    --hairline:    #33343B;
+    --hairline-2:  #26272D;
 
-    --ink:         #E4EDEB;
-    --ink-2:       #9FB0AD;
-    --ink-3:       #748582;
+    --ink:         #E8EAED;
+    --ink-2:       #B0B3B8;
+    --ink-3:       #85888E;
 
-    --brand:       #4FBFB0;
-    --brand-tint:  #14302D;
-    --brass:       #D69A5C;
+    --brand:       #7986CB;
+    --brand-tint:  #283040;
+    --brass:       #7986CB;
 
-    --accent:      #45C4B3;
-    --accent-fg:   #45C4B3;
-    --accent-tint: #123330;
-    --accent-ink:  #0C1413;
+    --accent:      #64B5F6;
+    --accent-fg:   #64B5F6;
+    --accent-tint: #16324A;
+    --accent-ink:  #0E0F12;
 
-    --ok:          #52B786;
-    --ok-tint:     #123020;
-    --warn:        #DDA054;
-    --warn-tint:   #2F2413;
-    --crit:        #E5776B;
-    --crit-tint:   #35191A;
+    --ok:          #66BB6A;
+    --ok-tint:     #17301A;
+    --warn:        #FFCA28;
+    --warn-tint:   #2E2410;
+    --crit:        #EF5350;
+    --crit-tint:   #331A1A;
 
-    --sidebar-bg:  #0A1917;
-    --sidebar-ink: #93A8A5;
-    --sidebar-hi:  #EAF3F1;
+    --sidebar-bg:  #23244A;
+    --sidebar-ink: #9FA8DA;
+    --sidebar-hi:  #E8EAF6;
 }
-:root[data-theme="dark"] .app[data-dept="production"]  { --accent: #E0913F; --accent-fg: #E0913F; --accent-tint: #33240F; }
-:root[data-theme="dark"] .app[data-dept="engineering"] { --accent: #6BAEDD; --accent-fg: #6BAEDD; --accent-tint: #152A3A; }
-:root[data-theme="dark"] .app[data-dept="purchasing"]  { --accent: #5FBE7E; --accent-fg: #5FBE7E; --accent-tint: #123020; }
-:root[data-theme="dark"] .app[data-dept="tooling"]     { --accent: #D2915F; --accent-fg: #D2915F; --accent-tint: #33241A; }
-:root[data-theme="dark"] .app[data-dept="admin"]       { --accent: #C489AC; --accent-fg: #C489AC; --accent-tint: #2E1E2A; }
 
 /* ============================================================
    Base
@@ -767,8 +752,11 @@ tr.row-selected:hover {
 }
 .filter-open input { cursor: pointer; }
 
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+/* A darkened blue for the solid fill, not the bright --accent: white
+   label text on #2196F3 is only 3.1:1, on #1976D2 it clears AA. */
+.btn-primary { background: #1976D2; border-color: #1976D2; color: #FFFFFF; }
+.btn-primary:hover:not(:disabled) { background: #1565C0; border-color: #1565C0; }
+.btn-primary:active:not(:disabled) { background: #0D47A1; border-color: #0D47A1; }
 
 /* Row-level actions in the people directory: a few small buttons
    per row rather than a single one, so each needs less padding to
@@ -1400,9 +1388,9 @@ th.col-you { color: var(--brand); }
 
 .signin-submit:disabled { opacity: .55; cursor: wait; }
 
-:root[data-theme="dark"] .signin-submit { color: #08201D; }
+:root[data-theme="dark"] .signin-submit { color: #0E0F12; }
 @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .signin-submit { color: #08201D; }
+    :root:not([data-theme="light"]) .signin-submit { color: #0E0F12; }
 }
 
 .signin-error {
@@ -1915,6 +1903,15 @@ th.col-you { color: var(--brand); }
 
 .toast-ok    { background: var(--ok);   color: #fff; }
 .toast-error { background: var(--crit); color: #fff; }
+
+/* Dark mode's --ok / --crit are light greens and reds - white on them
+   is only ~2-3.5:1. Dark toast text clears AA. */
+:root[data-theme="dark"] .toast-ok,
+:root[data-theme="dark"] .toast-error { color: #0E0F12; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .toast-ok,
+    :root:not([data-theme="light"]) .toast-error { color: #0E0F12; }
+}
 .toast-info  { background: var(--ink);  color: var(--ground); }
 
 /* ---------- printing ---------- */
