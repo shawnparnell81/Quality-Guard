@@ -1379,6 +1379,37 @@
         </div>
     </section>
 
+    <!-- ============ IMPORT FORM ============ -->
+    <section class="view" id="view-form-import" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Import Form</h1>
+            <p class="view-sub">Upload an Excel form (PFMEA, Control Plan, 8D, a custom one). The server infers a schema you can correct, then save as a new form type or a new version of an existing one.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Upload a spreadsheet</h2><span class="panel-note">.xlsx</span></div>
+            <div class="panel-body">
+                <div class="row no-print" style="gap:8px">
+                    <input type="file" id="form-import-file" accept=".xlsx">
+                    <button class="btn btn-primary" type="button" id="form-import-upload" data-requires="forms.manage">Infer schema</button>
+                </div>
+                <p class="sm dim" id="form-import-status" style="margin:8px 0 0"></p>
+            </div>
+        </div>
+        <div class="panel" id="form-import-preview-panel" hidden>
+            <div class="panel-head"><h2 class="panel-title" id="form-import-name">Inferred schema</h2><span class="panel-note">review before saving</span></div>
+            <div class="panel-body" id="form-import-preview"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Past imports</h2></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>File</th><th class="num">Fields</th><th>Status</th><th>Applied to</th><th>Imported</th></tr></thead>
+                    <tbody id="form-import-list"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ WORKFLOWS AND ROLES ============ -->
     <section class="view" id="view-workflows" hidden>
         <div class="view-head">

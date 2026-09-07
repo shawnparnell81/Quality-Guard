@@ -27,6 +27,7 @@ import { reviewCharts } from "./routes/review-charts.js";
 import { di } from "./routes/di.js";
 import { logs } from "./routes/logs.js";
 import { layout } from "./routes/layout.js";
+import { formImport } from "./routes/form-import.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -130,6 +131,7 @@ app.use("/api", reviewCharts);
 app.use("/api", di);
 app.use("/api", logs);
 app.use("/api", layout);
+app.use("/api", formImport);
 app.use("/api", masterdata);
 
 app.use((request, response) => {

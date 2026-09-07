@@ -238,7 +238,7 @@ function tableProblem(field) {
    list is exactly the shape every screen in the app renders forms
    from, so a bad one here breaks every future record of this type,
    not just the request that sent it. */
-function problemWith(fields) {
+export function problemWith(fields) {
     if (!Array.isArray(fields) || fields.length === 0) {
         return "At least one field is required";
     }
@@ -338,7 +338,7 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
    forms.manage can advance; richer workflows stay a migration
    concern. key/prefix are unique per org and cannot collide with a
    built-in type. */
-function slugKey(value) {
+export function slugKey(value) {
     return String(value || "").trim().toLowerCase()
         .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
