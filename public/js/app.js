@@ -1,5 +1,5 @@
 /* ============================================================
-   QUALITYGUARD front end
+   QMS GUARDIAN front end
 
    Three jobs:
      1. Switch between the views already present in index.html.
@@ -33,6 +33,11 @@ import {
     renderVendors, renderWarehouse, wireDocuments, wireVendors, wireCalibration
 } from "./views/resources.js";
 import { wirePalette } from "./palette.js";
+import { buildSidebar, expandDeptFor } from "./nav.js";
+
+/* The sidebar is data-driven now (nav.js). Render it before anything
+   queries .nav-item. */
+buildSidebar(document.getElementById("dept-nav"));
 
 /* view name -> the function that populates it */
 const LOADERS = {
@@ -65,7 +70,6 @@ const LOADERS = {
 };
 
 const views = document.querySelectorAll(".view");
-const navItems = document.querySelectorAll(".nav-item");
 const sidebar = document.querySelector(".sidebar");
 
 /* Exported so the command palette can await a view switch finishing
@@ -83,12 +87,17 @@ export async function show(name) {
         view.hidden = (view !== target);
     });
 
-    navItems.forEach((button) => {
+    /* Re-queried every call: the sidebar is rendered by nav.js, so a
+       NodeList captured once could go stale. */
+    document.querySelectorAll(".nav-item").forEach((button) => {
         button.setAttribute(
             "aria-current",
             button.dataset.view === name ? "true" : "false"
         );
     });
+
+    /* Open the department this screen lives in (accordion in nav.js). */
+    expandDeptFor(name);
 
     /* Send focus to the new heading so keyboard and screen reader
        users land in the content rather than staying on the sidebar. */

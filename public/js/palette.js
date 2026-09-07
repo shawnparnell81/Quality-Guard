@@ -32,11 +32,14 @@ let activeIndex = -1;
 let searchToken = 0;
 
 function navItems() {
-    return [...document.querySelectorAll(".nav-item")].map((button) => ({
-        kind: "nav",
-        label: button.querySelector("span")?.textContent?.trim() || button.dataset.view,
-        view: button.dataset.view
-    }));
+    return [...document.querySelectorAll(".nav-item")]
+        .map((button) => ({
+            kind: "nav",
+            label: button.querySelector("span")?.textContent?.trim() || button.dataset.view,
+            view: button.dataset.view
+        }))
+        /* Skip disabled placeholder leaves (FMEA) - no view to jump to. */
+        .filter((item) => item.view);
 }
 
 function buildOverlay() {

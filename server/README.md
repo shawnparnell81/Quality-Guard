@@ -1,4 +1,4 @@
-# QualityGuard API
+# QMS Guardian API
 
 Node plus PostgreSQL. No ORM, no build step, no framework beyond Express.
 
