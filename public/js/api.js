@@ -259,5 +259,11 @@ export const api = {
     updateTraining: (id, formData) =>
         postForm("/training/" + encodeURIComponent(id), formData, "PATCH"),
     trainingEvidenceUrl: (id) =>
-        "/api/training/" + encodeURIComponent(id) + "/evidence"
+        "/api/training/" + encodeURIComponent(id) + "/evidence",
+
+    turtles:     ()          => get("/turtle"),
+    turtle:      (department) => get("/turtle/" + encodeURIComponent(department)),
+    saveTurtle:  (department, payload) =>
+        request("PUT", "/turtle/" + encodeURIComponent(department), payload),
+    turtlePdfUrl: (department) => "/api/turtle/" + encodeURIComponent(department) + "/pdf"
 };
