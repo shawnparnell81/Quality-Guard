@@ -33,6 +33,7 @@ import { wireReviewCharts } from "./views/review-charts.js";
 import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { renderEngDocuments } from "./views/eng-documents.js";
 import { renderFormRecord, wireFormRecord } from "./views/form-record.js";
+import { renderFormImport, wireFormImport } from "./views/form-import.js";
 import { renderPoLog, renderWoLog, renderPrLog, wireLogs } from "./views/logs.js";
 import { renderMenuLayout } from "./views/menu-layout.js";
 import { badgePlaceholders } from "./placeholders.js";
@@ -85,7 +86,8 @@ const LOADERS = {
     turtle:      renderTurtle,
     scorecards:  renderScorecards,
     forms:       renderForms,
-    "form-record": renderFormRecord
+    "form-record": renderFormRecord,
+    "form-import": renderFormImport
 };
 
 const views = document.querySelectorAll(".view");
@@ -400,6 +402,7 @@ async function start() {
     wireReviewCharts();
     wireForms();
     wireFormRecord();
+    wireFormImport();
     wireTurtle();
     wireDocuments();
     wireVendors();
