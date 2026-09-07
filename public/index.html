@@ -699,6 +699,69 @@
         </div>
     </section>
 
+    <!-- ============ PURCHASE ORDER LOG ============ -->
+    <section class="view" id="view-po-log" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Purchase Orders<span class="clause-ref">8.4.1</span></h1>
+            <p class="view-sub">A log of what has been ordered from suppliers. The full form is finessed later.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Purchase order log</h2>
+                <span class="panel-note" id="po-log-note"></span>
+                <button class="btn btn-primary no-print" type="button" id="po-log-new" data-requires="purchasing.log" style="margin-left:auto">New purchase order</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>PO</th><th>Vendor</th><th>Ordered</th><th>Need by</th><th class="num">Amount</th><th>Buyer</th><th>Status</th></tr></thead>
+                    <tbody id="po-log-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ WORK ORDER LOG ============ -->
+    <section class="view" id="view-wo-log" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Work Orders<span class="clause-ref">8.5.1</span></h1>
+            <p class="view-sub">Every work order on the books. Travellers and first article are added on the work order's own screen.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Work order log</h2>
+                <span class="panel-note" id="wo-log-note"></span>
+                <button class="btn btn-primary no-print" type="button" id="wo-log-new" data-requires="wo.log" style="margin-left:auto">New work order</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>WO</th><th>Part</th><th>Lot</th><th class="num">Qty</th><th>Cell</th><th>Ops</th><th>Status</th></tr></thead>
+                    <tbody id="wo-log-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ PURCHASE REQUEST LOG ============ -->
+    <section class="view" id="view-pr-log" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Purchase Requests<span class="clause-ref">8.4.1</span></h1>
+            <p class="view-sub">What the shop has asked to be ordered, and where each request stands.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Purchase request log</h2>
+                <span class="panel-note" id="pr-log-note"></span>
+                <button class="btn btn-primary no-print" type="button" id="pr-log-new" data-requires="purchasing.log" style="margin-left:auto">New request</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>PR</th><th>What is needed</th><th>Dept</th><th>Requested by</th><th>Needed by</th><th>PO</th><th>Status</th></tr></thead>
+                    <tbody id="pr-log-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ WAREHOUSE AND MATERIAL ============ -->
     <section class="view" id="view-warehouse" hidden>
         <div class="view-head">

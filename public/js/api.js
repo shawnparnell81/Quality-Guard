@@ -157,10 +157,23 @@ export const api = {
 
     workOrders:   (params)  => get(withQuery("/work-orders", params)),
     workOrder:    (wo)      => get("/work-orders/" + encodeURIComponent(wo)),
+    createWorkOrder: (payload) => request("POST", "/work-orders", payload),
     holdWorkOrder: (wo, payload) =>
         request("POST", "/work-orders/" + encodeURIComponent(wo) + "/hold", payload),
     releaseWorkOrder: (wo, payload) =>
         request("POST", "/work-orders/" + encodeURIComponent(wo) + "/release", payload),
+
+    purchaseOrders:      ()       => get("/purchase-orders"),
+    purchaseOrder:       (number) => get("/purchase-orders/" + encodeURIComponent(number)),
+    createPurchaseOrder: (payload) => request("POST", "/purchase-orders", payload),
+    updatePurchaseOrder: (number, payload) =>
+        request("PATCH", "/purchase-orders/" + encodeURIComponent(number), payload),
+
+    purchaseRequests:      ()       => get("/purchase-requests"),
+    purchaseRequest:       (number) => get("/purchase-requests/" + encodeURIComponent(number)),
+    createPurchaseRequest: (payload) => request("POST", "/purchase-requests", payload),
+    updatePurchaseRequest: (number, payload) =>
+        request("PATCH", "/purchase-requests/" + encodeURIComponent(number), payload),
 
     changeImpact: (number)  => get("/changes/" + encodeURIComponent(number) + "/impact"),
     signImpact:   (number, area, payload) =>

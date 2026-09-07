@@ -50,6 +50,86 @@ production.get("/work-orders", async (request, response, next) => {
     }
 });
 
+/* ---------- log a work order ----------
+   POST /api/work-orders
+   { wo_number?, qty, cell?, status?, part_number?, lot_number?,
+     current_op?, total_ops? }
+
+   The floor screens have always assumed a work order arrives from
+   somewhere else (an ERP, a router). This is the manual way in for a
+   shop with no upstream system - the same thin row, entered by hand.
+   The traveller and first article are still added on the work
+   order's own screen afterward. */
+const WO_STATUS = new Set(["planned", "running", "quality_hold", "mrb_hold", "complete"]);
+
+production.post("/work-orders", requirePermission("wo.log"), async (request, response, next) => {
+    try {
+        const body = request.body || {};
+        const qty = Number(body.qty);
+        if (!Number.isInteger(qty) || qty <= 0) {
+            return response.status(422).json({ error: "A positive whole-number qty is required" });
+        }
+        const status = WO_STATUS.has(body.status) ? body.status : "planned";
+
+        const created = await withTransaction(async (client) => {
+            let partId = null;
+            if ((body.part_number || "").trim()) {
+                const p = await client.query(
+                    "select id from parts where org_id = $1 and part_number = $2",
+                    [request.user.org_id, body.part_number.trim()]
+                );
+                partId = p.rows[0]?.id || null;
+            }
+            let lotId = null;
+            if ((body.lot_number || "").trim()) {
+                const l = await client.query(
+                    "select id from lots where org_id = $1 and lot_number = $2",
+                    [request.user.org_id, body.lot_number.trim()]
+                );
+                lotId = l.rows[0]?.id || null;
+            }
+
+            let number = (body.wo_number || "").trim();
+            if (!number) {
+                const last = await client.query(`
+                    select coalesce(
+                        max(nullif(regexp_replace(wo_number, '\\D', '', 'g'), '')::bigint), 31000
+                    ) as seq
+                      from work_orders where org_id = $1 and wo_number like 'WO-%'
+                `, [request.user.org_id]);
+                number = "WO-" + (Number(last.rows[0].seq) + 1);
+            }
+
+            const clash = await client.query(
+                "select 1 from work_orders where org_id = $1 and wo_number = $2",
+                [request.user.org_id, number]
+            );
+            if (clash.rowCount > 0) return { conflict: "A work order already has that number: " + number };
+
+            const inserted = await client.query(`
+                insert into work_orders
+                    (org_id, wo_number, part_id, lot_id, qty, current_op, total_ops, cell, status)
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                returning wo_number, qty, current_op, total_ops, cell, status
+            `, [request.user.org_id, number, partId, lotId, qty,
+                (body.current_op || "").trim() || null, (body.total_ops || "").trim() || null,
+                (body.cell || "").trim() || null, status]);
+
+            await client.query(`
+                insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                values ($1, 'work_orders', null, 'created', $2, $3)
+            `, [request.user.org_id, number, request.user.id]);
+
+            return { row: inserted.rows[0] };
+        });
+
+        if (created.conflict) return response.status(409).json({ error: created.conflict });
+        response.status(201).json(created.row);
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- one work order ----------
    GET /api/work-orders/WO-31882 */
 production.get("/work-orders/:wo", async (request, response, next) => {

@@ -35,6 +35,12 @@ export const NAV = [
         { label: "Supplier Scorecards", view: "scorecards" }
     ] },
 
+    { dept: "Customer Service", items: [
+        { label: "Purchase Orders", view: "po-log" },
+        { label: "Work Orders", view: "wo-log" },
+        { label: "Purchase Requests", view: "pr-log" }
+    ] },
+
     { dept: "Production", items: [
         { label: "Production Control", view: "production" },
         { label: "Warehouse & Material", view: "warehouse" },
