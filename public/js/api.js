@@ -156,6 +156,12 @@ export const api = {
     transition:   (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/transition", payload),
 
+    linkRecord: (number, payload) =>
+        request("POST", "/records/" + encodeURIComponent(number) + "/links", payload),
+    unlinkRecord: (number, target) =>
+        request("DELETE", "/records/" + encodeURIComponent(number)
+                + "/links/" + encodeURIComponent(target)),
+
     attachments:      (number)  => get("/records/" + encodeURIComponent(number) + "/attachments"),
     addAttachment: (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/attachments", payload),

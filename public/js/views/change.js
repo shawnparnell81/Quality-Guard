@@ -14,6 +14,7 @@ import {
     formatDate, humanize, statusKind
 } from "../dom.js";
 import { renderDocumentsPanel } from "./resources.js";
+import { recordLink } from "../record-nav.js";
 
 /* ============================================================
    8D
@@ -136,10 +137,7 @@ async function renderEightDDetail(number) {
         if (links.length > 0) {
             children.push(el("div", { class: "section-label", text: "Linked records" }));
             children.push(el("div", { class: "chip-list" },
-                links.map((link) => el("span", {
-                    class: "chip", title: link.title,
-                    text: link.number + "  " + link.link_type.replace(/_/g, " ")
-                }))
+                links.map((link) => recordLink(link))
             ));
         }
 
@@ -297,10 +295,7 @@ async function renderChangeDetail(number) {
         if (links.length > 0) {
             children.push(el("div", { class: "section-label", text: "Linked records" }));
             children.push(el("div", { class: "chip-list" },
-                links.map((link) => el("span", {
-                    class: "chip", title: link.title,
-                    text: link.number + "  " + link.link_type.replace(/_/g, " ")
-                }))
+                links.map((link) => recordLink(link))
             ));
         }
 

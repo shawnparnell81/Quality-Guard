@@ -18,6 +18,7 @@ import { renderDiDetail } from "./di.js";
 import { openEntityForm } from "../entity-form.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
+import { recordLink, looksLikeRecordNumber } from "../record-nav.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind, printElement, toast
@@ -162,6 +163,16 @@ function rpnCell(rpn) {
 
     const colour = rpn >= 150 ? "var(--crit)" : rpn >= 100 ? "var(--warn)" : null;
     return colour ? el("span", { style: "color:" + colour, text: rpn }) : String(rpn);
+}
+
+/* A detail-view <dd>. A value that is just another record's number
+   ("Work order", "Source", a receipt's NCR) becomes a link to it. */
+function fieldValueDd(field, value) {
+    const text = String(value).trim();
+    if (looksLikeRecordNumber(text)) {
+        return el("dd", {}, recordLink(text, { chip: false }));
+    }
+    return el("dd", { text: field && field.type === "date" ? formatDate(value) : text });
 }
 
 /* Severity and open-only, per type. The server already understood
@@ -656,10 +667,7 @@ export async function renderRecordDetail(type, number) {
                     ])));
                 } else {
                     if (!kv) kv = el("dl", { class: "kv" });
-                    kv.append(
-                        el("dt", { text: labelFor(field) }),
-                        el("dd", { text: field.type === "date" ? formatDate(value) : String(value) })
-                    );
+                    kv.append(el("dt", { text: labelFor(field) }), fieldValueDd(field, value));
                 }
             }
             flushKv();
@@ -668,7 +676,7 @@ export async function renderRecordDetail(type, number) {
                 const value = read(record.data);
                 if (value === undefined || value === null || value === "") continue;
                 list.append(el("dt", { text: label }));
-                list.append(el("dd", { text: String(value) }));
+                list.append(fieldValueDd(null, value));
             }
         }
 
@@ -719,15 +727,44 @@ export async function renderRecordDetail(type, number) {
             }
         }
 
+        children.push(el("div", { class: "section-label", text: "Linked records" }));
         if (links.length > 0) {
-            children.push(el("div", { class: "section-label", text: "Linked records" }));
             children.push(el("div", { class: "chip-list" },
-                links.map((link) => el("span", {
-                    class: "chip",
-                    text: link.number + "  " + link.link_type.replace(/_/g, " ")
-                }))
+                links.map((link) => el("span", { class: "linked-rec" }, [
+                    recordLink(link),
+                    el("button", {
+                        class: "linked-rec-x no-print", type: "button",
+                        title: "Unlink " + link.number, "aria-label": "Unlink " + link.number,
+                        onClick: async () => {
+                            try {
+                                await api.unlinkRecord(record.number, link.number);
+                                await renderRecordDetail(type, number);
+                            } catch (error) { toast(error.message, "error"); }
+                        }
+                    }, "×")
+                ]))
             ));
+        } else {
+            children.push(el("p", { class: "sm dim", style: "margin:0", text: "No linked records." }));
         }
+
+        /* Link another record by its number. */
+        const linkInput = el("input", { type: "text", class: "sm", placeholder: "e.g. CAPA-2026-0005" });
+        const linkKind = el("select", { class: "sm" }, [
+            "related", "caused_by", "corrects", "supersedes", "child_of"
+        ].map((k) => el("option", { value: k, text: humanize(k) })));
+        const linkBtn = el("button", { class: "btn no-print", type: "button" }, "Link");
+        linkBtn.addEventListener("click", async () => {
+            const to = linkInput.value.trim();
+            if (!to) { toast("Enter a record number", "error"); return; }
+            try {
+                await api.linkRecord(record.number, { to, link_type: linkKind.value });
+                await renderRecordDetail(type, number);
+            } catch (error) { toast(error.message, "error"); }
+        });
+        children.push(el("div", {
+            class: "row no-print", style: "gap:6px;margin:6px 0 4px;flex-wrap:wrap"
+        }, [linkInput, linkKind, linkBtn]));
 
         /* An uploaded file is served straight back (openFileWindow); a
            link-only row points at a network share and just carries the
