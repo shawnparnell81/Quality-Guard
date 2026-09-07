@@ -193,6 +193,16 @@ export const api = {
     reviews:       ()       => get("/reviews"),
     reviewInputs:  (ref)    => get("/reviews/" + encodeURIComponent(ref) + "/inputs"),
 
+    reviewCharts:  (ref)    => get("/reviews/" + encodeURIComponent(ref) + "/charts"),
+    reviewChartSeed: (ref, kind) =>
+        get("/reviews/" + encodeURIComponent(ref) + "/charts/seed/" + encodeURIComponent(kind)),
+    createReviewChart: (ref, payload) =>
+        request("POST", "/reviews/" + encodeURIComponent(ref) + "/charts", payload),
+    updateReviewChart: (ref, id, payload) =>
+        request("PUT", "/reviews/" + encodeURIComponent(ref) + "/charts/" + encodeURIComponent(id), payload),
+    deleteReviewChart: (ref, id) =>
+        request("DELETE", "/reviews/" + encodeURIComponent(ref) + "/charts/" + encodeURIComponent(id)),
+
     onboarding:    ()       => get("/onboarding"),
     onboardingStages: (vendor) => get("/onboarding/" + encodeURIComponent(vendor)),
     onboardingPacket: (vendor) => get("/onboarding/" + encodeURIComponent(vendor) + "/packet"),

@@ -29,6 +29,7 @@ import { renderForms, wireForms } from "./views/formbuilder.js";
 import { wireRecordEditor } from "./forms.js";
 import { renderFloorReport } from "./views/floorreport.js";
 import { renderTurtle, wireTurtle } from "./views/turtle.js";
+import { wireReviewCharts } from "./views/review-charts.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
     renderCalibration, renderTraining, renderDocuments,
@@ -366,6 +367,7 @@ async function start() {
     wireChangeScreens();
     wireOperations();
     wireEvaluate();
+    wireReviewCharts();
     wireForms();
     wireTurtle();
     wireDocuments();
