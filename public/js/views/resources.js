@@ -456,7 +456,20 @@ export async function renderDocuments() {
             { className: "num", render: (row) => row.revision_count },
             { render: (row) => {
                 const [label, kind] = DOC_STATUS[row.status] || ["Unknown", "hold"];
-                return pill(label, kind);
+                const bits = [pill(label, kind)];
+                if (!row.current_has_file) {
+                    bits.push(el("span", { class: "sm dim", text: "· No file attached" }));
+                    const up = el("button", {
+                        class: "btn btn-xs no-print", type: "button",
+                        "data-requires": "document.create", text: "Upload one"
+                    });
+                    up.addEventListener("click", (event) => {
+                        event.stopPropagation();
+                        openUploadRevisionDialog(row.doc_number, renderDocuments);
+                    });
+                    bits.push(up);
+                }
+                return el("span", { class: "row", style: "gap:6px; align-items:center; flex-wrap:wrap" }, bits);
             } }
         ], "No documents");
 
@@ -466,6 +479,7 @@ export async function renderDocuments() {
             tr.dataset.doc = row.doc_number;
             tr.classList.add("row-clickable");
         });
+        applyPermissions(tbody);
 
         const target = documents.some((d) => d.doc_number === selectedDocument)
             ? selectedDocument
@@ -547,8 +561,10 @@ async function renderDocumentDetail(docNumber) {
         ], "No revision history recorded");
 
         applyPermissions(revisionsBody);
+        return revisions;
     } catch (error) {
         errorRow(revisionsBody, 6, error);
+        return null;
     }
 }
 
@@ -744,11 +760,27 @@ function openUploadRevisionDialog(docNumber, onSaved) {
 export function wireDocuments() {
     const tbody = document.getElementById("documents-table");
     if (tbody) {
-        tbody.addEventListener("click", (event) => {
+        tbody.addEventListener("click", async (event) => {
+            /* An in-row button ("Upload one") handles its own click. */
+            if (event.target.closest("button")) return;
+
             const row = event.target.closest("tr[data-doc]");
             if (!row) return;
             markDocument(tbody, row.dataset.doc);
-            renderDocumentDetail(row.dataset.doc);
+
+            const revisions = await renderDocumentDetail(row.dataset.doc);
+
+            /* Clicking a released document with a file on its current
+               revision opens that file straight away - the revision
+               list is still there behind it for the history. */
+            const doc = documentsCache.find((d) => d.doc_number === row.dataset.doc);
+            if (doc && doc.status === "released" && Array.isArray(revisions)) {
+                const current = revisions.find((r) => r.revision === doc.current_revision);
+                if (current && current.has_file) {
+                    openDocumentWindow(doc.doc_number, current.revision,
+                        doc.doc_number + " rev " + current.revision);
+                }
+            }
         });
     }
 
