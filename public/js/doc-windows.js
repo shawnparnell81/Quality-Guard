@@ -107,19 +107,16 @@ function canRenderInline(mimeType) {
         || mimeType === "text/csv";
 }
 
-/* docNumber + a real revision letter - never the "current" alias the
-   download URL itself accepts, since resolving which letter that is
-   belongs to whoever already has the document row (doc.current_
-   revision), not guessed at again here from the revision list alone. */
-export async function openDocumentWindow(docNumber, revision, title) {
+/* Builds an empty draggable window and registers it. Returns its
+   body element to fill, or null if the host is missing or a window
+   for this key is already open (that one is raised instead). */
+function spawnWindow(key, title) {
     const container = host();
-    if (!container) return;
-
-    const key = docNumber + "@" + revision;
+    if (!container) return null;
 
     if (openWindows.has(key)) {
         bringToFront(openWindows.get(key));
-        return;
+        return null;
     }
 
     cascade = (cascade + 1) % 8;
@@ -131,7 +128,7 @@ export async function openDocumentWindow(docNumber, revision, title) {
     });
 
     const head = el("div", { class: "doc-window-head" }, [
-        el("span", { class: "doc-window-title", text: title || (docNumber + " - " + revision) }),
+        el("span", { class: "doc-window-title", text: title }),
         closeButton
     ]);
 
@@ -157,6 +154,31 @@ export async function openDocumentWindow(docNumber, revision, title) {
         openWindows.delete(key);
     });
 
+    return body;
+}
+
+/* Puts a file in a window body: inline in an <iframe> when the browser
+   can show it, a download button otherwise. */
+function renderFileBody(body, url, mimeType, filename) {
+    if (canRenderInline(mimeType)) {
+        body.replaceChildren(el("iframe", { src: url, title: filename || "document" }));
+    } else {
+        body.replaceChildren(el("div", { class: "doc-window-placeholder" }, [
+            el("p", { class: "sm", style: "font-weight:600", text: filename || "file" }),
+            el("p", { class: "sm dim", text: "This file type opens in its own application." }),
+            el("a", { class: "btn btn-primary", href: url, text: "Open " + (filename || "file") })
+        ]));
+    }
+}
+
+/* docNumber + a real revision letter - never the "current" alias the
+   download URL itself accepts, since resolving which letter that is
+   belongs to whoever already has the document row (doc.current_
+   revision), not guessed at again here from the revision list alone. */
+export async function openDocumentWindow(docNumber, revision, title) {
+    const body = spawnWindow(docNumber + "@" + revision, title || (docNumber + " - " + revision));
+    if (!body) return;
+
     try {
         const { revisions } = await api.revisions(docNumber);
         const info = revisions.find((r) => r.revision === revision);
@@ -166,18 +188,17 @@ export async function openDocumentWindow(docNumber, revision, title) {
             return;
         }
 
-        const url = api.documentDownloadUrl(docNumber, revision);
-
-        if (canRenderInline(info.mime_type)) {
-            body.replaceChildren(el("iframe", { src: url, title: info.original_filename }));
-        } else {
-            body.replaceChildren(el("div", { class: "doc-window-placeholder" }, [
-                el("p", { class: "sm", style: "font-weight:600", text: info.original_filename }),
-                el("p", { class: "sm dim", text: "This file type opens in its own application." }),
-                el("a", { class: "btn btn-primary", href: url, text: "Open " + info.original_filename })
-            ]));
-        }
+        renderFileBody(body, api.documentDownloadUrl(docNumber, revision), info.mime_type, info.original_filename);
     } catch (error) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
     }
+}
+
+/* Same window, given a ready URL instead of a controlled-document
+   number - for files that live outside Document Control (an
+   onboarding-stage upload, say). */
+export function openFileWindow(url, filename, mimeType) {
+    const body = spawnWindow("file:" + url, filename || "File");
+    if (!body) return;
+    renderFileBody(body, url, mimeType, filename);
 }

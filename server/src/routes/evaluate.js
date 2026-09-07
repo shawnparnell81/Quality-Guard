@@ -9,12 +9,24 @@
    ============================================================ */
 
 import { Router } from "express";
+import multer from "multer";
 import PDFDocument from "pdfkit";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { INK, INK_2, drawLetterhead, drawFooter } from "../pdf-branding.js";
+import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 
 export const evaluate = Router();
+
+/* Same 25 MB in-memory handler masterdata.js uses for its uploads. */
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 }
+});
+
+const ONBOARDING_DOC_EXT = [
+    ".pdf", ".xlsx", ".xls", ".docx", ".doc", ".csv", ".png", ".jpg", ".jpeg"
+];
 
 /* ============================================================
    Quality objectives, clause 6.2
@@ -486,6 +498,224 @@ evaluate.post("/onboarding/:vendor/stages/:stageKey/complete",
             if (result.conflict) return response.status(409).json({ error: result.conflict });
 
             response.json(result);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* ============================================================
+   The onboarding packet - a vendor's whole file: every stage, with
+   the documents that back it (uploaded here, or linked to a
+   controlled document that already exists).
+   ============================================================ */
+
+evaluate.get("/onboarding/:vendor/packet", requirePermission("vendor.read"),
+    async (request, response, next) => {
+        try {
+            const vendor = await query(
+                "select id, name, scope, status, grade from vendors where org_id = $1 and name = $2",
+                [request.user.org_id, request.params.vendor]
+            );
+            if (vendor.rowCount === 0) {
+                return response.status(404).json({ error: "No such vendor" });
+            }
+
+            const stages = await query(`
+                select s.id, s.stage_key, s.name, s.detail, s.status, s.position,
+                       s.completed_at, u.full_name as completed_by
+                  from vendor_onboarding_stages s
+             left join users u on u.id = s.completed_by
+                 where s.vendor_id = $1
+                 order by s.position
+            `, [vendor.rows[0].id]);
+
+            const docs = await query(`
+                select od.id, od.stage_id, od.kind, od.note, od.uploaded_at,
+                       od.original_filename, od.mime_type, od.size_bytes,
+                       up.full_name as uploaded_by,
+                       d.doc_number, d.title as doc_title, d.current_revision
+                  from vendor_onboarding_documents od
+                  join vendor_onboarding_stages s on s.id = od.stage_id
+             left join users up      on up.id = od.uploaded_by
+             left join documents d   on d.id = od.document_id
+                 where s.vendor_id = $1
+                 order by od.uploaded_at
+            `, [vendor.rows[0].id]);
+
+            const byStage = new Map();
+            for (const row of docs.rows) {
+                if (!byStage.has(row.stage_id)) byStage.set(row.stage_id, []);
+                byStage.get(row.stage_id).push(row);
+            }
+
+            response.json({
+                vendor: {
+                    name: vendor.rows[0].name,
+                    scope: vendor.rows[0].scope,
+                    status: vendor.rows[0].status,
+                    grade: vendor.rows[0].grade
+                },
+                can_advance: request.can("vendor.approve"),
+                stages: stages.rows.map((stage) => ({
+                    ...stage,
+                    documents: (byStage.get(stage.id) || []).map((doc) => ({
+                        id: doc.id,
+                        kind: doc.kind,
+                        note: doc.note,
+                        uploaded_by: doc.uploaded_by,
+                        uploaded_at: doc.uploaded_at,
+                        original_filename: doc.original_filename,
+                        mime_type: doc.mime_type,
+                        size_bytes: doc.size_bytes,
+                        doc_number: doc.doc_number,
+                        doc_title: doc.doc_title,
+                        current_revision: doc.current_revision
+                    }))
+                }))
+            });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* Attach a document to a stage. multipart: a `file` for an upload, or
+   a `document` (doc_number) to link a controlled document. Optional
+   `note` either way. */
+evaluate.post("/onboarding/:vendor/stages/:stageKey/documents",
+    requirePermission("vendor.approve"), upload.single("file"),
+    async (request, response, next) => {
+        try {
+            const note = (request.body?.note || "").trim() || null;
+            const docNumber = (request.body?.document || "").trim();
+
+            if (!request.file && !docNumber) {
+                return response.status(400).json({ error: "Attach a file or name a controlled document" });
+            }
+
+            const stage = await query(`
+                select s.id from vendor_onboarding_stages s
+                  join vendors v on v.id = s.vendor_id
+                 where v.org_id = $1 and v.name = $2 and s.stage_key = $3
+            `, [request.user.org_id, request.params.vendor, request.params.stageKey]);
+            if (stage.rowCount === 0) {
+                return response.status(404).json({ error: "No such vendor or stage" });
+            }
+
+            let linkedDocId = null;
+            if (!request.file) {
+                const doc = await query(
+                    "select id from documents where org_id = $1 and doc_number = $2",
+                    [request.user.org_id, docNumber]
+                );
+                if (doc.rowCount === 0) {
+                    return response.status(404).json({ error: "No controlled document " + docNumber });
+                }
+                linkedDocId = doc.rows[0].id;
+            }
+
+            let storagePath = null;
+            let filename = null;
+            let mime = null;
+            let size = null;
+            if (request.file) {
+                filename = request.file.originalname;
+                mime = request.file.mimetype;
+                size = request.file.size;
+                storagePath = await saveUploadedFile(
+                    "onboarding", ONBOARDING_DOC_EXT, request.file.originalname, request.file.buffer
+                );
+            }
+
+            const inserted = await withTransaction(async (client) => {
+                const row = await client.query(`
+                    insert into vendor_onboarding_documents
+                        (org_id, stage_id, kind, original_filename, mime_type, size_bytes,
+                         storage_path, document_id, note, uploaded_by)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    returning id, kind
+                `, [request.user.org_id, stage.rows[0].id,
+                    request.file ? "upload" : "link",
+                    filename, mime, size, storagePath, linkedDocId, note, request.user.id]);
+
+                await client.query(`
+                    insert into audit_log
+                        (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'vendor_onboarding_documents', $2, 'attached', $3, $4)
+                `, [request.user.org_id, row.rows[0].id,
+                    request.file ? filename : ("link:" + docNumber), request.user.id]);
+
+                return row.rows[0];
+            });
+
+            response.status(201).json(inserted);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+evaluate.delete("/onboarding/:vendor/stages/:stageKey/documents/:docId",
+    requirePermission("vendor.approve"), async (request, response, next) => {
+        try {
+            const removed = await query(`
+                delete from vendor_onboarding_documents od
+                 using vendor_onboarding_stages s, vendors v
+                 where od.stage_id = s.id and s.vendor_id = v.id
+                   and v.org_id = $1 and v.name = $2 and s.stage_key = $3 and od.id = $4
+                returning od.id
+            `, [request.user.org_id, request.params.vendor, request.params.stageKey, request.params.docId]);
+
+            if (removed.rowCount === 0) {
+                return response.status(404).json({ error: "No such document on that stage" });
+            }
+
+            await query(`
+                insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                values ($1, 'vendor_onboarding_documents', $2, 'removed', 'removed', $3)
+            `, [request.user.org_id, request.params.docId, request.user.id]);
+
+            response.json({ removed: request.params.docId });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+evaluate.get("/onboarding/:vendor/stages/:stageKey/documents/:docId/download",
+    requirePermission("vendor.read"), async (request, response, next) => {
+        try {
+            const found = await query(`
+                select od.kind, od.storage_path, od.original_filename, od.mime_type,
+                       d.doc_number, d.current_revision
+                  from vendor_onboarding_documents od
+                  join vendor_onboarding_stages s on s.id = od.stage_id
+                  join vendors v on v.id = s.vendor_id
+             left join documents d on d.id = od.document_id
+                 where v.org_id = $1 and v.name = $2 and s.stage_key = $3 and od.id = $4
+            `, [request.user.org_id, request.params.vendor, request.params.stageKey, request.params.docId]);
+
+            if (found.rowCount === 0) {
+                return response.status(404).json({ error: "No such document" });
+            }
+            const doc = found.rows[0];
+
+            if (doc.kind === "link") {
+                if (!doc.doc_number) return response.status(404).json({ error: "The linked document is gone" });
+                return response.redirect(
+                    "/api/documents/" + encodeURIComponent(doc.doc_number)
+                    + "/revisions/current/download"
+                );
+            }
+
+            if (!doc.storage_path) return response.status(404).json({ error: "No file on that document" });
+            const buffer = await readUploadedFile(doc.storage_path);
+            const inline = (doc.mime_type || "").startsWith("application/pdf")
+                || (doc.mime_type || "").startsWith("image/");
+
+            response.setHeader("Content-Type", doc.mime_type || "application/octet-stream");
+            response.setHeader(
+                "Content-Disposition",
+                (inline ? "inline" : "attachment") + "; filename=\"" + (doc.original_filename || "document") + "\""
+            );
+            response.send(buffer);
         } catch (error) {
             next(error);
         }

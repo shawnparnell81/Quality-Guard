@@ -8,11 +8,13 @@
    ============================================================ */
 
 import { api } from "../api.js";
-import { can } from "../session.js";
+import { can, applyPermissions } from "../session.js";
 import { confirmStep } from "../forms.js";
+import { openEntityForm } from "../entity-form.js";
+import { openDocumentWindow, openFileWindow } from "../doc-windows.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize
+    formatDate, humanize, toast
 } from "../dom.js";
 
 /* ============================================================
@@ -140,8 +142,6 @@ async function renderDrawing(number) {
    Vendor onboarding, clause 8.4.1
    ============================================================ */
 
-let selectedCandidate = null;
-
 export async function renderOnboarding() {
     const tbody = document.getElementById("candidate-table");
     loadingRow(tbody, 4);
@@ -163,78 +163,169 @@ export async function renderOnboarding() {
             tr.dataset.vendor = candidates[index].vendor;
             tr.classList.add("row-clickable");
         });
-
-        const target = candidates.some((c) => c.vendor === selectedCandidate)
-            ? selectedCandidate
-            : (candidates[0] && candidates[0].vendor);
-
-        if (target) {
-            mark(tbody, "vendor", target);
-            await renderCandidate(target);
-        }
     } catch (error) {
         errorRow(tbody, 4, error);
     }
 }
 
-async function renderCandidate(vendor) {
-    selectedCandidate = vendor;
+/* ---------- the packet page ---------- */
 
-    const heading = document.getElementById("candidate-name");
-    const pipe = document.getElementById("onboarding-pipe");
+let packetVendor = null;
 
-    if (pipe) pipe.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
+function openOnboardingPacket(vendor) {
+    packetVendor = vendor;
+    document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "onboarding-packet" } }));
+}
+
+const PACKET_STATUS = {
+    complete: ["Complete", "done"],
+    in_progress: ["In progress", "prog"],
+    pending: ["Not started", "hold"],
+    skipped: ["Skipped", "hold"]
+};
+
+function fileLabel(doc) {
+    if (doc.kind === "link") {
+        return doc.doc_number
+            ? doc.doc_number + " rev " + (doc.current_revision || "-") + " - " + (doc.doc_title || "")
+            : "Linked document (removed)";
+    }
+    return doc.original_filename || "file";
+}
+
+function openPacketFile(vendor, stageKey, doc) {
+    if (doc.kind === "link" && doc.doc_number) {
+        openDocumentWindow(doc.doc_number, doc.current_revision, doc.doc_number);
+    } else {
+        openFileWindow(api.onboardingDocumentUrl(vendor, stageKey, doc.id),
+            doc.original_filename || "file", doc.mime_type);
+    }
+}
+
+async function openAddDocumentForm(vendor, stage) {
+    let documents = [];
+    try { ({ documents } = await api.documents()); } catch { documents = []; }
+
+    openEntityForm({
+        title: "Add a document - " + stage.name,
+        fields: [
+            { key: "source", label: "Where from", type: "select", required: true,
+              options: ["Upload a file", "Link a controlled document"] },
+            { key: "file", label: "File", type: "file",
+              accept: ".pdf,.xlsx,.xls,.docx,.doc,.csv,.png,.jpg,.jpeg",
+              hint: "For \"Upload a file\"." },
+            { key: "document", label: "Controlled document", type: "select",
+              options: documents.map((d) => d.doc_number),
+              hint: "For \"Link a controlled document\"." },
+            { key: "note", label: "Note", type: "memo" }
+        ],
+        submitLabel: "Add",
+        successMessage: "Document added to " + stage.name,
+        onSubmit: ({ values, files }) => {
+            const form = new FormData();
+            if (values.note) form.append("note", values.note);
+            if (values.source === "Link a controlled document") {
+                if (!values.document) throw new Error("Choose a controlled document to link");
+                form.append("document", values.document);
+            } else {
+                if (!files.file) throw new Error("Choose a file to upload");
+                form.append("file", files.file);
+            }
+            return api.addOnboardingDocument(vendor, stage.stage_key, form);
+        },
+        onSaved: () => renderOnboardingPacket()
+    });
+}
+
+export async function renderOnboardingPacket() {
+    const title = document.getElementById("packet-title");
+    const sub = document.getElementById("packet-sub");
+    const body = document.getElementById("packet-body");
+    if (!body) return;
+
+    if (!packetVendor) {
+        body.replaceChildren(el("p", { class: "sm dim", text: "No vendor selected." }));
+        return;
+    }
+
+    if (title) title.textContent = "Onboarding packet - " + packetVendor;
+    body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
-        const { stages, can_advance } = await api.onboardingStages(vendor);
+        const packet = await api.onboardingPacket(packetVendor);
+        const { vendor, stages, can_advance } = packet;
 
-        if (heading) heading.textContent = vendor;
+        if (sub) {
+            sub.textContent = vendor.scope
+                + (vendor.grade ? " - grade " + vendor.grade : "");
+        }
 
-        pipe.replaceChildren(...stages.map((stage) => {
-            const done = stage.status === "complete";
-            const active = stage.status === "in_progress";
+        const header = el("div", { class: "panel" }, el("div", { class: "panel-body" }, [
+            el("dl", { class: "kv" }, [
+                el("dt", { text: "Vendor" }), el("dd", { text: vendor.name }),
+                el("dt", { text: "Scope" }), el("dd", { text: vendor.scope || "-" }),
+                el("dt", { text: "Status" }), el("dd", {}, pill(
+                    vendor.status === "approved" ? "Approved" : humanize(vendor.status),
+                    vendor.status === "approved" ? "done" : "prog"))
+            ])
+        ]));
 
-            const right = done
-                ? pill(formatDate(stage.completed_at), "done")
-                : active ? pill("In progress", "prog") : pill("-", "hold");
+        const stageCards = stages.map((stage) => {
+            const [label, kind] = PACKET_STATUS[stage.status] || ["Unknown", "hold"];
 
-            const node = el("div", {
-                class: "pipe-step" + (done ? " done" : active ? " active" : "")
-            }, [
-                el("span", { class: "pipe-dot" }),
-                el("div", {}, [
-                    el("div", { class: "pipe-name", text: stage.name }),
-                    el("div", { class: "pipe-meta", text: stage.detail
-                        || (done && stage.completed_by ? "Signed by " + stage.completed_by : "Not started") })
-                ]),
-                right
+            const docList = stage.documents.length === 0
+                ? el("p", { class: "sm dim", text: "No documents on this stage." })
+                : el("ul", { class: "packet-docs" }, stage.documents.map((doc) => {
+                    const open = el("button", {
+                        class: "btn btn-xs", type: "button",
+                        dataset: { packetOpen: doc.id, packetStage: stage.stage_key }
+                    }, "Open");
+                    const remove = el("button", {
+                        class: "btn btn-xs", type: "button",
+                        dataset: { requires: "vendor.approve", packetRemove: doc.id, packetStage: stage.stage_key }
+                    }, "Remove");
+                    return el("li", {}, [
+                        el("span", { class: "packet-doc-kind", text: doc.kind === "link" ? "LINK" : "FILE" }),
+                        el("span", { class: "sm", text: fileLabel(doc) }),
+                        doc.note ? el("span", { class: "sm dim", text: " - " + doc.note }) : null,
+                        el("span", { class: "row-actions", style: "margin-left:auto" }, [open, remove])
+                    ]);
+                }));
+
+            const actions = el("div", { class: "row-actions", style: "margin-top:10px" }, [
+                el("button", {
+                    class: "btn btn-xs", type: "button",
+                    dataset: { requires: "vendor.approve", packetAdd: stage.stage_key }
+                }, "Add document")
             ]);
 
-            if (!done && can_advance) {
-                const button = el("button", { class: "btn", type: "button" }, "Complete");
-                button.addEventListener("click", () => {
-                    confirmStep({
-                        title: stage.name,
-                        body: "Stages run in order. Completing the last one puts the vendor "
-                            + "on the approved list, which is the only way onto it.",
-                        confirmLabel: "Mark complete",
-                        onConfirm: async (reason) => {
-                            await api.completeOnboardingStage(vendor, stage.stage_key, { reason });
-                            await renderOnboarding();
-                        }
-                    });
-                });
-                node.replaceChild(button, node.lastChild);
+            if (stage.status !== "complete" && can_advance) {
+                actions.append(el("button", {
+                    class: "btn btn-xs btn-primary", type: "button",
+                    dataset: { packetComplete: stage.stage_key }
+                }, "Complete stage"));
             }
 
-            return node;
-        }));
+            return el("div", { class: "panel packet-stage" }, el("div", { class: "panel-body" }, [
+                el("div", { class: "packet-stage-head" }, [
+                    el("h3", { class: "packet-stage-name", text: stage.name }),
+                    pill(label, kind),
+                    stage.completed_at
+                        ? el("span", { class: "sm dim", text: "Signed "
+                            + formatDate(stage.completed_at)
+                            + (stage.completed_by ? " by " + stage.completed_by : "") })
+                        : null
+                ]),
+                stage.detail ? el("p", { class: "sm dim", style: "margin:6px 0", text: stage.detail }) : null,
+                docList,
+                actions
+            ]));
+        });
+
+        body.replaceChildren(header, ...stageCards);
+        applyPermissions(body);
     } catch (error) {
-        if (pipe) {
-            pipe.replaceChildren(
-                el("p", { class: "sm", style: "color:var(--crit)", text: error.message })
-            );
-        }
+        body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
     }
 }
 
@@ -398,7 +489,7 @@ function mark(tbody, key, value) {
 export function wireEvaluate() {
     const pairs = [
         ["drawing-table", "drawing", renderDrawing],
-        ["candidate-table", "vendor", renderCandidate],
+        ["candidate-table", "vendor", openOnboardingPacket],
         ["review-table", "review", renderReviewDetail]
     ];
 
@@ -411,6 +502,66 @@ export function wireEvaluate() {
             if (!row) return;
             mark(tbody, key, row.dataset[key]);
             handler(row.dataset[key]);
+        });
+    }
+
+    /* ---------- onboarding packet page ---------- */
+    const packetBack = document.getElementById("packet-back");
+    if (packetBack) {
+        packetBack.addEventListener("click", () => {
+            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "onboarding" } }));
+        });
+    }
+
+    const packetBody = document.getElementById("packet-body");
+    if (packetBody) {
+        packetBody.addEventListener("click", async (event) => {
+            const addBtn = event.target.closest("button[data-packet-add]");
+            if (addBtn && !addBtn.disabled) {
+                const packet = await api.onboardingPacket(packetVendor).catch(() => null);
+                const stage = packet && packet.stages.find((s) => s.stage_key === addBtn.dataset.packetAdd);
+                if (stage) openAddDocumentForm(packetVendor, stage);
+                return;
+            }
+
+            const openBtn = event.target.closest("button[data-packet-open]");
+            if (openBtn) {
+                const packet = await api.onboardingPacket(packetVendor).catch(() => null);
+                if (!packet) return;
+                const stageKey = openBtn.dataset.packetStage;
+                const stage = packet.stages.find((s) => s.stage_key === stageKey);
+                const doc = stage && stage.documents.find((d) => d.id === openBtn.dataset.packetOpen);
+                if (doc) openPacketFile(packetVendor, stageKey, doc);
+                return;
+            }
+
+            const removeBtn = event.target.closest("button[data-packet-remove]");
+            if (removeBtn && !removeBtn.disabled) {
+                confirmStep({
+                    title: "Remove document",
+                    body: "This takes the document off the stage. The file itself is not affected if it also lives in Document Control.",
+                    confirmLabel: "Remove",
+                    onConfirm: async () => {
+                        await api.deleteOnboardingDocument(packetVendor, removeBtn.dataset.packetStage, removeBtn.dataset.packetRemove);
+                        toast("Document removed");
+                        await renderOnboardingPacket();
+                    }
+                });
+                return;
+            }
+
+            const completeBtn = event.target.closest("button[data-packet-complete]");
+            if (completeBtn && !completeBtn.disabled) {
+                confirmStep({
+                    title: "Complete stage",
+                    body: "Stages run in order. Completing the last one puts the vendor on the approved list, which is the only way onto it.",
+                    confirmLabel: "Mark complete",
+                    onConfirm: async (reason) => {
+                        await api.completeOnboardingStage(packetVendor, completeBtn.dataset.packetComplete, { reason });
+                        await renderOnboardingPacket();
+                    }
+                });
+            }
         });
     }
 
