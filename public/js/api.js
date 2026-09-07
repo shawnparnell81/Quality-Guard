@@ -146,6 +146,7 @@ export const api = {
     recordForm:   (typeKey) => get("/record-types/" + encodeURIComponent(typeKey) + "/form"),
     updateRecordForm: (typeKey, fields) =>
         request("PUT", "/record-types/" + encodeURIComponent(typeKey) + "/form", { fields }),
+    createRecordType: (payload) => request("POST", "/record-types", payload),
     records:      (params)  => get(withQuery("/records", params)),
     searchRecords: (q)      => get(withQuery("/records/search", { q })),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),

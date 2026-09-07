@@ -1686,6 +1686,7 @@ th.col-you { color: var(--brand); }
     border: 1px solid var(--hairline); border-radius: 5px;
     background: var(--surface); color: var(--ink);
 }
+.field-row-main input.field-section { flex: 0 1 130px; min-width: 90px; }
 .field-row-main select {
     font: inherit; font-size: 13px; padding: 7px 9px;
     border: 1px solid var(--hairline); border-radius: 5px;
@@ -1701,6 +1702,12 @@ th.col-you { color: var(--brand); }
     border: 1px solid var(--hairline); border-radius: 5px;
     background: var(--surface); color: var(--ink);
 }
+
+/* Table-field column editor inside .field-row-extra. */
+.table-col-editor { display: flex; flex-direction: column; gap: 6px; }
+.table-col-list { display: flex; flex-direction: column; gap: 6px; }
+.table-col-row { display: grid; grid-template-columns: 1fr 120px 1fr auto; gap: 6px; }
+.table-col-row .btn { padding: 2px 9px; font-size: 12px; }
 
 .req { color: var(--crit); }
 

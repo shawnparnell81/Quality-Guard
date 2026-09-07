@@ -83,6 +83,7 @@ export const NAV = [
     { dept: "Administration", items: [
         { label: "People & Access", view: "people" },
         { label: "Form Builder", view: "forms" },
+        { label: "Custom Forms", view: "form-record" },
         { label: "Roles & Permissions", view: "workflows" },
         { label: "Menu Layout", view: "menu-layout", requires: "layout.manage" }
     ] }

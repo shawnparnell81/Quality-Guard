@@ -204,8 +204,34 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
 });
 
 const FIELD_TYPES = new Set([
-    "text", "memo", "number", "date", "select", "link", "file", "signature", "user"
+    "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table"
 ]);
+
+/* A table field's columns can only be scalars - a repeating grid of
+   grids is not something any real QMS form needs and not something
+   the renderer supports. */
+const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select"]);
+
+function tableProblem(field) {
+    if (!Array.isArray(field.columns) || field.columns.length === 0) {
+        return "\"" + field.label + "\" needs at least one column";
+    }
+    const seen = new Set();
+    for (const col of field.columns) {
+        if (!col || typeof col !== "object") return "\"" + field.label + "\" has a bad column";
+        if (!col.key || typeof col.key !== "string") return "\"" + field.label + "\" has a column with no key";
+        if (!col.label || typeof col.label !== "string") return "\"" + field.label + "\" has a column with no label";
+        if (!TABLE_COLUMN_TYPES.has(col.type)) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" has an unusable type";
+        }
+        if (seen.has(col.key)) return "\"" + field.label + "\" has two columns keyed \"" + col.key + "\"";
+        seen.add(col.key);
+        if (col.type === "select" && (!Array.isArray(col.options) || col.options.length === 0)) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" needs options";
+        }
+    }
+    return null;
+}
 
 /* Never trust the client's own validation. The in-app editor already
    checks all of this before it ever sends a request, but the field
@@ -236,6 +262,10 @@ function problemWith(fields) {
         }
         if (field.type === "link" && !LINK_SOURCES[field.target]) {
             return "\"" + field.label + "\" needs a valid link target";
+        }
+        if (field.type === "table") {
+            const bad = tableProblem(field);
+            if (bad) return bad;
         }
     }
 
@@ -293,6 +323,87 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
             });
 
             response.json({ key: request.params.key, version, field_count: fields.length });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* POST /api/record-types
+   { key?, name, prefix, clause?, fields: [...] }
+
+   A brand-new form type, created from the app rather than a
+   migration - the target for the Excel importer and for "add a
+   Control Plan form" without a developer. It gets a deliberately
+   plain two-state workflow (Open -> Closed) that anyone with
+   forms.manage can advance; richer workflows stay a migration
+   concern. key/prefix are unique per org and cannot collide with a
+   built-in type. */
+function slugKey(value) {
+    return String(value || "").trim().toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+masterdata.post("/record-types", requirePermission("forms.manage"),
+    async (request, response, next) => {
+        try {
+            const body = request.body || {};
+            const name = (body.name || "").trim();
+            const key = slugKey(body.key || name);
+            const prefix = (body.prefix || "").trim().toUpperCase();
+            const clause = (body.clause || "").trim() || null;
+
+            if (!name) return response.status(422).json({ error: "A name is required" });
+            if (!key) return response.status(422).json({ error: "A key could not be derived from the name" });
+            if (!/^[A-Z][A-Z0-9-]{0,11}$/.test(prefix)) {
+                return response.status(422).json({
+                    error: "prefix must be 1-12 chars, uppercase letters/digits/hyphen, starting with a letter"
+                });
+            }
+
+            const fields = body.fields;
+            const bad = problemWith(fields);
+            if (bad) return response.status(422).json({ error: bad });
+
+            const created = await withTransaction(async (client) => {
+                const clash = await client.query(
+                    "select key from record_types where org_id = $1 and (key = $2 or prefix = $3)",
+                    [request.user.org_id, key, prefix]
+                );
+                if (clash.rowCount > 0) {
+                    return { conflict: "A record type already uses that key or prefix" };
+                }
+
+                const typeRow = await client.query(`
+                    insert into record_types (org_id, key, name, prefix, clause)
+                    values ($1, $2, $3, $4, $5) returning id
+                `, [request.user.org_id, key, name, prefix, clause]);
+                const recordTypeId = typeRow.rows[0].id;
+
+                await client.query(`
+                    insert into workflow_states (record_type_id, key, name, position, is_terminal)
+                    values ($1, 'open', 'Open', 1, false), ($1, 'closed', 'Closed', 2, true)
+                `, [recordTypeId]);
+
+                await client.query(`
+                    insert into workflow_transitions (record_type_id, from_state, to_state, required_permission)
+                    values ($1, 'open', 'closed', 'forms.manage')
+                `, [recordTypeId]);
+
+                await client.query(`
+                    insert into form_versions (record_type_id, version, schema, published_at, published_by)
+                    values ($1, 1, $2, now(), $3)
+                `, [recordTypeId, JSON.stringify({ fields, rules: [] }), request.user.id]);
+
+                await client.query(`
+                    insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'record_types', $2, 'created', $3, $4)
+                `, [request.user.org_id, recordTypeId, key + " (" + prefix + ")", request.user.id]);
+
+                return { key, name, prefix };
+            });
+
+            if (created.conflict) return response.status(409).json({ error: created.conflict });
+            response.status(201).json(created);
         } catch (error) {
             next(error);
         }

@@ -142,6 +142,80 @@ export function buildField(field, options, currentValue) {
             }));
             return { wrapper, input, field };
 
+        case "table": {
+            /* A repeating grid: one field, an array of row objects. The
+               columns come from the schema; each cell is a small input
+               typed by its column. */
+            const columns = Array.isArray(field.columns) ? field.columns : [];
+            const body = el("tbody");
+
+            const cellInput = (column, value) => {
+                if (column.type === "memo") {
+                    const t = el("textarea", { rows: 1 });
+                    if (value != null) t.value = String(value);
+                    return t;
+                }
+                if (column.type === "select") {
+                    const s = el("select", {}, [
+                        el("option", { value: "", text: "—" }),
+                        ...(column.options || []).map((o) => el("option", { value: o, text: o }))
+                    ]);
+                    s.value = value != null ? String(value) : "";
+                    return s;
+                }
+                const i = el("input", {
+                    type: column.type === "number" ? "number"
+                        : column.type === "date" ? "date" : "text"
+                });
+                if (value != null && value !== "") {
+                    i.value = column.type === "date" ? String(value).slice(0, 10) : String(value);
+                }
+                return i;
+            };
+
+            const addRow = (seed = {}) => {
+                const tr = el("tr");
+                for (const column of columns) tr.append(el("td", {}, cellInput(column, seed[column.key])));
+                tr.append(el("td", {}, el("button", {
+                    class: "btn sm no-print", type: "button", text: "×",
+                    "aria-label": "Remove row", onClick: () => tr.remove()
+                })));
+                body.append(tr);
+            };
+
+            const seedRows = Array.isArray(currentValue) ? currentValue : [];
+            (seedRows.length ? seedRows : [{}]).forEach(addRow);
+
+            const table = el("table", { class: "dim-repeater" }, [
+                el("thead", {}, el("tr", {}, [
+                    ...columns.map((c) => el("th", { text: c.label })),
+                    el("th", {})
+                ])),
+                body
+            ]);
+            const addBtn = el("button", {
+                class: "btn sm no-print", type: "button", text: "+ Add row",
+                onClick: () => addRow({})
+            });
+
+            wrapper.append(table, addBtn);
+
+            const readTable = () => [...body.querySelectorAll("tr")].map((tr) => {
+                const inputs = tr.querySelectorAll("input, select, textarea");
+                const row = {};
+                let any = false;
+                columns.forEach((column, index) => {
+                    const raw = (inputs[index]?.value ?? "").trim();
+                    if (raw === "") return;
+                    any = true;
+                    row[column.key] = column.type === "number" ? Number(raw) : raw;
+                });
+                return any ? row : null;
+            }).filter(Boolean);
+
+            return { wrapper, input: null, field, readTable };
+        }
+
         default:
             input = el("input", { type: "text", id, name: field.key, value: currentValue ?? "" });
             if (field.pattern) input.pattern = field.pattern;
@@ -170,6 +244,11 @@ function describePattern(pattern) {
 }
 
 export function readValue(entry) {
+    if (entry.field.type === "table") {
+        const rows = entry.readTable ? entry.readTable() : [];
+        return rows.length ? rows : undefined;
+    }
+
     const raw = entry.input.value;
 
     if (raw === "" || raw === null) return undefined;
@@ -186,11 +265,13 @@ export function validate(entries) {
         const value = readValue(entry);
 
         if (field.required && value === undefined && field.type !== "file") {
-            problems.push(field.label + " is required");
+            problems.push(field.type === "table"
+                ? field.label + " needs at least one row"
+                : field.label + " is required");
             continue;
         }
 
-        if (value === undefined) continue;
+        if (value === undefined || field.type === "table") continue;
 
         if (field.pattern && !new RegExp(field.pattern).test(String(value))) {
             problems.push(field.label + " must be " + describePattern(field.pattern));
@@ -200,7 +281,7 @@ export function validate(entries) {
             problems.push(field.label + " must be at least " + field.min);
         }
 
-        if (input.disabled && field.required) {
+        if (input && input.disabled && field.required) {
             problems.push(field.label + " cannot be set yet");
         }
     }
