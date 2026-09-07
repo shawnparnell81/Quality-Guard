@@ -662,8 +662,16 @@ export async function renderRecordDetail(type, number) {
                     children.push(el("div", { class: "table-wrap" }, el("table", { class: "sm" }, [
                         el("thead", {}, el("tr", {}, columns.map((c) => el("th", { text: c.label })))),
                         el("tbody", {}, value.map((row) => el("tr", {},
-                            columns.map((c) => el("td", { class: "sm",
-                                text: row[c.key] != null ? String(row[c.key]) : "-" })))))
+                            columns.map((c) => {
+                                const raw = row[c.key];
+                                const td = el("td", { class: "sm", text: raw != null ? String(raw) : "-" });
+                                if (c.type === "computed" && c.thresholds && raw != null) {
+                                    const n = Number(raw);
+                                    if (c.thresholds.crit != null && n >= c.thresholds.crit) td.classList.add("rpn-crit");
+                                    else if (c.thresholds.warn != null && n >= c.thresholds.warn) td.classList.add("rpn-warn");
+                                }
+                                return td;
+                            }))))
                     ])));
                 } else {
                     if (!kv) kv = el("dl", { class: "kv" });

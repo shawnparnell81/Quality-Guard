@@ -163,6 +163,15 @@ export function buildField(field, options, currentValue) {
                     s.value = value != null ? String(value) : "";
                     return s;
                 }
+                if (column.type === "computed") {
+                    /* Filled in by recompute(), never typed into. */
+                    const i = el("input", {
+                        type: "number", class: "computed-cell", readonly: "readonly", tabindex: "-1",
+                        title: describeComputed(column, columns)
+                    });
+                    if (value != null && value !== "") i.value = String(value);
+                    return i;
+                }
                 const i = el("input", {
                     type: column.type === "number" ? "number"
                         : column.type === "date" ? "date" : "text"
@@ -173,13 +182,40 @@ export function buildField(field, options, currentValue) {
                 return i;
             };
 
+            const hasComputed = columns.some((c) => c.type === "computed");
+
             const addRow = (seed = {}) => {
                 const tr = el("tr");
-                for (const column of columns) tr.append(el("td", {}, cellInput(column, seed[column.key])));
+                const cellByKey = {};
+                for (const column of columns) {
+                    const input = cellInput(column, seed[column.key]);
+                    cellByKey[column.key] = input;
+                    tr.append(el("td", {}, input));
+                }
                 tr.append(el("td", {}, el("button", {
                     class: "btn sm no-print", type: "button", text: "×",
                     "aria-label": "Remove row", onClick: () => tr.remove()
                 })));
+
+                if (hasComputed) {
+                    const recompute = () => {
+                        for (const column of columns) {
+                            if (column.type !== "computed") continue;
+                            const cell = cellByKey[column.key];
+                            const nums = (column.inputs || []).map((k) => Number(cellByKey[k]?.value));
+                            const ready = nums.length > 0 && nums.every((n) => Number.isFinite(n));
+                            const out = !ready ? "" : column.compute === "sum"
+                                ? nums.reduce((a, b) => a + b, 0)
+                                : nums.reduce((a, b) => a * b, 1);
+                            cell.value = out === "" ? "" : String(out);
+                            paintThreshold(cell, column, out);
+                        }
+                    };
+                    tr.addEventListener("input", recompute);
+                    tr.addEventListener("change", recompute);
+                    recompute();
+                }
+
                 body.append(tr);
             };
 
@@ -207,8 +243,10 @@ export function buildField(field, options, currentValue) {
                 columns.forEach((column, index) => {
                     const raw = (inputs[index]?.value ?? "").trim();
                     if (raw === "") return;
-                    any = true;
-                    row[column.key] = column.type === "number" ? Number(raw) : raw;
+                    /* A computed cell alone does not make a row worth keeping. */
+                    if (column.type !== "computed") any = true;
+                    row[column.key] = (column.type === "number" || column.type === "computed")
+                        ? Number(raw) : raw;
                 });
                 return any ? row : null;
             }).filter(Boolean);
@@ -241,6 +279,25 @@ export function buildField(field, options, currentValue) {
 function describePattern(pattern) {
     if (pattern === "^L-[0-9]{5}$") return "L- followed by five digits, for example L-88213";
     return pattern;
+}
+
+/* "RPN = Severity x Occurrence x Detection" - the tooltip on a
+   computed cell so a reader knows where its number comes from. */
+function describeComputed(column, columns) {
+    const labelOf = (k) => (columns.find((c) => c.key === k) || {}).label || k;
+    const join = column.compute === "sum" ? " + " : " × ";
+    return column.label + " = " + (column.inputs || []).map(labelOf).join(join);
+}
+
+/* A computed cell wears an amber / red class once it crosses the
+   thresholds the column defines (RPN >= 100, >= 150). */
+function paintThreshold(cell, column, value) {
+    cell.classList.remove("rpn-warn", "rpn-crit");
+    const t = column.thresholds;
+    const n = Number(value);
+    if (!t || value === "" || !Number.isFinite(n)) return;
+    if (t.crit != null && n >= t.crit) cell.classList.add("rpn-crit");
+    else if (t.warn != null && n >= t.warn) cell.classList.add("rpn-warn");
 }
 
 export function readValue(entry) {

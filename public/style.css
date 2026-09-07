@@ -553,6 +553,22 @@ body {
 .dim-repeater input,
 .dim-repeater select { width: 100%; }
 
+/* A computed cell (RPN and the like): read-only, filled by the form
+   as its inputs change, and flagged once it crosses a threshold. */
+.computed-cell {
+    background: var(--surface-2, #f3f4f6);
+    font-weight: 600;
+    text-align: center;
+    color: var(--ink-2);
+    cursor: default;
+}
+.rpn-warn { background: #fde68a; color: #7c2d12; }
+.rpn-crit { background: #fecaca; color: #7f1d1d; }
+td.rpn-warn, td.rpn-crit { font-weight: 600; }
+
+.table-col-row .col-extra { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.table-col-row .col-extra > * { width: 100%; }
+
 /* ---------- KPI strip ---------- */
 
 .kpis {
@@ -1723,7 +1739,7 @@ th.col-you { color: var(--brand); }
 /* Table-field column editor inside .field-row-extra. */
 .table-col-editor { display: flex; flex-direction: column; gap: 6px; }
 .table-col-list { display: flex; flex-direction: column; gap: 6px; }
-.table-col-row { display: grid; grid-template-columns: 1fr 120px 1fr auto; gap: 6px; }
+.table-col-row { display: grid; grid-template-columns: 1fr 120px 1fr auto; gap: 6px; align-items: start; }
 .table-col-row .btn { padding: 2px 9px; font-size: 12px; }
 
 .req { color: var(--crit); }
