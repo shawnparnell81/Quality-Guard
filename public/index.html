@@ -70,6 +70,14 @@
             <p class="view-sub">Week 36, 31 Aug - 6 Sep 2026. Sample data for demonstration.</p>
         </div>
 
+        <div class="dash-toolbar no-print">
+            <span class="dash-edit-hint" id="dash-edit-hint" hidden>Drag a panel by its handle to move it; use the eye to hide one. This layout is shared by everyone in the organisation.</span>
+            <button class="btn" type="button" id="dash-edit" data-requires="layout.manage">Edit layout</button>
+            <button class="btn btn-primary" type="button" id="dash-save" hidden>Save layout</button>
+            <button class="btn" type="button" id="dash-reset" hidden>Reset to default</button>
+            <button class="btn" type="button" id="dash-cancel" hidden>Cancel</button>
+        </div>
+
         <div class="kpis">
             <div class="kpi">
                 <div class="kpi-label">Open NCRs</div>
@@ -106,9 +114,9 @@
             </div>
         </div>
 
-        <div class="grid-2" style="margin-top:16px">
-            <div class="stack">
-                <div class="panel">
+        <div class="grid-2" style="margin-top:16px" id="dash-grid">
+            <div class="stack" id="dash-col-0" data-col="0">
+                <div class="panel" data-widget="events">
                     <div class="panel-head">
                         <h2 class="panel-title">Open quality events</h2>
                         <span class="panel-note" id="open-events-note"></span>
@@ -126,7 +134,7 @@
                     </div>
                 </div>
 
-                <div class="panel" style="margin-top:16px">
+                <div class="panel" data-widget="coming-due">
                     <div class="panel-head">
                         <h2 class="panel-title">Coming due</h2>
                         <span class="panel-note" id="escalations-note"></span>
@@ -141,7 +149,7 @@
                     </div>
                 </div>
 
-                <div class="panel">
+                <div class="panel" data-widget="suppliers">
                     <div class="panel-head">
                         <h2 class="panel-title">Supplier scorecard</h2>
                         <span class="panel-note">rolling 90 d</span>
@@ -157,8 +165,8 @@
                 </div>
             </div>
 
-            <div class="stack">
-                <div class="panel">
+            <div class="stack" id="dash-col-1" data-col="1">
+                <div class="panel" data-widget="clause-readiness">
                     <div class="panel-head">
                         <h2 class="panel-title">Clause readiness</h2>
                         <span class="panel-note">ISO 9001:2015</span>
@@ -195,7 +203,7 @@
                     </div>
                 </div>
 
-                <div class="panel">
+                <div class="panel" data-widget="calibration-due">
                     <div class="panel-head"><h2 class="panel-title">Calibration due</h2><span class="panel-note">next 30 d</span></div>
                     <div class="table-wrap">
                         <table>
@@ -205,7 +213,7 @@
                     </div>
                 </div>
 
-                <div class="panel">
+                <div class="panel" data-widget="training-gaps">
                     <div class="panel-head"><h2 class="panel-title">Training gaps</h2><span class="panel-note">clause 7.2</span></div>
                     <div class="table-wrap">
                         <table>
