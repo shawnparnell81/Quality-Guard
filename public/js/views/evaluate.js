@@ -12,6 +12,7 @@ import { can, applyPermissions } from "../session.js";
 import { confirmStep } from "../forms.js";
 import { openEntityForm } from "../entity-form.js";
 import { openDocumentWindow, openFileWindow } from "../doc-windows.js";
+import { renderReviewCharts } from "./review-charts.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, toast
@@ -407,6 +408,8 @@ async function renderReviewDetail(reference) {
                 return pill("Open", "open");
             } }
         ], "No actions recorded");
+
+        renderReviewCharts(reference);
     } catch (error) {
         errorRow(inputBody, 4, error);
     }
