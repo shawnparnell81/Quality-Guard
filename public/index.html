@@ -844,25 +844,27 @@
     <section class="view" id="view-onboarding" hidden>
         <div class="view-head">
             <h1 class="view-title">Vendor Onboarding<span class="clause-ref">8.4.1</span></h1>
-            <p class="view-sub">Evaluation and selection of external providers. Stages run in order, and the last one is the only route onto the approved vendor list.</p>
+            <p class="view-sub">Evaluation and selection of external providers. Open a candidate to review its whole onboarding packet.</p>
         </div>
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Candidates</h2></div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Vendor</th><th>Scope</th><th>Progress</th><th>Status</th></tr></thead>
-                        <tbody id="candidate-table"></tbody>
-                    </table>
-                </div>
-            </div>
-            <div>
-                <div class="panel" style="margin-bottom:16px">
-                    <div class="panel-head"><h2 class="panel-title" id="candidate-name">Select a candidate</h2><span class="panel-note">six stages</span></div>
-                </div>
-                <div class="pipe" id="onboarding-pipe"></div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Candidates</h2><span class="panel-note">click a row to open its packet</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Vendor</th><th>Scope</th><th>Progress</th><th>Status</th></tr></thead>
+                    <tbody id="candidate-table"></tbody>
+                </table>
             </div>
         </div>
+    </section>
+
+    <!-- ============ ONBOARDING PACKET ============ -->
+    <section class="view" id="view-onboarding-packet" hidden>
+        <div class="view-head">
+            <button class="btn no-print" id="packet-back" type="button" style="margin-bottom:10px">&larr; Back to candidates</button>
+            <h1 class="view-title" id="packet-title">Onboarding packet</h1>
+            <p class="view-sub" id="packet-sub"></p>
+        </div>
+        <div id="packet-body"></div>
     </section>
 
     <!-- ============ INTERNAL AUDIT ============ -->

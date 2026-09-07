@@ -195,9 +195,19 @@ export const api = {
 
     onboarding:    ()       => get("/onboarding"),
     onboardingStages: (vendor) => get("/onboarding/" + encodeURIComponent(vendor)),
+    onboardingPacket: (vendor) => get("/onboarding/" + encodeURIComponent(vendor) + "/packet"),
     completeOnboardingStage: (vendor, stageKey, payload) =>
         request("POST", "/onboarding/" + encodeURIComponent(vendor)
                 + "/stages/" + encodeURIComponent(stageKey) + "/complete", payload),
+    addOnboardingDocument: (vendor, stageKey, formData) =>
+        postForm("/onboarding/" + encodeURIComponent(vendor)
+                + "/stages/" + encodeURIComponent(stageKey) + "/documents", formData),
+    deleteOnboardingDocument: (vendor, stageKey, id) =>
+        request("DELETE", "/onboarding/" + encodeURIComponent(vendor)
+                + "/stages/" + encodeURIComponent(stageKey) + "/documents/" + encodeURIComponent(id)),
+    onboardingDocumentUrl: (vendor, stageKey, id) =>
+        "/api/onboarding/" + encodeURIComponent(vendor)
+        + "/stages/" + encodeURIComponent(stageKey) + "/documents/" + encodeURIComponent(id) + "/download",
 
     vendors:      ()        => get("/vendors"),
     vendorEvaluations: (name) => get("/vendors/" + encodeURIComponent(name) + "/evaluations"),

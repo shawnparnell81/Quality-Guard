@@ -22,7 +22,8 @@ import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
 import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
 import {
-    renderDrawings, renderOnboarding, renderReview, renderScorecards, wireEvaluate
+    renderDrawings, renderOnboarding, renderOnboardingPacket,
+    renderReview, renderScorecards, wireEvaluate
 } from "./views/evaluate.js";
 import { renderForms, wireForms } from "./views/formbuilder.js";
 import { wireRecordEditor } from "./forms.js";
@@ -64,6 +65,7 @@ const LOADERS = {
     receiving:   renderReceiving,
     shipping:    renderShipping,
     onboarding:  renderOnboarding,
+    "onboarding-packet": renderOnboardingPacket,
     review:      renderReview,
     scorecards:  renderScorecards,
     forms:       renderForms

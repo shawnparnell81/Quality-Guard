@@ -755,6 +755,21 @@ tr.row-selected:hover {
 
 .pipe { display: grid; gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: var(--radius); overflow: hidden; }
 
+/* ---------- onboarding packet page ---------- */
+.packet-stage { margin-top: 12px; }
+.packet-stage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.packet-stage-name { margin: 0; font-size: 14px; }
+.packet-docs { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.packet-docs li {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; background: var(--surface-2); border-radius: 4px;
+}
+.packet-doc-kind {
+    font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .1em;
+    color: var(--ink-3); border: 1px solid var(--hairline); border-radius: 3px;
+    padding: 1px 4px; flex: none;
+}
+
 .pipe-step {
     display: grid;
     grid-template-columns: 26px 1fr auto;
