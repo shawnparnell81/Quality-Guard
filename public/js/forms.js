@@ -198,7 +198,10 @@ export function buildField(field, options, currentValue) {
                 onClick: () => addRow({})
             });
 
-            wrapper.append(table, addBtn);
+            /* A wide table (a PFMEA can carry a dozen columns) scrolls
+               inside its own box rather than pushing the whole form
+               sideways with no way back. */
+            wrapper.append(el("div", { class: "table-wrap" }, table), addBtn);
 
             const readTable = () => [...body.querySelectorAll("tr")].map((tr) => {
                 const inputs = tr.querySelectorAll("input, select, textarea");
