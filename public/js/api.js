@@ -240,5 +240,14 @@ export const api = {
     genealogy:    (lot)     => get("/lots/" + encodeURIComponent(lot) + "/genealogy"),
 
     trainingGaps:   ()      => get("/training/gaps"),
-    trainingMatrix: ()      => get("/training/matrix")
+    trainingMatrix: ()      => get("/training/matrix"),
+
+    apqpDeliverables: (number) =>
+        get("/apqp/" + encodeURIComponent(number) + "/deliverables"),
+    attachApqpDeliverable: (number, slot, formData) =>
+        postForm("/apqp/" + encodeURIComponent(number)
+                + "/deliverables/" + encodeURIComponent(slot), formData),
+    removeApqpDeliverable: (number, slot) =>
+        request("DELETE", "/apqp/" + encodeURIComponent(number)
+                + "/deliverables/" + encodeURIComponent(slot))
 };
