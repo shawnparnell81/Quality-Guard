@@ -1,5 +1,5 @@
 /* ============================================================
-   QUALITYGUARD API
+   QMS GUARDIAN API
 
    Start with:  npm start
    Health check: http://localhost:3001/api/health
@@ -138,7 +138,7 @@ app.use((error, request, response, next) => {
 });
 
 const server = app.listen(PORT, () => {
-    console.log("QualityGuard running on http://localhost:" + PORT);
+    console.log("QMS Guardian running on http://localhost:" + PORT);
     console.log("  Landing: http://localhost:" + PORT + "/");
     console.log("  App:     http://localhost:" + PORT + "/app");
     console.log("  Health:  http://localhost:" + PORT + "/api/health");
@@ -154,7 +154,7 @@ const server = app.listen(PORT, () => {
 server.on("error", (error) => {
     if (error.code === "EADDRINUSE") {
         console.error(
-            "\nPort " + PORT + " is already in use - another QualityGuard"
+            "\nPort " + PORT + " is already in use - another QMS Guardian"
             + " server is probably still running.\n"
             + "Stop it first (Ctrl+C in its terminal), or on Windows:\n"
             + "  powershell -Command \"$c = Get-NetTCPConnection -LocalPort "

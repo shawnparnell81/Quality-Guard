@@ -1,6 +1,6 @@
-# QualityGuard
+# QMS Guardian
 
-A quality management system (QMS) for small manufacturers - nonconformance,
+A quality management system for small manufacturers - nonconformance,
 CAPA, calibration, internal audits, training, document control and more,
 built around ISO 9001. Node and Express on the backend, PostgreSQL for
 storage, a plain HTML/CSS/JS front end with no framework or build step.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QualityGuard QMS</title>
+<title>QMS Guardian</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
@@ -16,7 +16,11 @@
 <div class="app">
 
 <!-- ==================== SIDEBAR ==================== -->
-<aside class="sidebar" id="main-sidebar">
+<!-- ==================== HEADER ==================== -->
+<header class="topbar">
+    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="main-sidebar">
+        <span></span><span></span><span></span>
+    </button>
     <div class="brand">
         <svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
             <rect x="1.5" y="1.5" width="29" height="29" rx="4" stroke="#A8703A" stroke-width="1.5"/>
@@ -25,54 +29,26 @@
             <circle cx="16" cy="24" r="2.4" fill="#A8703A"/>
         </svg>
         <div>
-            <div class="brand-name">QualityGuard</div>
-            <span class="brand-sub">QMS / ISO 9001</span>
+            <div class="brand-name">QMS Guardian</div>
+            <span class="brand-sub">ISO 9001</span>
         </div>
     </div>
+    <div class="crumb" id="org-crumb"></div>
+    <div class="topbar-right">
+        <span class="site-pill" id="audit-countdown"></span>
+        <button class="icon-btn" id="themeToggle" type="button">Dark</button>
+        <div class="who">
+            <span class="who-name" id="user-name"></span>
+            <span class="who-role" id="user-role"></span>
+        </div>
+        <div class="avatar" id="user-avatar"></div>
+        <button class="icon-btn" id="sign-out" type="button">Sign out</button>
+    </div>
+</header>
 
-    <div class="nav-group">Overview</div>
-    <button class="nav-item" data-view="dashboard" aria-current="true"><span>Quality Dashboard</span></button>
-
-    <div class="nav-group">Programs</div>
-    <button class="nav-item" data-view="apqp"><span>APQP Programs</span><span class="nav-count" data-nav-count="apqp" hidden></span></button>
-
-    <div class="nav-group">Quality Events</div>
-    <button class="nav-item" data-view="ncr"><span>Nonconformance</span><span class="nav-count hot" data-nav-count="ncr" hidden></span></button>
-    <button class="nav-item" data-view="capa"><span>CAPA</span><span class="nav-count" data-nav-count="capa" hidden></span></button>
-    <button class="nav-item" data-view="d8"><span>8D Investigations</span><span class="nav-count" data-nav-count="eightd" hidden></span></button>
-    <button class="nav-item" data-view="complaints"><span>Customer Complaints</span><span class="nav-count" data-nav-count="complaint" hidden></span></button>
-    <button class="nav-item" data-view="floor-report"><span>Floor Report</span></button>
-
-    <div class="nav-group">Control</div>
-    <button class="nav-item" data-view="documents"><span>Document Control</span></button>
-    <button class="nav-item" data-view="drawings"><span>Engineering Drawings</span></button>
-    <button class="nav-item" data-view="change"><span>Change Control</span><span class="nav-count" data-nav-count="ecn" hidden></span></button>
-
-    <div class="nav-group">Operations</div>
-    <button class="nav-item" data-view="production"><span>Production</span></button>
-    <button class="nav-item" data-view="receiving"><span>Receiving Inspection</span></button>
-    <button class="nav-item" data-view="warehouse"><span>Warehouse &amp; Material</span></button>
-    <button class="nav-item" data-view="shipping"><span>Shipping</span></button>
-
-    <div class="nav-group">Resources</div>
-    <button class="nav-item" data-view="training"><span>Training &amp; Competence</span></button>
-    <button class="nav-item" data-view="calibration"><span>Calibration</span><span class="nav-count" data-nav-count="calibration_due" hidden></span></button>
-
-    <div class="nav-group">Supply Chain</div>
-    <button class="nav-item" data-view="avl"><span>Approved Vendor List</span></button>
-    <button class="nav-item" data-view="onboarding"><span>Vendor Onboarding</span></button>
-
-    <div class="nav-group">Evaluate</div>
-    <button class="nav-item" data-view="readiness"><span>Audit Readiness</span><span class="nav-count hot" id="nav-readiness-count">-</span></button>
-    <button class="nav-item" data-view="audit"><span>Internal Audit</span><span class="nav-count hot" data-nav-count="audit" hidden></span></button>
-    <button class="nav-item" data-view="review"><span>Management Review</span></button>
-    <button class="nav-item" data-view="risk"><span>Risk Register</span></button>
-    <button class="nav-item" data-view="scorecards"><span>Scorecards &amp; KPIs</span></button>
-
-    <div class="nav-group">Configure</div>
-    <button class="nav-item" data-view="people"><span>People &amp; Access</span></button>
-    <button class="nav-item" data-view="forms"><span>Form Builder</span></button>
-    <button class="nav-item" data-view="workflows"><span>Roles &amp; Permissions</span></button>
+<!-- ==================== SIDEBAR ==================== -->
+<aside class="sidebar" id="main-sidebar">
+    <nav id="dept-nav" aria-label="Departments"></nav>
 </aside>
 
 <!-- Only rendered visible below the mobile breakpoint (style.css), and
@@ -82,23 +58,6 @@
 
 <!-- ==================== MAIN ==================== -->
 <div class="main">
-    <header class="topbar">
-        <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="main-sidebar">
-            <span></span><span></span><span></span>
-        </button>
-        <div class="crumb" id="org-crumb"></div>
-        <div class="topbar-right">
-            <span class="site-pill" id="audit-countdown"></span>
-            <button class="icon-btn" id="themeToggle" type="button">Dark</button>
-            <div class="who">
-                <span class="who-name" id="user-name"></span>
-                <span class="who-role" id="user-role"></span>
-            </div>
-            <div class="avatar" id="user-avatar"></div>
-            <button class="icon-btn" id="sign-out" type="button">Sign out</button>
-        </div>
-    </header>
-
     <div id="connection-banner" class="conn-banner" hidden>
         Cannot reach the API. Start it with <code>npm run dev</code> in the server folder,
         then reload this page.
