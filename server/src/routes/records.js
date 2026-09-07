@@ -674,7 +674,13 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
         if (formRow.rowCount > 0) {
             formVersion = formRow.rows[0].version;
             const missing = (formRow.rows[0].schema.fields || [])
-                .filter((field) => field.required && data[field.key] === undefined)
+                .filter((field) => {
+                    if (!field.required) return false;
+                    const value = data[field.key];
+                    /* a required table wants at least one row */
+                    if (field.type === "table") return !Array.isArray(value) || value.length === 0;
+                    return value === undefined;
+                })
                 .map((field) => field.key);
 
             if (missing.length > 0) {

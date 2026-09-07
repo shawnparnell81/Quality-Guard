@@ -30,8 +30,13 @@ const TYPE_LABEL = {
     link:      ["LNK", "Record link"],
     file:      ["FIL", "Attachment"],
     signature: ["SIG", "E-signature"],
-    user:      ["USR", "Person"]
+    user:      ["USR", "Person"],
+    table:     ["TBL", "Table (repeating rows)"]
 };
+
+/* A table column can only be one of these scalar types - matches the
+   server's TABLE_COLUMN_TYPES in masterdata.js. */
+const COLUMN_TYPES = ["text", "memo", "number", "date", "select"];
 
 /* Where a "link" field's options come from. The server enforces this
    list for real (LINK_SOURCES in masterdata.js); this copy only has
@@ -114,10 +119,12 @@ async function renderSchema(typeKey) {
                 const bits = [];
 
                 if (row.required) bits.push(pill("Required", "open"));
+                if (row.section)  bits.push(el("span", { class: "chip", text: "§ " + row.section }));
                 if (row.pattern)  bits.push(el("span", { class: "chip", text: "pattern" }));
                 if (row.min !== undefined) bits.push(el("span", { class: "chip", text: "min " + row.min }));
                 if (row.target)   bits.push(el("span", { class: "chip", text: "links to " + row.target }));
                 if (row.options)  bits.push(el("span", { class: "chip", text: row.options.length + " options" }));
+                if (row.columns)  bits.push(el("span", { class: "chip", text: row.columns.length + " columns" }));
                 if (row.max)      bits.push(el("span", { class: "chip", text: "max " + row.max }));
 
                 return bits.length > 0
@@ -180,7 +187,7 @@ export function wireForms() {
    Field editor
    ============================================================ */
 
-function slugify(label, taken) {
+export function slugify(label, taken) {
     let base = String(label || "")
         .trim().toLowerCase()
         .replace(/[^a-z0-9]+/g, "_")
@@ -199,7 +206,7 @@ function slugify(label, taken) {
    is read back from DOM order at save time rather than kept in a
    parallel array, so the up/down buttons only ever have to move a
    node, never resynchronise two copies of the same list. */
-function buildFieldRow(field) {
+export function buildFieldRow(field) {
     const row = el("div", { class: "field-row", dataset: { key: field.key || "" } });
 
     const label = el("input", { type: "text", value: field.label || "", placeholder: "Field label" });
@@ -207,6 +214,13 @@ function buildFieldRow(field) {
     const type = el("select", {}, Object.entries(TYPE_LABEL).map(([value, [, name]]) =>
         el("option", { value, text: name, selected: value === field.type ? "selected" : undefined })
     ));
+
+    /* An optional section heading. Fields sharing one (in order) are
+       grouped under it on the record form and its detail view. */
+    const section = el("input", {
+        type: "text", class: "field-section", placeholder: "Section (optional)",
+        value: field.section || ""
+    });
 
     const required = el("input", { type: "checkbox", checked: field.required ? "checked" : undefined });
 
@@ -237,6 +251,20 @@ function buildFieldRow(field) {
 
     const extra = el("div", { class: "field-row-extra" });
 
+    /* One column of a table field: a label and a scalar type. */
+    function columnRow(column = {}) {
+        const cLabel = el("input", { type: "text", class: "col-label",
+            placeholder: "Column label", value: column.label || "" });
+        const cType = el("select", { class: "col-type" }, COLUMN_TYPES.map((t) =>
+            el("option", { value: t, text: t, selected: t === column.type ? "selected" : undefined })));
+        const cOpts = el("input", { type: "text", class: "col-options",
+            placeholder: "Options (if pick list)", value: (column.options || []).join(", ") });
+        const del = el("button", { type: "button", class: "btn", text: "✕", "aria-label": "Remove column" });
+        const cr = el("div", { class: "table-col-row" }, [cLabel, cType, cOpts, del]);
+        del.addEventListener("click", () => cr.remove());
+        return cr;
+    }
+
     function paintExtra() {
         extra.replaceChildren();
 
@@ -254,6 +282,16 @@ function buildFieldRow(field) {
                 type: "number", class: "field-min", placeholder: "Minimum (optional)",
                 value: field.min !== undefined ? field.min : ""
             }));
+        } else if (type.value === "table") {
+            const cols = el("div", { class: "table-col-list" });
+            (field.columns && field.columns.length ? field.columns : [{ type: "text" }])
+                .forEach((c) => cols.append(columnRow(c)));
+            const addCol = el("button", { type: "button", class: "btn", text: "+ Add column" });
+            addCol.addEventListener("click", () => cols.append(columnRow()));
+            extra.append(el("div", { class: "table-col-editor" }, [
+                el("span", { class: "field-hint", text: "Columns of the repeating grid:" }),
+                cols, addCol
+            ]));
         }
     }
 
@@ -265,6 +303,7 @@ function buildFieldRow(field) {
         el("div", { class: "field-row-main" }, [
             label,
             type,
+            section,
             el("label", { class: "field-row-required" }, [required, " Required"]),
             remove
         ]),
@@ -279,7 +318,7 @@ function buildFieldRow(field) {
    existing field keeps the key it was created with even if its label
    changes later, so records already captured under it stay matched
    up to it. */
-function readFieldRow(row, takenKeys) {
+export function readFieldRow(row, takenKeys) {
     const label = row.querySelector(".field-row-main input[type=text]").value.trim();
     const type = row.querySelector(".field-row-main select").value;
     const required = row.querySelector(".field-row-required input").checked;
@@ -291,6 +330,9 @@ function readFieldRow(row, takenKeys) {
     };
     if (required) field.required = true;
 
+    const section = row.querySelector(".field-section")?.value.trim();
+    if (section) field.section = section;
+
     if (type === "select") {
         const raw = row.querySelector(".field-options")?.value || "";
         field.options = raw.split(",").map((s) => s.trim()).filter(Boolean);
@@ -299,6 +341,18 @@ function readFieldRow(row, takenKeys) {
     } else if (type === "number") {
         const raw = row.querySelector(".field-min")?.value;
         if (raw !== "" && raw !== undefined) field.min = Number(raw);
+    } else if (type === "table") {
+        const colKeys = new Set();
+        field.columns = [...row.querySelectorAll(".table-col-row")].map((cr) => {
+            const cLabel = cr.querySelector(".col-label").value.trim();
+            const cType = cr.querySelector(".col-type").value;
+            const col = { key: slugify(cLabel, colKeys), label: cLabel, type: cType };
+            if (cType === "select") {
+                col.options = (cr.querySelector(".col-options").value || "")
+                    .split(",").map((s) => s.trim()).filter(Boolean);
+            }
+            return col;
+        }).filter((c) => c.label);
     }
 
     return field;
@@ -345,6 +399,12 @@ function openFieldEditor(definition) {
         const badSelect = fields.find((f) => f.type === "select" && f.options.length === 0);
         if (badSelect) {
             errorBox.textContent = "\"" + badSelect.label + "\" needs at least one option.";
+            errorBox.hidden = false;
+            return;
+        }
+        const badTable = fields.find((f) => f.type === "table" && (!f.columns || f.columns.length === 0));
+        if (badTable) {
+            errorBox.textContent = "\"" + badTable.label + "\" needs at least one column.";
             errorBox.hidden = false;
             return;
         }

@@ -1366,6 +1366,37 @@
         </div>
     </section>
 
+    <!-- ============ CUSTOM FORMS ============ -->
+    <section class="view" id="view-form-record" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Custom Forms</h1>
+            <p class="view-sub">Record types you created in-app or imported. Pick one to see its entries, open a record to view or edit it. Edit the fields themselves in the Form Builder.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">Form</h2>
+                <select id="form-record-type" style="margin-left:8px"></select>
+                <button class="btn no-print" type="button" id="form-record-newtype" data-requires="forms.manage" style="margin-left:auto">+ New form type</button>
+                <button class="btn btn-primary no-print" type="button" id="form-record-new">New record</button>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title">Records</h2><span class="panel-note" id="form-record-note"></span></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Number</th><th>Summary</th><th>Status</th><th>Opened</th></tr></thead>
+                        <tbody id="form-record-table"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title" id="form-record-detail-number">Select a record</h2></div>
+                <div class="panel-body" id="form-record-detail"></div>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ WORKFLOWS AND ROLES ============ -->
     <section class="view" id="view-workflows" hidden>
         <div class="view-head">

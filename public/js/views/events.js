@@ -524,9 +524,10 @@ export async function renderRecordDetail(type, number) {
     panel.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
-        const [{ record, links, history, transitions }, attachData] = await Promise.all([
+        const [{ record, links, history, transitions }, attachData, schemaDef] = await Promise.all([
             api.record(number),
-            api.attachments(number)
+            api.attachments(number),
+            api.recordForm(type).catch(() => null)
         ]);
         const attachments = attachData.attachments;
 
@@ -596,19 +597,80 @@ export async function renderRecordDetail(type, number) {
             changeDue
         ]));
 
-        for (const [label, read] of DETAIL_FIELDS) {
-            const value = read(record.data);
-            if (value === undefined || value === null || value === "") continue;
-
-            list.append(el("dt", { text: label }));
-            list.append(el("dd", {
-                class: label === "Measured" ? "mono" : null,
-                style: label === "Measured" ? "color:var(--crit)" : null,
-                text: String(value)
-            }));
-        }
-
         const children = [list];
+
+        /* The record's own fields. Driven by the published form schema
+           so a field added in the Form Builder (or imported from a
+           spreadsheet) shows here with no change to this screen. The
+           known-good labels from DETAIL_FIELDS win where they apply;
+           everything else falls back to the schema's own label. Fields
+           are grouped by their `section`, and a `table` field renders
+           as a read-only grid. */
+        const schemaFields = (schemaDef && Array.isArray(schemaDef.fields)) ? schemaDef.fields : null;
+
+        if (schemaFields) {
+            /* Reverse the DETAIL_FIELDS reader functions into a
+               key -> nice-label map, once, by probing each with a
+               Proxy that records which data key it touches. */
+            const keyLabels = {};
+            for (const [label, read] of DETAIL_FIELDS) {
+                const probe = new Proxy({}, {
+                    get: (_t, prop) => { if (!keyLabels[prop]) keyLabels[prop] = label; }
+                });
+                try { read(probe); } catch { /* reader touched more than one key */ }
+            }
+            const labelFor = (field) => keyLabels[field.key] || field.label;
+
+            /* Scalar fields collect into a shared key/value list; a
+               section heading or a table flushes it and starts a new
+               one, so the groups stay visually distinct. */
+            let kv = null;
+            let lastSection;
+            const flushKv = () => { if (kv && kv.childElementCount) children.push(kv); kv = null; };
+
+            for (const field of schemaFields) {
+                const value = record.data ? record.data[field.key] : undefined;
+                const hasValue = field.type === "table"
+                    ? Array.isArray(value) && value.length > 0
+                    : value !== undefined && value !== null && value !== "";
+                if (!hasValue) continue;
+
+                if ((field.section || null) !== (lastSection || null)) {
+                    lastSection = field.section || null;
+                    if (lastSection) {
+                        flushKv();
+                        children.push(el("div", { class: "section-label", text: lastSection }));
+                    }
+                }
+
+                if (field.type === "table") {
+                    flushKv();
+                    const columns = Array.isArray(field.columns) ? field.columns : [];
+                    children.push(el("div", { class: "sm", style: "font-weight:600;margin:6px 0 4px",
+                        text: labelFor(field) }));
+                    children.push(el("div", { class: "table-wrap" }, el("table", { class: "sm" }, [
+                        el("thead", {}, el("tr", {}, columns.map((c) => el("th", { text: c.label })))),
+                        el("tbody", {}, value.map((row) => el("tr", {},
+                            columns.map((c) => el("td", { class: "sm",
+                                text: row[c.key] != null ? String(row[c.key]) : "-" })))))
+                    ])));
+                } else {
+                    if (!kv) kv = el("dl", { class: "kv" });
+                    kv.append(
+                        el("dt", { text: labelFor(field) }),
+                        el("dd", { text: field.type === "date" ? formatDate(value) : String(value) })
+                    );
+                }
+            }
+            flushKv();
+        } else {
+            for (const [label, read] of DETAIL_FIELDS) {
+                const value = read(record.data);
+                if (value === undefined || value === null || value === "") continue;
+                list.append(el("dt", { text: label }));
+                list.append(el("dd", { text: String(value) }));
+            }
+        }
 
         /* Workflow. Every legal next step is shown, including the ones
            this person may not take, because "you cannot, the quality
