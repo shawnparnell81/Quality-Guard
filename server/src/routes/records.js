@@ -899,6 +899,103 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
     }
 });
 
+/* ---------- links between records ----------
+   POST   /api/records/NCR-2026-0142/links   { to: "CAPA-2026-0005", link_type }
+   DELETE /api/records/NCR-2026-0142/links/CAPA-2026-0005
+
+   record_links carries no org_id, so both ends are checked against
+   the caller's org here. Linking two records anyone can already see
+   is low-stakes metadata, so it needs only a session, the same as
+   attachments. link_type defaults to 'related'. */
+const LINK_TYPES = new Set(["related", "caused_by", "corrects", "supersedes", "child_of"]);
+
+async function findRecordInOrg(orgId, number) {
+    const found = await query(
+        "select id, number from records where org_id = $1 and number = $2",
+        [orgId, number]
+    );
+    return found.rowCount > 0 ? found.rows[0] : null;
+}
+
+records.post("/:number/links", async (request, response, next) => {
+    try {
+        if (!request.user) return response.status(401).json({ error: "Not signed in" });
+
+        const targetNumber = (request.body?.to || "").trim();
+        if (!targetNumber) return response.status(400).json({ error: "to is required" });
+
+        const linkType = LINK_TYPES.has(request.body?.link_type) ? request.body.link_type : "related";
+
+        const from = await findRecordInOrg(request.user.org_id, request.params.number);
+        if (!from) return response.status(404).json({ error: "No such record" });
+
+        const to = await findRecordInOrg(request.user.org_id, targetNumber);
+        if (!to) return response.status(404).json({ error: "No record " + targetNumber });
+
+        if (from.id === to.id) {
+            return response.status(400).json({ error: "A record cannot link to itself" });
+        }
+
+        /* A link is undirected for the reader: don't let A->B and B->A
+           of the same kind both exist. */
+        const existing = await query(`
+            select 1 from record_links
+             where link_type = $3
+               and ((from_record_id = $1 and to_record_id = $2)
+                 or (from_record_id = $2 and to_record_id = $1))
+        `, [from.id, to.id, linkType]);
+        if (existing.rowCount > 0) {
+            return response.status(409).json({ error: from.number + " is already linked to " + to.number });
+        }
+
+        await withTransaction(async (client) => {
+            await client.query(`
+                insert into record_links (from_record_id, to_record_id, link_type)
+                values ($1, $2, $3)
+            `, [from.id, to.id, linkType]);
+
+            await client.query(`
+                insert into audit_log (org_id, record_id, entity, entity_id, field, new_value, changed_by)
+                values ($1, $2, 'record_links', $2, 'linked', $3, $4)
+            `, [request.user.org_id, from.id, to.number + " (" + linkType + ")", request.user.id]);
+        });
+
+        response.status(201).json({ from: from.number, to: to.number, link_type: linkType });
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.delete("/:number/links/:target", async (request, response, next) => {
+    try {
+        if (!request.user) return response.status(401).json({ error: "Not signed in" });
+
+        const from = await findRecordInOrg(request.user.org_id, request.params.number);
+        const to = await findRecordInOrg(request.user.org_id, request.params.target);
+        if (!from || !to) return response.status(404).json({ error: "No such record" });
+
+        const removed = await query(`
+            delete from record_links
+             where (from_record_id = $1 and to_record_id = $2)
+                or (from_record_id = $2 and to_record_id = $1)
+            returning id
+        `, [from.id, to.id]);
+
+        if (removed.rowCount === 0) {
+            return response.status(404).json({ error: from.number + " is not linked to " + to.number });
+        }
+
+        await query(`
+            insert into audit_log (org_id, record_id, entity, entity_id, field, new_value, changed_by)
+            values ($1, $2, 'record_links', $2, 'unlinked', $3, $4)
+        `, [request.user.org_id, from.id, to.number, request.user.id]);
+
+        response.json({ removed: removed.rowCount });
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- attachments ----------
    GET  /api/records/NCR-2026-0142/attachments
    POST /api/records/NCR-2026-0142/attachments
