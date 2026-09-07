@@ -197,7 +197,8 @@ const CREATE_PERMISSION = {
     risk:      "risk.manage",
     eightd:    "capa.create",
     ecn:       "change.create",
-    apqp:      "apqp.manage"
+    apqp:      "apqp.manage",
+    di:        "di.manage"
 };
 
 export function createPermissionFor(request) {
@@ -208,7 +209,8 @@ export function createPermissionFor(request) {
 const CLOSE_PERMISSION = {
     ncr:   "ncr.close",
     capa:  "capa.close",
-    audit: "audit.close"
+    audit: "audit.close",
+    di:    "di.close"
 };
 
 export function closePermissionFor(type) {

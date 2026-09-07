@@ -1081,6 +1081,59 @@
         </div>
     </section>
 
+    <!-- ============ DISCREPANCY INVESTIGATION ============ -->
+    <section class="view" id="view-di" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Discrepancy Investigations<span class="clause-ref">9.2</span></h1>
+            <p class="view-sub">Raised from an internal audit that turned up a discrepancy. Each DI carries the completed NCR, 8D and CAPA forms; it cannot close until all three are on file, and the audit that raised it cannot close until the DI is closed.</p>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title">Investigations</h2>
+                <span class="panel-note">raised from Internal Audit</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>DI</th><th>Department</th><th>Finding</th><th>Investigator</th><th>Status</th></tr></thead>
+                    <tbody id="di-register"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel" id="di-detail-panel">
+            <div class="panel-head">
+                <h2 class="panel-title" id="di-detail-number">Select an investigation</h2>
+                <span id="di-detail-status"></span>
+                <button type="button" class="btn no-print" id="di-print">Print</button>
+                <button type="button" class="btn no-print" id="di-pdf">PDF</button>
+            </div>
+            <div class="panel-body" id="di-detail"></div>
+            <div class="section-label">Other investigation documents</div>
+            <div class="panel-body" id="di-documents-panel"></div>
+        </div>
+    </section>
+
+    <!-- ============ AUDIT -> CAPA WORKFLOW (reference) ============ -->
+    <section class="view" id="view-audit-workflow" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Audit &rarr; CAPA Workflow<span class="clause-ref">9.2 / 8.7 / 10.2</span></h1>
+            <p class="view-sub">How an internal audit finding becomes a Discrepancy Investigation and its corrective forms, and the two gates that hold each closure until its downstream work is done.</p>
+        </div>
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head"><h2 class="panel-title">The flow</h2></div>
+            <div class="panel-body" id="awf-flow"></div>
+        </div>
+        <div class="panel" style="margin-bottom:16px">
+            <div class="panel-head"><h2 class="panel-title">Discrepancy Investigation states</h2></div>
+            <div class="panel-body" id="awf-states"></div>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Notes</h2></div>
+            <div class="panel-body" id="awf-notes"></div>
+        </div>
+    </section>
+
     <!-- ============ SCORECARDS ============ -->
     <section class="view" id="view-scorecards" hidden>
         <div class="view-head">

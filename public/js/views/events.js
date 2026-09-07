@@ -14,6 +14,8 @@ import { can } from "../session.js";
 import { openRecordEditor, confirmStep, editDueDate } from "../forms.js";
 import { renderEightD, renderChange } from "./change.js";
 import { renderApqpDetail } from "./apqp.js";
+import { renderDiDetail } from "./di.js";
+import { openEntityForm } from "../entity-form.js";
 import { renderDocumentsPanel } from "./resources.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
@@ -28,7 +30,8 @@ import {
 const OWN_SCREEN_REFRESH = {
     eightd: renderEightD,
     ecn: renderChange,
-    apqp: (number) => renderApqpDetail(number)
+    apqp: (number) => renderApqpDetail(number),
+    di: (number) => renderDiDetail(number)
 };
 
 /* Which sidebar screen "New X" and "Edit X" should return to once the
@@ -124,6 +127,17 @@ const REGISTERS = {
             { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
             { className: "mono sm", render: (row) => formatDate(row.data.target_sop) },
             { className: "sm dim", render: (row) => row.data.psw_status || "-" },
+            statusColumn
+        ]
+    },
+
+    di: {
+        tbody: "di-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.department || "-" },
+            { className: "sm", render: (row) => row.data.finding || row.title },
+            { className: "sm dim", render: (row) => row.data.investigator || "-" },
             statusColumn
         ]
     }
@@ -493,6 +507,13 @@ export async function renderRecordDetail(type, number) {
         return renderApqpDetail(number);
     }
 
+    /* A DI is built around its three investigation-form slots (di.js). */
+    if (type === "di") {
+        const pdfButton = document.getElementById("di-pdf");
+        if (pdfButton) pdfButton.dataset.number = number;
+        return renderDiDetail(number);
+    }
+
     const panel = document.getElementById(type + "-detail");
     const heading = document.getElementById(type + "-detail-number");
     const statusSlot = document.getElementById(type + "-detail-status");
@@ -702,10 +723,64 @@ export async function renderRecordDetail(type, number) {
             ));
         }
 
+        /* An audit that turned up a discrepancy is worked through a
+           Discrepancy Investigation - raised here, once, and shown
+           here after. The DI is a child_of link on the audit. */
+        if (type === "audit") {
+            children.push(el("div", { class: "section-label", text: "Discrepancy Investigation" }));
+            const existingDi = links.find((l) => l.type === "di");
+            if (existingDi) {
+                const open = el("button", { class: "link-btn", type: "button", text: existingDi.number });
+                open.addEventListener("click", () => {
+                    document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "di" } }));
+                    renderDiDetail(existingDi.number);
+                });
+                children.push(el("p", { class: "sm" }, [
+                    open,
+                    document.createTextNode("  "),
+                    pill(humanize(existingDi.status), statusKind(existingDi.status))
+                ]));
+            } else if (can("di.manage")) {
+                const raise = el("button", {
+                    class: "btn no-print", type: "button", dataset: { requires: "di.manage" },
+                    text: "Raise Discrepancy Investigation"
+                });
+                raise.addEventListener("click", () => raiseDiFromAudit(record));
+                children.push(raise);
+            } else {
+                children.push(el("p", { class: "sm dim", text: "No DI raised for this audit." }));
+            }
+        }
+
         panel.replaceChildren(...children);
     } catch (error) {
         panel.replaceChildren(
             el("p", { class: "sm", style: "color:var(--crit)", text: error.message })
         );
     }
+}
+
+/* Raise a DI from an audit finding: department + what the audit found,
+   then land on the new DI. The DI is created and linked to the audit
+   in one call (POST /api/di). */
+function raiseDiFromAudit(audit) {
+    openEntityForm({
+        title: "Raise a Discrepancy Investigation",
+        fields: [
+            { key: "department", label: "Department under review", type: "text", required: true,
+              value: audit.data?.scope || "" },
+            { key: "finding", label: "What the audit found", type: "memo", required: true }
+        ],
+        submitLabel: "Raise DI",
+        successMessage: "Discrepancy Investigation raised",
+        onSubmit: ({ values }) => api.raiseDi({
+            audit_number: audit.number,
+            department: values.department,
+            finding: values.finding
+        }),
+        onSaved: (di) => {
+            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "di" } }));
+            renderDiDetail(di.number);
+        }
+    });
 }

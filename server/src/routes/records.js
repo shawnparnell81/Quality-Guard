@@ -91,6 +91,39 @@ async function hasAttachment(runQuery, recordId) {
     return found.rowCount > 0;
 }
 
+/* Clause 9.2: a Discrepancy Investigation carries the three completed
+   forms the finding needs - the NCR form, the 8D report, the CAPA
+   form - as documents in di_deliverables. It cannot close until all
+   three slots are filled. Returns the labels of the ones still empty. */
+async function diFormsMissing(runQuery, recordId) {
+    const found = await runQuery(
+        "select slot from di_deliverables where record_id = $1",
+        [recordId]
+    );
+    const have = new Set(found.rows.map((r) => r.slot));
+    return [
+        !have.has("ncr") && "NCR form",
+        !have.has("eightd") && "8D report",
+        !have.has("capa") && "CAPA form"
+    ].filter(Boolean);
+}
+
+/* And an audit cannot close while the DI it raised is still open: the
+   finding is not resolved until its investigation is. Returns the DI's
+   number if it exists and is not yet closed, else null. */
+async function openDiForAudit(runQuery, auditId) {
+    const found = await runQuery(`
+        select r.number, r.status
+          from record_links l
+          join records r        on r.id = l.to_record_id
+          join record_types rt  on rt.id = r.record_type_id
+         where l.from_record_id = $1 and l.link_type = 'child_of' and rt.key = 'di'
+         limit 1
+    `, [auditId]);
+    if (found.rowCount === 0) return null;
+    return found.rows[0].status === "closed" ? null : found.rows[0].number;
+}
+
 /* Which authority an edit needs depends on what is being changed.
    Selecting "Rework" and selecting "Use-as-is" travel through the same
    endpoint but are not the same decision: use-as-is ships a known
@@ -270,13 +303,18 @@ records.get("/:number", async (request, response, next) => {
 
         const closeKey = closePermissionFor(record.type);
 
-        /* Same two closure gates the transition endpoint itself
+        /* The same closure gates the transition endpoint itself
            enforces (clause 9.2 and 10.2), checked once here so a
            blocked close button says why before anyone clicks it,
            rather than only after a 409 comes back. */
         const capaMissingAttachment = record.type === "capa" && !await hasAttachment(query, record.id);
         const auditHasConflict = record.type === "audit"
             && await auditorConflict(query, request.user.org_id, record.data);
+        const diFormsIncomplete = record.type === "di"
+            && (await diFormsMissing(query, record.id)).length > 0;
+        const auditDiOpen = record.type === "audit"
+            ? await openDiForAudit(query, record.id)
+            : null;
 
         const transitions = moves.rows.map((move) => {
             const stepOk = !move.required_permission || request.can(move.required_permission);
@@ -286,7 +324,11 @@ records.get("/:number", async (request, response, next) => {
                     ? "Needs at least one attachment before closing"
                     : (auditHasConflict
                         ? "The assigned auditor works within the department under review"
-                        : null))
+                        : (diFormsIncomplete
+                            ? "Attach the NCR, 8D and CAPA forms before closing"
+                            : (auditDiOpen
+                                ? "Discrepancy Investigation " + auditDiOpen + " is not closed"
+                                : null))))
                 : null;
 
             return {
@@ -1035,6 +1077,37 @@ records.post("/:number/transition", async (request, response, next) => {
                         detail: "Clause 10.2 requires evidence the corrective action was verified effective."
                     }
                 };
+            }
+
+            /* Clause 9.2: a DI is not resolved until all three of its
+               forms are on file. */
+            if (isTerminal && record.type === "di") {
+                const missing = await diFormsMissing(
+                    (text, params) => client.query(text, params), record.id);
+                if (missing.length > 0) {
+                    return {
+                        code: 409,
+                        body: {
+                            error: "Attach all three forms before closing this DI",
+                            missing
+                        }
+                    };
+                }
+            }
+
+            /* And an audit is not resolved until the DI it raised is. */
+            if (isTerminal && record.type === "audit") {
+                const openDi = await openDiForAudit(
+                    (text, params) => client.query(text, params), record.id);
+                if (openDi) {
+                    return {
+                        code: 409,
+                        body: {
+                            error: "This audit's Discrepancy Investigation (" + openDi + ") is not closed",
+                            detail: "Clause 9.2 - the finding is not resolved until its investigation is closed."
+                        }
+                    };
+                }
             }
 
             const actorId = request.user.id;
