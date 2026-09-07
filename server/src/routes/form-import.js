@@ -38,7 +38,7 @@ function slugColumn(label, taken) {
 
 /* A 0-indexed grid of trimmed strings, plus which cells are bold and
    how wide a merged cell runs, and any data-validation list options. */
-function readGrid(worksheet) {
+export function readGrid(worksheet) {
     const rows = [];
     const bold = new Set();
     const wide = new Map();      // "r,c" -> merged column span
@@ -53,7 +53,10 @@ function readGrid(worksheet) {
         wide.set((Number(m[2]) - 1) + "," + (c1 - 1), c2 - c1 + 1);
     }
 
-    const lastRow = worksheet.actualRowCount || worksheet.rowCount || 0;
+    /* rowCount is the last populated row index; actualRowCount is how
+       many rows carry content. A form with blank rows between blocks
+       needs the former, or whole sections get truncated. */
+    const lastRow = Math.max(worksheet.rowCount || 0, worksheet.actualRowCount || 0);
     for (let r = 1; r <= lastRow; r++) {
         const row = worksheet.getRow(r);
         const out = [];
@@ -97,110 +100,258 @@ function cellText(cell) {
     return String(v).trim();
 }
 
-/* ---------- type inference ---------- */
+/* ---------- type inference ----------
 
-const DATE_RX = /\b(date|d\/o|when|due|revision date|dated)\b/i;
-const NUM_RX = /\b(qty|quantity|count|no\.|number|severity|occurrence|detection|rpn|score|priority|percent|%|rate|amount|hours|days|size)\b/i;
-const MEMO_RX = /\b(description|statement|notes?|comments?|summary|detail|details|justification|action|root cause|cause|method|scope|instructions?)\b/i;
+   These templates are AIAG / PPAP forms (PFMEA, Control Plan, Process
+   Flow, 8D, Dimensional / FAIR, APQP Summary). They share a shape: a
+   block of "Label" cells down the left, one big data-entry grid, and
+   often a legend or rating scale tacked on below. The heuristics
+   below target that shape. It is always followed by human review, so
+   the aim is "close and low-noise", not "exact". */
+
+/* A memo hint wins over a number hint: "Current Process Controls
+   Detection" is a paragraph, "Detection" on its own is a 1-10 score.
+   A short label that carries a strong text hint ("Control Plan
+   Number", "Part Name/Description") stays text even if it also
+   brushes a memo word. */
+const MEMO_RX = /(description|specification|tolerance|statement|\bnotes?\b|comments?|\bdetails?\b|justification|\bactions?\b|root cause|\bcause|mechanism|\bmethod|\bscope\b|instruction|symptom|\bresults?\b|criteria|definition|effects? of|requirement|reaction|controls?\b|containment|\bsummary\b)/i;
+const DATE_RX = /(\bdate\b|d\/o|\bdue\b|deadline|timing|dated|completion date|target close|date open)/i;
+const NUM_RX = /(\bqty\b|quantity|\bcount\b|\bno\.|\bseverity\b|\boccurrence\b|\bdetection\b|\brpn\b|r\.\s?p\.\s?n|\bscore\b|priority|percent|%|\beffective\b|contribution|\bppk\b|\bcpk\b|\bsize\b|\bfreq)/i;
+const TEXT_RX = /(\bname\b|number|\bno\.?\b|\bcode\b|\bid\b|supplier|customer|vendor|contact|phone|address|e-?mail|\btitle\b|revision level|\bpart\b|initiator|champion|leader|\bby\b|facility|organi[sz]ation|location|\bcity\b|\bstate\b)/i;
 
 function fieldType(label, options) {
     if (options && options.length) return "select";
-    if (DATE_RX.test(label)) return "date";
-    if (NUM_RX.test(label)) return "number";
-    if (MEMO_RX.test(label)) return "memo";
+    const l = String(label).toLowerCase();
+    if (l.length <= 28 && TEXT_RX.test(l) && !DATE_RX.test(l)) return "text";
+    if (MEMO_RX.test(l)) return "memo";
+    if (DATE_RX.test(l)) return "date";
+    if (NUM_RX.test(l)) return "number";
+    if (TEXT_RX.test(l)) return "text";
     return "text";
 }
 
+const COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select"]);
+
 /* A table column can only be a scalar; sample the cells beneath to
    sharpen the guess from the header text. */
-function columnType(label, samples) {
+function columnType(label, samples, listOpts) {
+    if (listOpts && listOpts.length) return "select";
     const nonEmpty = samples.filter((s) => s !== "");
-    if (nonEmpty.length) {
-        if (nonEmpty.every((s) => !Number.isNaN(Number(s)))) return "number";
-        if (nonEmpty.every((s) => !Number.isNaN(Date.parse(s)) && /\d{4}|\/|-/.test(s))) return "date";
+    if (nonEmpty.length >= 2) {
+        if (nonEmpty.every((s) => /^-?\d+(\.\d+)?$/.test(s))) return "number";
+        if (nonEmpty.every((s) => !Number.isNaN(Date.parse(s)) && /\d{4}|[/-]/.test(s))) return "date";
     }
     const t = fieldType(label, null);
-    return t === "select" ? "text" : t;
+    return COLUMN_TYPES.has(t) ? t : "text";
 }
 
 /* ---------- the inference itself ---------- */
 
-function isContiguous(indices) {
-    for (let i = 1; i < indices.length; i++) {
-        if (indices[i] !== indices[i - 1] + 1) return false;
-    }
-    return true;
+const ENUMERATOR_RX = /^(d\s?\d\b|\(?\d+\)?[.)]\s|step\s?\d)/i;
+const SKIP_LABEL_RX = /^(x{1,3}|n\/?a|na|tbd|none|\d+([.)])?)$/i;
+
+function cleanLabel(text) {
+    return String(text).replace(/\s+/g, " ").replace(/\s*[:.]\s*$/, "").trim();
 }
 
-function inferSchema(sheetName, grid) {
+/* Section headings in these forms are sometimes a whole paragraph of
+   instructions ("D7 ... : How are you going to ensure ..."). Keep the
+   part before the first colon, and never longer than a line. */
+function sectionLabel(text) {
+    let s = String(text).replace(/\s+/g, " ").trim();
+    const cut = s.indexOf(": ");
+    if (cut >= 4) s = s.slice(0, cut);
+    return cleanLabel(s).slice(0, 70);
+}
+
+export function inferSchema(sheetName, grid) {
     const { rows, bold, wide, lists } = grid;
     const fields = [];
     const usedKeys = new Set();
+    const tableSigs = new Set();
     let section = null;
-    let r = 0;
+    let bigTableSeen = false;
 
-    const cellsAt = (rowIndex) => {
-        const row = rows[rowIndex] || [];
-        return row.map((text, i) => ({ text, i })).filter((c) => c.text !== "");
-    };
-    const dataUnder = (rowIndex, cols) => {
-        const row = rows[rowIndex] || [];
-        return cols.filter((c) => (row[c.i] || "") !== "").length >= Math.max(2, Math.ceil(cols.length / 2));
-    };
+    const realCells = (ri) => (rows[ri] || [])
+        .map((text, i) => ({ text, i }))
+        .filter((c) => c.text !== "");
 
-    while (r < rows.length) {
-        const cells = cellsAt(r);
-
-        if (cells.length === 0) { r++; continue; }
-
-        /* A section heading: one cell, merged wide or bold, short, no
-           trailing colon. */
-        if (cells.length === 1) {
-            const { text, i } = cells[0];
-            const merged = (wide.get(r + "," + i) || 1) >= 2;
-            const isBold = bold.has(r + "," + i);
-            if ((merged || isBold) && !text.endsWith(":") && text.length <= 70) {
-                section = text.replace(/[:\s]+$/, "");
-                r++;
-                continue;
-            }
+    /* Columns a row "occupies" - text cells plus the columns their
+       horizontal merges run over (so a header split across a merge
+       still reads as one contiguous band). */
+    const occupied = (ri) => {
+        const set = new Set();
+        const row = rows[ri] || [];
+        for (let i = 0; i < row.length; i++) {
+            if (row[i] === "") continue;
+            set.add(i);
+            const span = wide.get(ri + "," + i) || 1;
+            for (let k = 1; k < span; k++) set.add(i + k);
         }
+        return [...set].sort((a, b) => a - b);
+    };
 
-        /* A table: >= 2 adjacent header cells with data rows beneath. */
-        if (cells.length >= 2 && isContiguous(cells.map((c) => c.i)) && dataUnder(r + 1, cells)) {
-            const colKeys = new Set();
-            const columns = cells.map((c) => {
-                const samples = [];
-                for (let k = 1; k <= 8 && rows[r + k]; k++) samples.push(rows[r + k][c.i] || "");
-                const listOpts = lists.get((r + 1) + "," + c.i);
-                const col = {
-                    key: slugColumn(c.text, colKeys),
-                    label: c.text,
-                    type: listOpts && listOpts.length ? "select" : columnType(c.text, samples)
-                };
-                if (col.type === "select" && listOpts) col.options = listOpts;
-                return col;
-            });
-            fields.push({
-                key: slugColumn(section || sheetName || "table", usedKeys),
-                label: (section || "Table") + (section ? " rows" : ""),
-                type: "table",
-                ...(section ? { section } : {}),
-                columns
-            });
+    /* The leftmost column that carries any text - the "label column"
+       for forms whose body starts at C or D rather than A. */
+    let leftCol = Infinity;
+    for (let i = 0; i < Math.min(rows.length, 80); i++) {
+        for (const c of realCells(i)) if (c.i < leftCol) leftCol = c.i;
+    }
+    if (!Number.isFinite(leftCol)) leftCol = 0;
+
+    const looksSectionHeading = (ri) => {
+        const real = realCells(ri);
+        if (real.length !== 1) return false;
+        const { text, i } = real[0];
+        if (text.length > 90) return false;
+        const isBold = bold.has(ri + "," + i);
+        const span = wide.get(ri + "," + i) || 1;
+        if (isBold && span >= 3) return true;
+        if (isBold && ENUMERATOR_RX.test(text)) return true;
+        if (isBold && /\s/.test(text) && text.length >= 6 && text === text.toUpperCase()) return true;
+        return false;
+    };
+
+    const headerCols = (ri) => {
+        const occ = occupied(ri);
+        if (occ.length < 3) return null;
+        /* One blank column between header cells is fine (grid headers
+           often sit on every other column); a wider gap means this is
+           a two-up label row, not a table header. */
+        for (let k = 1; k < occ.length; k++) if (occ[k] - occ[k - 1] > 2) return null;
+        const real = realCells(ri);
+        if (real.length < 3) return null;
+        if (real.filter((c) => c.text.length > 60).length > 1) return null;  // a sentence, not headers
+        /* A cell merged four or more columns wide is a banner, not a
+           column header. */
+        if ((wide.get(ri + "," + real[0].i) || 1) >= 4) return null;
+        return real;
+    };
+
+    const bodyish = (ri, cols) => {
+        const real = realCells(ri);
+        if (real.length === 0) return true;
+        const lo = cols[0].i;
+        const hi = cols[cols.length - 1].i;
+        if (real.some((c) => c.i < lo || c.i > hi)) return false;   // content outside the grid
+        return real.length <= Math.max(1, Math.floor(cols.length / 3));
+    };
+
+    const dataUnder = (ri, cols) => {
+        for (let k = 1; k <= 6 && rows[ri + k]; k++) {
+            const row = rows[ri + k];
+            const filled = cols.filter((c) => (row[c.i] || "") !== "").length;
+            if (filled >= Math.max(2, Math.ceil(cols.length / 2))) return true;
+        }
+        return false;
+    };
+
+    const acceptTable = (ri, cols) => {
+        const boldCount = cols.filter((c) => bold.has(ri + "," + c.i)).length;
+        if (boldCount >= Math.ceil(cols.length / 2)) return true;
+        if (dataUnder(ri, cols)) return true;
+        let body = 0;
+        for (let k = 1; k <= 14 && rows[ri + k]; k++) if (bodyish(ri + k, cols)) body++;
+        return body >= 2;
+    };
+
+    const skipBody = (ri, cols) => {
+        let k = ri;
+        while (k < rows.length) {
+            if (realCells(k).length === 0) { k++; continue; }
+            if (looksSectionHeading(k)) break;
+            if (headerCols(k)) break;
+            if (bodyish(k, cols)) { k++; continue; }
+            break;
+        }
+        return k;
+    };
+
+    let r = 0;
+    while (r < rows.length) {
+        let real = realCells(r);
+        if (real.length === 0) { r++; continue; }
+
+        if (looksSectionHeading(r)) {
+            section = sectionLabel(real[0].text) || section;
             r++;
-            while (r < rows.length && dataUnder(r, cells)) r++;
             continue;
         }
 
-        /* Label rows: the first cell that reads like a label. */
-        for (const { text, i } of cells) {
-            const looksLabel = text.endsWith(":") || (i === 0 && cells.length <= 2);
-            if (!looksLabel) continue;
-            const label = text.replace(/\s*:\s*$/, "").trim();
-            if (!label || label.length > 80) break;
+        /* A heading that leads a row rather than owning it alone: the
+           leftmost cell is bold and either merged wide or numbered
+           ("D3 ...", "1. ..."). It names a section; any labels further
+           along the row still belong to that section. */
+        const lead = real[0];
+        if (lead.i === leftCol && bold.has(r + "," + lead.i)
+            && ((wide.get(r + "," + lead.i) || 1) >= 4 || ENUMERATOR_RX.test(lead.text))) {
+            section = sectionLabel(lead.text) || section;
+            real = real.slice(1);
+            if (real.length === 0) { r++; continue; }
+        } else {
 
-            const options = lists.get(r + "," + (i + 1)) || null;
+        /* Past the main grid, only sections matter - what is left is
+           almost always a legend, a rating scale, or a repeat of the
+           grid on a second page. */
+        if (bigTableSeen) { r++; continue; }
+
+        const head = headerCols(r);
+        if (head && acceptTable(r, head)) {
+            const colKeys = new Set();
+            const seenLabels = new Map();
+            const columns = head.map((c) => {
+                let label = c.text.replace(/\s+/g, " ").trim();
+                const dup = seenLabels.get(label.toLowerCase());
+                if (dup) {
+                    label += /severity|occurrence|detection|r\.?\s?p\.?\s?n/i.test(label)
+                        ? " (revised)" : " (" + (dup + 1) + ")";
+                    seenLabels.set(c.text.toLowerCase(), dup + 1);
+                } else {
+                    seenLabels.set(label.toLowerCase(), 1);
+                }
+                const samples = [];
+                for (let k = 1; k <= 12 && rows[r + k]; k++) samples.push(rows[r + k][c.i] || "");
+                const listOpts = lists.get((r + 1) + "," + c.i);
+                const col = { key: slugColumn(label, colKeys), label, type: columnType(label, samples, listOpts) };
+                if (col.type === "select") col.options = listOpts;
+                return col;
+            });
+            /* A repeater 6+ columns wide has no room for textareas. */
+            if (columns.length > 6) for (const col of columns) if (col.type === "memo") col.type = "text";
+
+            const sig = columns.map((c) => c.label.toLowerCase()).join("|");
+            if (columns.length >= 2 && !tableSigs.has(sig)) {
+                tableSigs.add(sig);
+                fields.push({
+                    key: slugColumn((section || sheetName || "table") + " rows", usedKeys),
+                    label: (section ? cleanLabel(section) : (sheetName || "Line")) + " rows",
+                    type: "table",
+                    ...(section ? { section } : {}),
+                    columns
+                });
+                if (columns.length >= 6) bigTableSeen = true;
+            }
+            r = skipBody(r + 1, head);
+            continue;
+        }
+
+        }
+
+        /* Label rows. The leftmost cell is a label; a further cell on
+           the same row is a label only if it ends with a colon (the
+           second column of a two-up form) - otherwise it is example
+           or answer text. An all-caps left cell with no colon is a
+           matrix row heading ("DIMENSIONAL", "VISUAL AIDS"), not a
+           field. */
+        for (const { text, i } of real) {
+            const hasColon = /:\s*$/.test(text);
+            if (i !== leftCol && !hasColon) continue;
+            if (i === leftCol && real.length > 1 && !hasColon && !/^[\w /().#-]{2,60}$/.test(text)) continue;
+            if (i === leftCol && !hasColon && /[A-Z]/.test(text) && text === text.toUpperCase()) continue;
+            const label = cleanLabel(text);
+            if (!label || label.length > 60 || SKIP_LABEL_RX.test(label)) continue;
+
+            const options = lists.get(r + "," + (i + 1)) || lists.get(r + "," + i) || null;
             const field = {
                 key: slugColumn(label, usedKeys),
                 label,
@@ -209,7 +360,6 @@ function inferSchema(sheetName, grid) {
             };
             if (options) field.options = options;
             fields.push(field);
-            break;
         }
         r++;
     }
@@ -217,15 +367,22 @@ function inferSchema(sheetName, grid) {
     return { name: sheetName, fields, rules: [] };
 }
 
-/* Pick the sheet with the most content. */
-function chooseSheet(workbook) {
-    let best = null;
-    let bestScore = -1;
-    workbook.eachSheet((sheet) => {
-        const score = (sheet.actualRowCount || 0) * (sheet.actualColumnCount || 1);
-        if (score > bestScore) { bestScore = score; best = sheet; }
-    });
-    return best;
+const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/* Pick the sheet most likely to be the form: the most-filled one,
+   with instruction / legend sheets discounted and a sheet whose name
+   the file name contains promoted. */
+export function chooseSheet(workbook, preferName) {
+    const sheets = workbook.worksheets.filter((s) => (s.actualRowCount || 0) > 0);
+    if (!sheets.length) return workbook.worksheets[0] || null;
+    const want = normName(preferName);
+    const score = (s) => {
+        let v = (s.actualRowCount || 0) * (s.actualColumnCount || 1);
+        if (/instruction|intruction|example|guide|legend|scale|notes?$/i.test(s.name)) v *= 0.3;
+        if (want && normName(s.name) && want.includes(normName(s.name))) v *= 3;
+        return v;
+    };
+    return sheets.slice().sort((a, b) => score(b) - score(a))[0];
 }
 
 /* ============================================================
@@ -243,10 +400,11 @@ formImport.post("/forms/import", requirePermission("forms.manage"),
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.load(request.file.buffer);
 
-            const sheet = chooseSheet(workbook);
+            const baseName = (request.file.originalname || "Imported form").replace(/\.[^.]+$/, "");
+
+            const sheet = chooseSheet(workbook, baseName);
             if (!sheet) return response.status(422).json({ error: "The workbook has no readable sheet" });
 
-            const baseName = (request.file.originalname || "Imported form").replace(/\.[^.]+$/, "");
             const schema = inferSchema(sheet.name || baseName, readGrid(sheet));
             schema.name = baseName;
 
