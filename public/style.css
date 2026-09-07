@@ -1687,7 +1687,7 @@ th.col-you { color: var(--brand); }
     max-height: 340px; overflow-y: auto; margin-bottom: 12px;
 }
 .field-row {
-    display: flex; gap: 10px; align-items: flex-start;
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start;
     border: 1px solid var(--hairline); border-radius: var(--radius);
     padding: 9px 10px; background: var(--surface-2);
 }
@@ -1721,9 +1721,12 @@ th.col-you { color: var(--brand); }
 }
 
 /* Table-field column editor inside .field-row-extra. */
-.table-col-editor { display: flex; flex-direction: column; gap: 6px; }
-.table-col-list { display: flex; flex-direction: column; gap: 6px; }
-.table-col-row { display: grid; grid-template-columns: 1fr 120px 1fr auto; gap: 6px; }
+.table-col-editor { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.table-col-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 220px; overflow-y: auto;
+}
+.table-col-row { display: grid; grid-template-columns: 1fr 110px 1fr auto; gap: 6px; }
 .table-col-row .btn { padding: 2px 9px; font-size: 12px; }
 
 .req { color: var(--crit); }
