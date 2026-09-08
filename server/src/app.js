@@ -73,6 +73,9 @@ app.get("/", (request, response) => {
     response.sendFile(join(publicDir, "landing.html"));
 });
 
+/* Both /app and /app/ land here (non-strict routing). index.html now
+   uses absolute asset URLs (/style.css, /js/app.js) so a trailing
+   slash no longer resolves them against /app/ and 404s. */
 app.get("/app", (request, response) => {
     response.set("Cache-Control", "no-store");
     response.sendFile(join(publicDir, "index.html"));
