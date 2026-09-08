@@ -7,8 +7,17 @@
    ============================================================ */
 
 import pg from "pg";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 const { Pool } = pg;
+
+/* Carries the signed-in user through a request's async call chain so
+   a transaction can tell the database who is making the change. An
+   Express middleware (app.js) opens the store per request; the DB
+   trigger record_audit reads it via current_setting('app.user_id').
+   Outside a request (a script, a test's direct query) the store is
+   empty and the change is logged with no user - which is the point. */
+export const requestContext = new AsyncLocalStorage();
 
 export const pool = new Pool({
     host: process.env.PGHOST,
@@ -30,12 +39,22 @@ export function query(text, params) {
 
 /* Runs a set of statements inside a transaction. Used anywhere a
    write has to be paired with its audit_log rows: either both land
-   or neither does. */
+   or neither does.
+
+   If a request context is in scope, the signed-in user's id is set
+   as a transaction-local GUC so the record_audit trigger can record
+   who made the change. set_config(..., true) is transaction-scoped,
+   so it reverts on COMMIT/ROLLBACK and never leaks to the next
+   borrower of this pooled connection. */
 export async function withTransaction(work) {
     const client = await pool.connect();
 
     try {
         await client.query("BEGIN");
+        const userId = requestContext.getStore()?.userId;
+        if (userId) {
+            await client.query("select set_config('app.user_id', $1, true)", [String(userId)]);
+        }
         const result = await work(client);
         await client.query("COMMIT");
         return result;

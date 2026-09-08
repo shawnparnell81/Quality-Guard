@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
-import { pool } from "./db.js";
+import { pool, requestContext } from "./db.js";
 import { log } from "./logger.js";
 import { identify, requireAuth, requirePasswordCurrent } from "./auth.js";
 import { auth } from "./routes/auth.js";
@@ -175,6 +175,14 @@ if (process.env.NODE_ENV !== "production") {
 /* Identity is resolved for every API request before any route runs,
    so request.user and request.can() are always available. */
 app.use("/api", identify);
+
+/* Carry the signed-in user through the request's async chain so a
+   write transaction can tell the database who is acting (the
+   record_audit trigger reads it). Runs for the whole /api subtree,
+   including unauthenticated calls - the store just has no user then. */
+app.use("/api", (request, response, next) => {
+    requestContext.run({ userId: request.user?.id }, next);
+});
 
 /* Sign-in has to be reachable without being signed in. */
 app.use("/api/auth", auth);
