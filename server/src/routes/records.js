@@ -1064,6 +1064,54 @@ records.get("/:number/excel", async (request, response, next) => {
     }
 });
 
+/* ---------- database-level audit trail ----------
+   GET /api/records/NCR-2026-0142/audit
+
+   Every INSERT / UPDATE / DELETE the records table saw for this
+   record, newest first, each with a full before/after row snapshot.
+   Written by the record_audit trigger (migration 044), so it also
+   captures a change made outside the app.
+
+   Gated on roles.manage: it returns whole-row payloads and is a
+   compliance / tamper-evidence view, the same audience as
+   GET /api/roles/history. Loosen to a record-read permission if it
+   should be broader. */
+records.get("/:number/audit", requirePermission("roles.manage"),
+    async (request, response, next) => {
+        try {
+            const rec = await query(
+                "select id from records where org_id = $1 and number = $2",
+                [request.user.org_id, request.params.number]
+            );
+            if (rec.rowCount === 0) {
+                return response.status(404).json({ error: "Record not found" });
+            }
+
+            const log = await query(`
+                select ra.id,
+                       ra.record_id  as nc_id,
+                       ra.action_type,
+                       ra.changed_at,
+                       ra.changed_by,
+                       u.full_name   as changed_by_name,
+                       ra.old_values,
+                       ra.new_values
+                  from record_audit ra
+             left join users u on u.id = ra.changed_by
+                 where ra.record_id = $1 and ra.org_id = $2
+                 order by ra.changed_at desc, ra.id desc
+            `, [rec.rows[0].id, request.user.org_id]);
+
+            response.json({
+                number: request.params.number,
+                count: log.rowCount,
+                entries: log.rows
+            });
+        } catch (error) {
+            next(error);
+        }
+    });
+
 /* ---------- search, for the command palette ----------
    GET /api/records/search?q=bore
 

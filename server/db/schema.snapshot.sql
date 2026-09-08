@@ -1,5 +1,35 @@
 CREATE SCHEMA public;
 COMMENT ON SCHEMA public IS 'standard public schema';
+CREATE FUNCTION public.log_record_audit() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+declare
+    v_user uuid;
+begin
+    begin
+        v_user := nullif(current_setting('app.user_id', true), '')::uuid;
+    exception when others then
+        v_user := null;
+    end;
+    if (tg_op = 'DELETE') then
+        insert into record_audit (org_id, record_id, record_number, record_type,
+                                  action_type, changed_by, old_values, new_values)
+        values (old.org_id, old.id, old.number,
+                (select key from record_types where id = old.record_type_id),
+                'DELETE', v_user, to_jsonb(old), null);
+        return old;
+    else
+        insert into record_audit (org_id, record_id, record_number, record_type,
+                                  action_type, changed_by, old_values, new_values)
+        values (new.org_id, new.id, new.number,
+                (select key from record_types where id = new.record_type_id),
+                tg_op, v_user,
+                case when tg_op = 'UPDATE' then to_jsonb(old) end,
+                to_jsonb(new));
+        return new;
+    end if;
+end;
+$$;
 CREATE FUNCTION public.touch_updated_at() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -465,6 +495,26 @@ CREATE TABLE public.receipts (
     ncr_number text,
     CONSTRAINT receipts_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'accept'::text, 'reject'::text])))
 );
+CREATE TABLE public.record_audit (
+    id bigint NOT NULL,
+    org_id uuid,
+    record_id uuid NOT NULL,
+    record_number text,
+    record_type text,
+    action_type text NOT NULL,
+    changed_by uuid,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    old_values jsonb,
+    new_values jsonb,
+    CONSTRAINT record_audit_action_type_check CHECK ((action_type = ANY (ARRAY['INSERT'::text, 'UPDATE'::text, 'DELETE'::text])))
+);
+CREATE SEQUENCE public.record_audit_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.record_audit_id_seq OWNED BY public.record_audit.id;
 CREATE TABLE public.record_links (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     from_record_id uuid NOT NULL,
@@ -733,6 +783,7 @@ CREATE TABLE public.workflow_transitions (
 );
 COMMENT ON COLUMN public.workflow_transitions.required_permission IS 'Permission key the actor must hold to make this move.';
 ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.audit_log_id_seq'::regclass);
+ALTER TABLE ONLY public.record_audit ALTER COLUMN id SET DEFAULT nextval('public.record_audit_id_seq'::regclass);
 ALTER TABLE ONLY public.apqp_deliverables
     ADD CONSTRAINT apqp_deliverables_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.apqp_deliverables
@@ -845,6 +896,8 @@ ALTER TABLE ONLY public.receipts
     ADD CONSTRAINT receipts_org_id_receipt_number_key UNIQUE (org_id, receipt_number);
 ALTER TABLE ONLY public.receipts
     ADD CONSTRAINT receipts_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.record_audit
+    ADD CONSTRAINT record_audit_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.record_links
     ADD CONSTRAINT record_links_from_record_id_to_record_id_link_type_key UNIQUE (from_record_id, to_record_id, link_type);
 ALTER TABLE ONLY public.record_links
@@ -947,6 +1000,8 @@ CREATE INDEX idx_ppap_elements ON public.ppap_elements USING btree (record_id, e
 CREATE INDEX idx_purchase_orders_org ON public.purchase_orders USING btree (org_id, status, order_date DESC);
 CREATE INDEX idx_purchase_requests_org ON public.purchase_requests USING btree (org_id, status, created_at DESC);
 CREATE INDEX idx_receipt_meas ON public.receipt_measurements USING btree (receipt_id, "position");
+CREATE INDEX idx_record_audit_org ON public.record_audit USING btree (org_id, changed_at DESC);
+CREATE INDEX idx_record_audit_row ON public.record_audit USING btree (record_id, changed_at DESC);
 CREATE INDEX idx_records_data_gin ON public.records USING gin (data);
 CREATE INDEX idx_records_due ON public.records USING btree (due_at) WHERE (closed_at IS NULL);
 CREATE INDEX idx_records_org_type ON public.records USING btree (org_id, record_type_id);
@@ -967,6 +1022,7 @@ CREATE UNIQUE INDEX notifications_dedupe ON public.notifications USING btree (us
 CREATE INDEX notifications_user_feed ON public.notifications USING btree (user_id, read_at, created_at DESC);
 CREATE UNIQUE INDEX records_org_idempotency_key ON public.records USING btree (org_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
 CREATE TRIGGER records_touch BEFORE UPDATE ON public.records FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+CREATE TRIGGER trg_record_audit AFTER INSERT OR DELETE OR UPDATE ON public.records FOR EACH ROW EXECUTE FUNCTION public.log_record_audit();
 ALTER TABLE ONLY public.apqp_deliverables
     ADD CONSTRAINT apqp_deliverables_added_by_fkey FOREIGN KEY (added_by) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.apqp_deliverables
