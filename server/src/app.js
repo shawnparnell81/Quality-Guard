@@ -30,6 +30,7 @@ import { lpa } from "./routes/lpa.js";
 import { logs } from "./routes/logs.js";
 import { layout } from "./routes/layout.js";
 import { formImport } from "./routes/form-import.js";
+import { streamHandler } from "./stream.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -118,6 +119,11 @@ app.get("/api/me", meHandler);
 
 /* And past this line, an outstanding password change blocks the lot. */
 app.use("/api", requirePasswordCurrent);
+
+/* Live change feed (SSE). A single handler, not a router - it holds
+   the connection open and streams { entity, id, action } for the
+   caller's org until the tab closes. */
+app.get("/api/stream", streamHandler);
 
 app.use("/api/records", records);
 app.use("/api/dashboard", dashboard);

@@ -14,6 +14,7 @@ import { scoredVendors } from "../vendor-scoring.js";
 import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { upload } from "../uploads.js";
+import { publish } from "../stream.js";
 
 export const masterdata = Router();
 
@@ -1049,6 +1050,9 @@ masterdata.post("/documents", requirePermission("document.create"), upload.singl
                 return { document: doc.rows[0], revision: revision.rows[0] };
             });
 
+            publish(request.user.org_id, {
+                entity: "documents", id: created.document.doc_number, action: "created"
+            });
             response.status(201).json(created);
         } catch (error) {
             /* assertAllowedFilename (document-storage.js) throws with
@@ -1122,6 +1126,9 @@ masterdata.post("/documents/:docNumber/revisions", requirePermission("document.c
                 return inserted.rows[0];
             });
 
+            publish(request.user.org_id, {
+                entity: "documents", id: request.params.docNumber, action: "updated"
+            });
             response.status(201).json(created);
         } catch (error) {
             if (error.status) return response.status(error.status).json({ error: error.message });
@@ -1174,6 +1181,9 @@ masterdata.post("/documents/:docNumber/revisions/:revision/release", async (requ
             );
         });
 
+        publish(request.user.org_id, {
+            entity: "documents", id: request.params.docNumber, action: "transitioned"
+        });
         response.json({ doc_number: request.params.docNumber, current_revision: request.params.revision });
     } catch (error) {
         next(error);
