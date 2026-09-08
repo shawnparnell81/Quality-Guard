@@ -204,6 +204,13 @@ export const api = {
     importRecords: (type, formData, dryRun) => postForm(
         "/records/import?type=" + encodeURIComponent(type) + (dryRun ? "&dry_run=true" : ""),
         formData),
+    /* one form <-> one Excel file */
+    recordExcelTemplateUrl: (type) =>
+        "/api/records/excel-template?type=" + encodeURIComponent(type),
+    recordExcelUrl: (number) => "/api/records/" + encodeURIComponent(number) + "/excel",
+    importRecordExcel: (type, formData, dryRun) => postForm(
+        "/records/excel?type=" + encodeURIComponent(type) + (dryRun ? "&dry_run=true" : ""),
+        formData),
     searchRecords: (q)      => get(withQuery("/records/search", { q })),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),
     createRecord: (payload) => request("POST", "/records", payload),

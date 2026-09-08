@@ -669,6 +669,283 @@ records.post("/import", requirePermission(createPermissionFor), upload.single("f
         }
     });
 
+/* ---------- one form, one Excel file, both ways ----------
+   The workflow engineers actually want: download a form as a
+   pre-shaped .xlsx, fill it offline, upload it back as ONE record
+   with every header field and table row populated. And the reverse -
+   export a filled record to the same shape.
+
+   GET  /api/records/excel-template?type=pfmea       the blank form
+   POST /api/records/excel?type=pfmea[&dry_run=true] filled -> a record
+   GET  /api/records/NCR-2026-0142/excel             a record -> filled
+
+   The Form sheet is Field | Value (its hidden first column carries
+   the field key so a renamed label never breaks the mapping); each
+   table field gets its own sheet, one column per table column. */
+
+const FORM_SHEET = "Form";
+
+function safeSheetName(label, taken) {
+    let base = String(label || "Table").replace(/[[\]*?/\\:]/g, " ").trim().slice(0, 28) || "Table";
+    let name = base;
+    let n = 2;
+    while (taken.has(name.toLowerCase())) name = base.slice(0, 25) + " " + n++;
+    taken.add(name.toLowerCase());
+    return name;
+}
+
+/* Build the workbook for a form. values === null gives a blank
+   template; pass { title, data } to fill it in. Returns
+   { workbook, tableSheets: Map<fieldKey, sheetName> }. */
+function buildFormWorkbook(schema, values) {
+    const fields = (schema && Array.isArray(schema.fields)) ? schema.fields : [];
+    const data = values && values.data ? values.data : {};
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "QMS Guardian";
+
+    const form = workbook.addWorksheet(FORM_SHEET, { views: [{ state: "frozen", ySplit: 2 }] });
+    form.columns = [
+        { key: "k", width: 2 },
+        { key: "field", width: 34 },
+        { key: "value", width: 48 }
+    ];
+    form.getColumn(1).hidden = true;
+    form.addRow({ k: "__title__", field: "Record summary", value: values ? (values.title || "") : "" });
+    form.getRow(1).font = { bold: true };
+    form.addRow({ k: "", field: "(enter values in the Value column only)", value: "" });
+    form.getRow(2).font = { italic: true, color: { argb: "FF888888" } };
+
+    let lastSection;
+    for (const f of fields) {
+        if (f.type === "table") continue;
+        if ((f.section || null) !== lastSection) {
+            lastSection = f.section || null;
+            if (lastSection) {
+                const r = form.addRow({ k: "", field: "— " + lastSection + " —", value: "" });
+                r.font = { bold: true };
+            }
+        }
+        let cell = "";
+        if (values) {
+            const v = data[f.key];
+            cell = v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v);
+        }
+        form.addRow({ k: f.key, field: f.label || humanizeKey(f.key), value: cell });
+    }
+
+    const tableSheets = new Map();
+    const taken = new Set([FORM_SHEET.toLowerCase()]);
+    for (const f of fields) {
+        if (f.type !== "table" || !Array.isArray(f.columns)) continue;
+        const name = safeSheetName(f.label || humanizeKey(f.key), taken);
+        tableSheets.set(f.key, name);
+        const sheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
+        sheet.columns = f.columns.map((c) => ({
+            header: c.label || humanizeKey(c.key),
+            key: c.key,
+            width: Math.max(12, (c.label || c.key).length + 3)
+        }));
+        sheet.getRow(1).font = { bold: true };
+        if (values && Array.isArray(data[f.key])) {
+            for (const row of data[f.key]) {
+                if (!row || typeof row !== "object") continue;
+                const line = {};
+                for (const c of f.columns) {
+                    const v = row[c.key];
+                    line[c.key] = v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v);
+                }
+                sheet.addRow(line);
+            }
+        }
+    }
+
+    return { workbook, tableSheets };
+}
+
+/* Read a filled workbook back into { title, data, errors }. */
+function readFormWorkbook(workbook, schema) {
+    const fields = (schema.fields || []);
+    const byKey = new Map(fields.map((f) => [f.key, f]));
+    const byLabel = new Map(fields.map((f) => [normalizeHeader(f.label || f.key), f]));
+    const errors = [];
+
+    const form = workbook.getWorksheet(FORM_SHEET) || workbook.worksheets[0];
+    let title = "";
+    const data = {};
+
+    if (form) {
+        form.eachRow((row, rowNumber) => {
+            if (rowNumber === 1 && String(row.getCell(1).value || "") !== "__title__") { /* fall through */ }
+            const keyCell = String(row.getCell(1).value || "").trim();
+            const labelCell = normalizeHeader(row.getCell(2).value);
+            const rawValue = row.getCell(3).value;
+
+            if (keyCell === "__title__") {
+                title = rawValue == null ? "" : String(typeof rawValue === "object" && rawValue.text ? rawValue.text : rawValue).trim();
+                return;
+            }
+            const field = keyCell ? byKey.get(keyCell) : byLabel.get(labelCell);
+            if (!field || field.type === "table") return;
+
+            const coerced = coerceCell(field, rawValue);
+            if (coerced && typeof coerced === "object" && coerced.__error) {
+                errors.push((field.label || field.key) + ": " + coerced.__error);
+            } else if (coerced !== undefined) {
+                data[field.key] = coerced;
+            }
+        });
+    }
+
+    for (const f of fields) {
+        if (f.type !== "table" || !Array.isArray(f.columns)) continue;
+        /* the sheet may have been renamed; match on the safe name we'd
+           have produced, else any sheet whose header row looks right */
+        const wantName = safeSheetName(f.label || humanizeKey(f.key), new Set([FORM_SHEET.toLowerCase()]));
+        let sheet = workbook.getWorksheet(wantName)
+            || workbook.worksheets.find((s) => normalizeHeader(s.name) === normalizeHeader(f.label || f.key));
+        if (!sheet) continue;
+
+        const headerRow = sheet.getRow(1).values;   // 1-indexed
+        const colAt = [];                            // sheet column index -> table column key
+        headerRow.forEach((h, i) => {
+            if (i === 0) return;
+            const norm = normalizeHeader(h);
+            const col = f.columns.find((c) => normalizeHeader(c.label || c.key) === norm)
+                || f.columns[i - 1];
+            if (col) colAt[i] = col;
+        });
+
+        const rows = [];
+        for (let r = 2; r <= sheet.rowCount; r++) {
+            const excelRow = sheet.getRow(r);
+            const obj = {};
+            let any = false;
+            colAt.forEach((col, i) => {
+                if (!col) return;
+                const coerced = coerceCell(col, excelRow.getCell(i).value);
+                if (coerced && typeof coerced === "object" && coerced.__error) {
+                    errors.push("\"" + (f.label || f.key) + "\" row " + r + ", " + (col.label || col.key) + ": " + coerced.__error);
+                } else if (coerced !== undefined) {
+                    obj[col.key] = coerced;
+                    any = true;
+                }
+            });
+            if (any) rows.push(obj);
+        }
+        if (rows.length) data[f.key] = rows;
+    }
+
+    return { title, data, errors };
+}
+
+records.get("/excel-template", requirePermission(createPermissionFor), async (request, response, next) => {
+    try {
+        const type = String(request.query.type || "");
+        const typeRow = await query(
+            "select id, name from record_types where org_id = $1 and key = $2",
+            [request.user.org_id, type]);
+        if (typeRow.rowCount === 0) return response.status(400).json({ error: "Unknown record type: " + type });
+
+        const form = await loadPublishedForm(typeRow.rows[0].id);
+        const schema = form ? form.schema : { fields: [] };
+        const { workbook } = buildFormWorkbook(schema, null);
+
+        response.setHeader("Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition",
+            'attachment; filename="' + type.replace(/[^a-z0-9_-]/gi, "") + '-template.xlsx"');
+        await workbook.xlsx.write(response);
+        response.end();
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.post("/excel", requirePermission(createPermissionFor), upload.single("file"),
+    async (request, response, next) => {
+        try {
+            const type = String(request.query.type || request.body?.type || "");
+            const dryRun = request.query.dry_run === "true" || request.body?.dry_run === "true";
+            if (!request.file) return response.status(400).json({ error: "An .xlsx file is required" });
+
+            const typeRow = await query(
+                "select id, prefix, name from record_types where org_id = $1 and key = $2",
+                [request.user.org_id, type]);
+            if (typeRow.rowCount === 0) return response.status(400).json({ error: "Unknown record type: " + type });
+            const recordType = typeRow.rows[0];
+
+            const form = await loadPublishedForm(recordType.id);
+            const schema = form ? form.schema : { fields: [] };
+            const formVersion = form ? form.version : 1;
+
+            const workbook = new ExcelJS.Workbook();
+            try {
+                await workbook.xlsx.load(request.file.buffer);
+            } catch {
+                return response.status(422).json({ error: "That file could not be read as an .xlsx workbook" });
+            }
+
+            const parsed = readFormWorkbook(workbook, schema);
+            let data = applyComputedColumns(schema, withComputedRpn(type, parsed.data));
+            data = applyFairResults(type, data);
+
+            const missing = (schema.fields || [])
+                .filter((f) => f.required && FLAT_FIELD_TYPES.has(f.type) && data[f.key] === undefined)
+                .map((f) => (f.label || f.key) + " is required");
+            const errors = [...parsed.errors, ...missing];
+
+            const title = parsed.title
+                || (recordType.name + " - " + new Date().toISOString().slice(0, 10));
+
+            if (dryRun) {
+                const tables = {};
+                for (const f of (schema.fields || [])) {
+                    if (f.type === "table") tables[f.label || f.key] = Array.isArray(data[f.key]) ? data[f.key].length : 0;
+                }
+                return response.json({ type, dry_run: true, title, header: data, tables, errors });
+            }
+
+            if (errors.length) {
+                return response.status(422).json({ error: "The sheet has problems", errors });
+            }
+
+            const created = await withTransaction((client) => insertRecordRow(client, {
+                orgId: request.user.org_id, userId: request.user.id,
+                recordType, type, title, severity: "ok", data, formVersion, dueAt: null
+            }));
+
+            publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
+            response.status(201).json({ number: created.number, created_count: 1 });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+records.get("/:number/excel", async (request, response, next) => {
+    try {
+        const found = await query(SELECT_RECORD + " and r.number = $2",
+            [request.user.org_id, request.params.number]);
+        if (found.rowCount === 0) return response.status(404).json({ error: "Record not found" });
+        const record = found.rows[0];
+
+        const form = await query(
+            "select schema from form_versions where record_type_id = $1 and version = $2",
+            [record.record_type_id, record.form_version]);
+        const schema = form.rows[0]?.schema || { fields: [] };
+
+        const { workbook } = buildFormWorkbook(schema, { title: record.title, data: record.data });
+
+        response.setHeader("Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition",
+            'attachment; filename="' + record.number + '.xlsx"');
+        await workbook.xlsx.write(response);
+        response.end();
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- search, for the command palette ----------
    GET /api/records/search?q=bore
 
