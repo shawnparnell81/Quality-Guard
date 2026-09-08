@@ -2459,6 +2459,68 @@ th.col-you { color: var(--brand); }
 }
 .toast-info  { background: var(--ink);  color: var(--ground); }
 
+/* ============================================================
+   Responsive pass (P3.6).
+
+   The layout is fluid down to ~1000px already (the department bar
+   becomes a drawer, .grid-2 and .builder go single column). These
+   rules take it the rest of the way to a phone: tighter chrome,
+   toolbars and panel heads that wrap instead of overflow, key/value
+   detail lists that stack, and the couple of fixed-width grids that
+   need to scroll rather than crush.
+   ============================================================ */
+
+@media (max-width: 760px) {
+    .content { padding: 16px; }
+
+    /* Register chrome: search box, Export/Import, filters and the
+       "New" button all onto as many lines as they need. */
+    .reg-toolbar { flex-wrap: wrap; }
+    .reg-toolbar .reg-search { max-width: none; flex: 1 1 100%; }
+    .reg-export { margin-left: 0; }
+    .panel-head { flex-wrap: wrap; }
+    .panel-head > .row { flex-wrap: wrap; }
+    .reg-pager { flex-wrap: wrap; gap: 8px; }
+
+    /* Any form section that lays its fields out in columns collapses
+       to one; the record editor is already a single stack. */
+    .form-section .field-grid { grid-template-columns: 1fr; }
+    #record-editor-body form { max-width: none; }
+
+    /* Multi-file upload rows stack the bar under the name. */
+    .uploader-item {
+        grid-template-columns: 1fr auto;
+        grid-template-areas: "name size" "bar bar" "status status";
+        row-gap: 3px;
+    }
+    .uploader-name { grid-area: name; }
+    .uploader-size { grid-area: size; }
+    .uploader-track { grid-area: bar; }
+    .uploader-status { grid-area: status; }
+}
+
+@media (max-width: 620px) {
+    /* The identity block is redundant next to the avatar on a phone. */
+    .topbar { gap: 10px; padding: 0 12px; }
+    .topbar-right { gap: 8px; }
+    .who { display: none; }
+
+    /* Key/value detail lists stack: the label sits above its value. */
+    .kv { grid-template-columns: 1fr; gap: 2px 0; }
+    .kv dt { margin-top: 6px; }
+    .kv dt:first-of-type { margin-top: 0; }
+
+    /* The 10x10 risk matrix keeps its cell size and scrolls sideways
+       inside its panel rather than shrinking to unreadable. */
+    #risk-matrix { overflow-x: auto; }
+    .risk-matrix-grid { min-width: 440px; }
+
+    /* The notification panel spans almost the whole width. */
+    .notif-panel { width: min(340px, calc(100vw - 20px)); }
+
+    .view-title { font-size: 19px; }
+}
+
 /* ---------- printing ---------- */
 
 /* Print exactly one thing: whatever element printElement() (dom.js)
