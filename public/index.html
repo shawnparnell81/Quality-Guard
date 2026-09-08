@@ -35,6 +35,20 @@
     <div class="crumb" id="org-crumb"></div>
     <div class="topbar-right">
         <span class="site-pill" id="audit-countdown"></span>
+        <div class="notif" id="notif">
+            <button class="icon-btn notif-bell" id="notif-bell" type="button"
+                    aria-haspopup="true" aria-expanded="false" aria-label="Notifications">
+                <span class="notif-icon" aria-hidden="true">&#9873;</span>
+                <span class="notif-badge" id="notif-badge" hidden>0</span>
+            </button>
+            <div class="notif-panel" id="notif-panel" hidden aria-label="Notifications">
+                <div class="notif-head">
+                    <span>Notifications</span>
+                    <button class="btn btn-xs" id="notif-read-all" type="button">Mark all read</button>
+                </div>
+                <div class="notif-list" id="notif-list"></div>
+            </div>
+        </div>
         <button class="icon-btn" id="themeToggle" type="button">Dark</button>
         <div class="who">
             <span class="who-name" id="user-name"></span>

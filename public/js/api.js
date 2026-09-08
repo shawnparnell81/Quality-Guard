@@ -214,6 +214,12 @@ export const api = {
     stopEditing: (number) =>
         request("DELETE", "/records/" + encodeURIComponent(number) + "/editing"),
 
+    /* notification centre (P3.4) */
+    notifications: () => get("/notifications"),
+    markNotificationRead: (id) =>
+        request("POST", "/notifications/" + encodeURIComponent(id) + "/read"),
+    markAllNotificationsRead: () => request("POST", "/notifications/read-all"),
+
     linkRecord: (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/links", payload),
     unlinkRecord: (number, target) =>

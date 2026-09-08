@@ -1263,6 +1263,90 @@ button.chip-link:focus-visible { outline: 2px solid var(--accent); outline-offse
 }
 .icon-btn:hover { color: var(--ink); border-color: var(--ink-3); }
 
+/* ---------- notification bell (P3.4) ---------- */
+
+.notif { position: relative; }
+.notif-bell { position: relative; line-height: 1; }
+.notif-bell .notif-icon { font-size: 14px; }
+.notif-bell.has-unread { color: var(--ink); border-color: var(--ink-3); }
+
+.notif-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--crit, #c62828);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+}
+
+.notif-panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 340px;
+    max-width: 88vw;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+    z-index: 60;
+    overflow: hidden;
+}
+.notif-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--hairline-2);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+}
+.notif-list { max-height: 60vh; overflow-y: auto; }
+.notif-empty { padding: 18px 12px; margin: 0; text-align: center; }
+
+.notif-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "kind title" "kind body";
+    gap: 1px 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--hairline-2);
+    padding: 9px 12px;
+    font: inherit;
+    cursor: pointer;
+}
+.notif-item:hover { background: var(--surface-2); }
+.notif-item.is-unread { background: var(--accent-tint); }
+.notif-item.is-unread:hover { background: var(--accent-tint); }
+.notif-kind {
+    grid-area: kind;
+    align-self: start;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: var(--hairline-2);
+    color: var(--ink-3);
+}
+.notif-kind-overdue { background: var(--crit-tint); color: var(--crit); }
+.notif-kind-approval { background: var(--warn-tint); color: var(--warn); }
+.notif-kind-finding  { background: var(--crit-tint); color: var(--crit); }
+.notif-title { grid-area: title; font-size: 12.5px; color: var(--ink); }
+.notif-body { grid-area: body; font-size: 11.5px; }
+
 /* ---------- lot genealogy tree ---------- */
 
 .tree { font-family: "IBM Plex Mono", monospace; font-size: 12px; line-height: 1.9; }
