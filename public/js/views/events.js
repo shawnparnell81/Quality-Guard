@@ -16,6 +16,7 @@ import { renderEightD, renderChange } from "./change.js";
 import { renderApqpDetail } from "./apqp.js";
 import { renderDiDetail } from "./di.js";
 import { renderFairDetail } from "./fair.js";
+import { renderPpapDetail } from "./ppap.js";
 import { openEntityForm } from "../entity-form.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
@@ -35,7 +36,8 @@ const OWN_SCREEN_REFRESH = {
     ecn: renderChange,
     apqp: (number) => renderApqpDetail(number),
     di: (number) => renderDiDetail(number),
-    fair: (number) => renderFairDetail(number)
+    fair: (number) => renderFairDetail(number),
+    ppap: (number) => renderPpapDetail(number)
 };
 
 /* Which sidebar screen "New X" and "Edit X" should return to once the
@@ -44,7 +46,7 @@ const OWN_SCREEN_REFRESH = {
    "complaints" screen, eightd -> "d8", ecn -> "change"). */
 const TYPE_VIEW = {
     ncr: "ncr", capa: "capa", complaint: "complaints",
-    audit: "audit", risk: "risk", eightd: "d8", ecn: "change", scar: "scar", fair: "fair"
+    audit: "audit", risk: "risk", eightd: "d8", ecn: "change", scar: "scar", fair: "fair", ppap: "ppap"
 };
 
 /* Shared first column: severity stripe plus record number. */
@@ -173,6 +175,19 @@ const REGISTERS = {
                 const text = (checked - nc) + " / " + checked;
                 return nc > 0 ? el("span", { style: "color:var(--crit)", text }) : text;
             } },
+            statusColumn
+        ]
+    },
+
+    ppap: {
+        tbody: "ppap-register",
+        columns: [
+            idColumn,
+            { className: "mono sm nowrap", render: (row) =>
+                (row.data.part_number || "-") + (row.data.revision ? " / " + row.data.revision : "") },
+            { className: "sm", render: (row) => row.data.customer || "-" },
+            { className: "sm", render: (row) => (row.data.submission_level || "-").replace("Level ", "L") },
+            { className: "sm dim", render: (row) => row.data.reason || "-" },
             statusColumn
         ]
     }
@@ -578,6 +593,16 @@ export async function renderRecordDetail(type, number) {
         const editButton = document.getElementById("fair-edit");
         if (editButton) editButton.dataset.number = number;
         return renderFairDetail(number);
+    }
+
+    /* A PPAP is built around its 18 element slots and the submit gate
+       (ppap.js). */
+    if (type === "ppap") {
+        const pdfButton = document.getElementById("ppap-pdf");
+        if (pdfButton) pdfButton.dataset.number = number;
+        const editButton = document.getElementById("ppap-edit");
+        if (editButton) editButton.dataset.number = number;
+        return renderPpapDetail(number);
     }
 
     const panel = document.getElementById(type + "-detail");

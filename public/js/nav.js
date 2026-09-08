@@ -79,7 +79,8 @@ export const NAV = [
         { label: "Engineering Drawings", view: "drawings" },
         { label: "Engineering Documents", view: "eng-documents" },
         { label: "Change Control (ECN)", view: "change", countKey: "ecn" },
-        { label: "APQP Programs", view: "apqp", countKey: "apqp" }
+        { label: "APQP Programs", view: "apqp", countKey: "apqp" },
+        { label: "PPAP Submissions", view: "ppap" }
     ] },
 
     { dept: "Administration", items: [

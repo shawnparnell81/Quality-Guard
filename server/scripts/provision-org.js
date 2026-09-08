@@ -76,7 +76,7 @@ const GRANTS = {
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "di.read", "di.manage", "risk.read", "risk.manage",
         "vendor.read", "scar.issue", "apqp.manage", "receiving.log", "fair.read", "fair.manage",
-        "review.manage"],
+        "review.manage", "ppap.manage"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
@@ -89,7 +89,7 @@ const GRANTS = {
         "document.read", "document.create", "drawing.read",
         "change.create", "production.read", "production.hold", "production.release",
         "gage.read", "training.read", "training.record", "di.read", "di.manage", "apqp.manage",
-        "wo.log"],
+        "wo.log", "ppap.manage"],
 
     document_controller: [
         "ncr.read", "document.read", "document.create", "document.approve",
@@ -116,7 +116,7 @@ const GRANTS = {
         "change.create", "change.approve",
         "production.read", "production.release", "training.read",
         "audit.read", "di.read", "di.manage", "risk.read", "risk.manage", "user.read",
-        "apqp.manage", "review.manage"],
+        "apqp.manage", "review.manage", "ppap.manage"],
 
     quality_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "ncr.use_as_is",
@@ -133,7 +133,8 @@ const GRANTS = {
         "audit.read", "audit.schedule", "audit.close",
         "di.read", "di.manage", "di.close",
         "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
-        "purchasing.log", "wo.log", "layout.manage", "fair.read", "fair.manage", "review.manage"]
+        "purchasing.log", "wo.log", "layout.manage", "fair.read", "fair.manage", "review.manage",
+        "ppap.manage"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
@@ -158,7 +159,8 @@ const RECORD_TYPES = [
     { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" },
     { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" },
     { key: "di",        name: "Discrepancy Investigation", prefix: "DI", clause: "9.2" },
-    { key: "fair",      name: "First Article Inspection",  prefix: "FAIR", clause: "8.5.1" }
+    { key: "fair",      name: "First Article Inspection",  prefix: "FAIR", clause: "8.5.1" },
+    { key: "ppap",      name: "PPAP Submission",           prefix: "PPAP", clause: "8.3.4.4" }
 ];
 
 const WORKFLOWS = {
@@ -309,6 +311,27 @@ const WORKFLOWS = {
             ["complete", "in_progress", "fair.manage"],
             ["complete", "approved", "fair.manage"],
             ["complete", "rejected", "fair.manage"]
+        ]
+    },
+
+    ppap: {
+        states: [
+            ["draft", "Draft", 1, false],
+            ["assembling", "Assembling package", 2, false],
+            ["submitted", "Submitted", 3, false],
+            ["interim", "Interim approval", 4, false],
+            ["approved", "Approved", 5, true],
+            ["rejected", "Rejected", 6, true]
+        ],
+        transitions: [
+            ["draft", "assembling", "ppap.manage"],
+            ["assembling", "submitted", "ppap.manage"],
+            ["submitted", "interim", "ppap.manage"],
+            ["submitted", "approved", "ppap.manage"],
+            ["submitted", "rejected", "ppap.manage"],
+            ["interim", "approved", "ppap.manage"],
+            ["interim", "rejected", "ppap.manage"],
+            ["rejected", "assembling", "ppap.manage"]
         ]
     }
 };
@@ -475,6 +498,32 @@ const FORMS = {
         { key: "nonconformances",    label: "Nonconformance detail", type: "memo", section: "Disposition" },
         { key: "reviewed_by",        label: "Reviewed by", type: "signature", section: "Disposition" },
         { key: "review_date",        label: "Review date", type: "date", section: "Disposition" }
+    ],
+
+    /* PPAP submission - see migration 037. The 18 elements are slots
+       (ppap_elements), not form fields; the screen renders them. */
+    ppap: [
+        { key: "part_number", label: "Part number", type: "text", required: true, section: "Part" },
+        { key: "part_name",   label: "Part name",   type: "text", section: "Part" },
+        { key: "revision",    label: "Revision / change level", type: "text", required: true, section: "Part" },
+        { key: "customer",    label: "Customer",    type: "text", required: true, section: "Part" },
+        { key: "customer_part_number", label: "Customer part number", type: "text", section: "Part" },
+        { key: "drawing",     label: "Drawing / spec no.", type: "text", section: "Part" },
+
+        { key: "submission_level", label: "Submission level", type: "select", required: true, section: "Submission",
+          options: ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] },
+        { key: "reason", label: "Reason for submission", type: "select", section: "Submission",
+          options: ["Initial submission", "Engineering change",
+              "Tooling: transfer / replacement / refurbishment", "Material or sub-supplier change",
+              "Process change", "Correction of discrepancy", "Annual revalidation", "Other"] },
+        { key: "part_weight", label: "Part weight", type: "text", section: "Submission" },
+        { key: "psw_number",  label: "PSW number",  type: "text", section: "Submission" },
+
+        { key: "submitted_on", label: "Submitted on", type: "date", section: "Approval" },
+        { key: "submitted_by", label: "Submitted by", type: "signature", section: "Approval" },
+        { key: "customer_disposition", label: "Customer disposition", type: "select", section: "Approval",
+          options: ["Not submitted", "Submitted", "Interim Approval", "Full Approval", "Rejected"] },
+        { key: "customer_signoff", label: "Customer approver / date", type: "text", section: "Approval" }
     ]
 };
 

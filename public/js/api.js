@@ -350,6 +350,14 @@ export const api = {
         request("DELETE", "/apqp/" + encodeURIComponent(number)
                 + "/deliverables/" + encodeURIComponent(slot)),
 
+    ppapPackage:   (number) => get("/ppap/" + encodeURIComponent(number)),
+    setPpapElement: (number, element, payload) =>
+        request("PUT", "/ppap/" + encodeURIComponent(number)
+                + "/elements/" + encodeURIComponent(element), payload),
+    clearPpapElement: (number, element) =>
+        request("DELETE", "/ppap/" + encodeURIComponent(number)
+                + "/elements/" + encodeURIComponent(element)),
+
     raiseDi:       (payload) => request("POST", "/di", payload),
     diForms:       (number)  => get("/di/" + encodeURIComponent(number) + "/forms"),
     attachDiForm:  (number, slot, formData) =>
