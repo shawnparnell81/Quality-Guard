@@ -219,6 +219,13 @@ export function buildField(field, options, currentValue) {
                 body.append(tr);
             };
 
+            /* Replace every row - used when a saved draft is restored
+               into an already-built form. */
+            const writeTable = (rows) => {
+                body.replaceChildren();
+                (Array.isArray(rows) && rows.length ? rows : [{}]).forEach(addRow);
+            };
+
             const seedRows = Array.isArray(currentValue) ? currentValue : [];
             (seedRows.length ? seedRows : [{}]).forEach(addRow);
 
@@ -254,7 +261,7 @@ export function buildField(field, options, currentValue) {
                 return any ? row : null;
             }).filter(Boolean);
 
-            return { wrapper, input: null, field, readTable };
+            return { wrapper, input: null, field, readTable, writeTable };
         }
 
         default:
@@ -317,35 +324,39 @@ export function readValue(entry) {
     return raw;
 }
 
-export function validate(entries) {
-    const problems = [];
+/* One field's problem, or null. The building block both the plain
+   list (validate, below) and the record editor's clickable summary
+   are made from. */
+export function fieldProblem(entry) {
+    const { field, input } = entry;
+    const value = readValue(entry);
 
-    for (const entry of entries) {
-        const { field, input } = entry;
-        const value = readValue(entry);
-
-        if (field.required && value === undefined && field.type !== "file") {
-            problems.push(field.type === "table"
-                ? field.label + " needs at least one row"
-                : field.label + " is required");
-            continue;
-        }
-
-        if (value === undefined || field.type === "table") continue;
-
-        if (field.pattern && !new RegExp(field.pattern).test(String(value))) {
-            problems.push(field.label + " must be " + describePattern(field.pattern));
-        }
-
-        if (field.min !== undefined && Number(value) < field.min) {
-            problems.push(field.label + " must be at least " + field.min);
-        }
-
-        if (input && input.disabled && field.required) {
-            problems.push(field.label + " cannot be set yet");
-        }
+    if (field.required && value === undefined && field.type !== "file") {
+        return field.type === "table"
+            ? field.label + " needs at least one row"
+            : field.label + " is required";
     }
 
+    if (value === undefined || field.type === "table") return null;
+
+    if (field.pattern && !new RegExp(field.pattern).test(String(value))) {
+        return field.label + " must be " + describePattern(field.pattern);
+    }
+    if (field.min !== undefined && Number(value) < field.min) {
+        return field.label + " must be at least " + field.min;
+    }
+    if (input && input.disabled && field.required) {
+        return field.label + " cannot be set yet";
+    }
+    return null;
+}
+
+export function validate(entries) {
+    const problems = [];
+    for (const entry of entries) {
+        const message = fieldProblem(entry);
+        if (message) problems.push(message);
+    }
     return problems;
 }
 
@@ -364,11 +375,22 @@ const SEVERITY_OPTIONS = [["ok", "OK"], ["warn", "Warning"], ["crit", "Critical"
    screen is reached from a different register each time. */
 let returnView = null;
 
+/* An open editor registers a teardown (drop the beforeunload guard,
+   stop the autosave timers) and a dirtiness probe, so navigating away
+   by the shared Back button can also warn and clean up. */
+let editorTeardown = null;
+let editorIsDirty = () => false;
+
 export function wireRecordEditor() {
     const back = document.getElementById("record-editor-back");
     if (!back) return;
 
     back.addEventListener("click", () => {
+        if (editorIsDirty()
+            && !window.confirm("Leave without saving? Your draft is kept and offered when you come back.")) {
+            return;
+        }
+        if (editorTeardown) editorTeardown();
         if (returnView) {
             document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
         }
@@ -473,27 +495,190 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
 
     const saveLabel = existing ? "Save changes" : "Raise " + definition.name;
     const save = el("button", { class: "btn btn-primary", type: "submit" }, saveLabel);
-
+    const autosaveHint = el("span", { class: "autosave-hint" });
     const cancel = el("button", { class: "btn", type: "button" }, "Cancel");
-    cancel.addEventListener("click", () => {
-        if (returnView) document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
-    });
 
     const form = el("form", {}, [errorBox, titleGroup, severityGroup, dueGroup]);
     appendFieldsGrouped(form, entries);
-    form.append(el("div", { class: "row", style: "margin-top:18px" }, [save, cancel]));
+    form.append(el("div", { class: "row", style: "margin-top:18px" }, [save, cancel, autosaveHint]));
 
     body.replaceChildren(form);
+
+    /* ---------- inline validation (P0.3) ---------- */
+
+    function paintFieldError(entry) {
+        const message = fieldProblem(entry);
+        let node = entry.wrapper.querySelector(":scope > .field-error");
+        if (!message) { if (node) node.remove(); return Boolean(message); }
+        if (!node) { node = el("div", { class: "field-error" }); entry.wrapper.append(node); }
+        node.textContent = message;
+        return true;
+    }
+
+    function paintTitleError() {
+        const bad = !titleInput.value.trim();
+        let node = titleGroup.querySelector(":scope > .field-error");
+        if (!bad) { if (node) node.remove(); return false; }
+        if (!node) { node = el("div", { class: "field-error" }); titleGroup.append(node); }
+        node.textContent = "Summary is required";
+        return true;
+    }
+
+    function focusProblem(target) {
+        if (!target) return;
+        const focusable = target.matches && target.matches("input,select,textarea,button")
+            ? target
+            : (target.querySelector && target.querySelector("input:not([type=hidden]),select,textarea,button"));
+        (focusable || target).scrollIntoView({ block: "center", behavior: "smooth" });
+        if (focusable && typeof focusable.focus === "function") focusable.focus();
+    }
+
+    for (const entry of entries) {
+        if (entry.field.type === "table" || !entry.wrapper) continue;
+        entry.wrapper.addEventListener("focusout", () => paintFieldError(entry));
+        entry.wrapper.addEventListener("input", () => {
+            if (entry.wrapper.querySelector(":scope > .field-error")) paintFieldError(entry);
+        });
+    }
+    titleInput.addEventListener("blur", paintTitleError);
+    titleInput.addEventListener("input", () => {
+        if (titleGroup.querySelector(":scope > .field-error")) paintTitleError();
+    });
+
+    /* ---------- autosave + unsaved-changes guard (P0.2) ---------- */
+
+    const draftKey = "qmsg:draft:v1:" + typeKey + ":" + (number || "new");
+    const store = {
+        read() { try { return JSON.parse(localStorage.getItem(draftKey) || "null"); } catch { return null; } },
+        write(value) { try { localStorage.setItem(draftKey, JSON.stringify(value)); } catch { /* full or blocked */ } },
+        clear() { try { localStorage.removeItem(draftKey); } catch { /* blocked */ } }
+    };
+
+    function snapshot() {
+        const data = {};
+        for (const entry of entries) {
+            const value = readValue(entry);
+            if (value !== undefined) data[entry.field.key] = value;
+        }
+        return {
+            title: titleInput.value,
+            severity: severitySelect.value,
+            due_at: dueInput.value || null,
+            data
+        };
+    }
+    const cleanJSON = JSON.stringify(snapshot());
+    const isDirty = () => JSON.stringify(snapshot()) !== cleanJSON;
+    editorIsDirty = isDirty;
+
+    function applyDraft(snap) {
+        titleInput.value = snap.title || "";
+        severitySelect.value = snap.severity || "warn";
+        dueInput.value = snap.due_at || "";
+        for (const entry of entries) {
+            const value = (snap.data || {})[entry.field.key];
+            if (entry.field.type === "table") {
+                if (entry.writeTable) entry.writeTable(Array.isArray(value) ? value : []);
+            } else if (entry.input) {
+                const raw = value == null ? "" : String(value);
+                entry.input.value = entry.field.type === "date" ? raw.slice(0, 10) : raw;
+            }
+        }
+    }
+
+    let savedAt = 0;
+    let saveTimer = null;
+
+    function paintHint() {
+        if (!savedAt) { autosaveHint.textContent = ""; return; }
+        const mins = Math.round((Date.now() - savedAt) / 60000);
+        autosaveHint.textContent = "Draft saved " + (mins < 1 ? "just now" : mins + " min ago");
+    }
+    function autosave() {
+        if (isDirty()) {
+            savedAt = Date.now();
+            store.write({ at: savedAt, snap: snapshot() });
+        } else {
+            savedAt = 0;
+            store.clear();
+        }
+        paintHint();
+    }
+    const queueSave = () => {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(autosave, 700);
+    };
+    form.addEventListener("input", queueSave);
+    form.addEventListener("change", queueSave);
+    const hintTicker = setInterval(paintHint, 30000);
+
+    const onBeforeUnload = (event) => {
+        if (isDirty()) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    function teardown() {
+        if (saveTimer) clearTimeout(saveTimer);
+        clearInterval(hintTicker);
+        window.removeEventListener("beforeunload", onBeforeUnload);
+        if (editorTeardown === teardown) editorTeardown = null;
+        if (editorIsDirty === isDirty) editorIsDirty = () => false;
+    }
+    if (editorTeardown) editorTeardown();   // a previous editor left mounted
+    editorTeardown = teardown;
+
+    function leave() {
+        teardown();
+        if (returnView) document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
+    }
+    cancel.addEventListener("click", () => {
+        if (isDirty()
+            && !window.confirm("Leave without saving? Your draft is kept and offered when you come back.")) {
+            return;
+        }
+        leave();
+    });
+
+    /* Offer an unsent draft from a previous visit. */
+    const draft = store.read();
+    if (draft && draft.snap && JSON.stringify(draft.snap) !== cleanJSON) {
+        const mins = Math.max(0, Math.round((Date.now() - (draft.at || Date.now())) / 60000));
+        const banner = el("div", { class: "draft-banner" }, [
+            el("span", {}, "Unsaved draft from " + (mins < 1 ? "moments ago" : mins + " min ago") + "."),
+            el("button", {
+                type: "button", class: "btn sm",
+                onClick: () => { applyDraft(draft.snap); banner.remove(); autosave(); }
+            }, "Restore"),
+            el("button", {
+                type: "button", class: "btn sm",
+                onClick: () => { store.clear(); savedAt = 0; paintHint(); banner.remove(); }
+            }, "Discard")
+        ]);
+        form.prepend(banner);
+    }
 
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
         errorBox.hidden = true;
 
-        const problems = validate(entries);
-        if (!titleInput.value.trim()) problems.unshift("Summary is required");
+        const problems = [];
+        if (paintTitleError()) problems.push({ message: "Summary is required", focus: titleInput });
+        for (const entry of entries) {
+            if (paintFieldError(entry)) {
+                problems.push({ message: fieldProblem(entry), focus: entry.input || entry.wrapper });
+            }
+        }
 
         if (problems.length > 0) {
-            errorBox.replaceChildren(...problems.map((text) => el("div", { text })));
+            errorBox.replaceChildren(
+                el("div", {
+                    class: "sm", style: "font-weight:600;margin-bottom:4px",
+                    text: problems.length === 1 ? "One thing to fix" : problems.length + " things to fix"
+                }),
+                ...problems.map((problem) => el("button", {
+                    type: "button", class: "err-jump", onClick: () => focusProblem(problem.focus)
+                }, problem.message))
+            );
             errorBox.hidden = false;
             errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
             return;
@@ -532,6 +717,9 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
                 toast(result.number + " created");
             }
 
+            store.clear();
+            teardown();
+
             if (onSaved) await onSaved(result);
             if (returnView) document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
         } catch (error) {
@@ -550,6 +738,7 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
         }
     });
 
+    paintHint();
     titleInput.focus();
 }
 
