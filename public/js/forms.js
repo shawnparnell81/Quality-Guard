@@ -234,10 +234,99 @@ export function buildField(field, options, currentValue) {
                 onClick: () => addRow({})
             });
 
+            /* ---------- paste from Excel + keyboard nav (P0.4) ---------- */
+
+            const cellsInRow = (tr) => [...tr.querySelectorAll("input, select, textarea")];
+            /* Cells a person can actually type in - excludes the computed
+               cells, which carry tabindex="-1". */
+            const typeableCells = (tr) => cellsInRow(tr).filter((c) => c.tabIndex !== -1);
+
+            /* Pasting a block copied from a spreadsheet fills rows and
+               columns from the cell it lands in, adding rows as needed.
+               A plain single value is left to the browser. Computed
+               columns keep their spot in the alignment but are never
+               written to - they recompute from the numbers around them. */
+            body.addEventListener("paste", (event) => {
+                const cell = event.target.closest("input, select, textarea");
+                if (!cell || !body.contains(cell)) return;
+
+                const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+                if (!/[\t\n\r]/.test(text)) return;
+                event.preventDefault();
+
+                const grid = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "")
+                    .split("\n").map((line) => line.split("\t"));
+
+                const startTr = cell.closest("tr");
+                const startRow = [...body.children].indexOf(startTr);
+                const startCol = cellsInRow(startTr).indexOf(cell);
+                if (startRow < 0 || startCol < 0) return;
+
+                grid.forEach((values, r) => {
+                    let tr = body.children[startRow + r];
+                    if (!tr) { addRow({}); tr = body.lastElementChild; }
+                    const cells = cellsInRow(tr);
+                    values.forEach((value, c) => {
+                        const target = cells[startCol + c];
+                        const column = columns[startCol + c];
+                        if (!target || !column || column.type === "computed") return;
+                        target.value = String(value).trim();
+                        target.dispatchEvent(new Event("input", { bubbles: true }));
+                        target.dispatchEvent(new Event("change", { bubbles: true }));
+                    });
+                });
+
+                const anchor = cellsInRow(body.children[startRow])[startCol];
+                if (anchor) anchor.focus();
+            });
+
+            body.addEventListener("keydown", (event) => {
+                const cell = event.target.closest("input, select, textarea");
+                if (!cell) return;
+                const tr = cell.closest("tr");
+                if (!tr || tr.parentElement !== body) return;
+
+                const rows = [...body.children];
+                const rowIndex = rows.indexOf(tr);
+                const typeable = typeableCells(tr);
+                const colIndex = typeable.indexOf(cell);
+                if (colIndex < 0) return;
+
+                /* Enter moves down the column (Shift+Enter up); on the
+                   last row it makes a new one. Left alone in a textarea,
+                   where Enter is a newline. */
+                if (event.key === "Enter" && cell.tagName !== "TEXTAREA") {
+                    event.preventDefault();
+                    const step = event.shiftKey ? -1 : 1;
+                    let nextTr = rows[rowIndex + step];
+                    if (step === 1 && !nextTr) { addRow({}); nextTr = body.lastElementChild; }
+                    if (nextTr) {
+                        const nextCells = typeableCells(nextTr);
+                        (nextCells[colIndex] || nextCells[0]).focus();
+                    }
+                    return;
+                }
+
+                /* Tab off the last cell of the last row adds a row and
+                   lands in it, so a table fills top to bottom without
+                   reaching for the mouse. */
+                if (event.key === "Tab" && !event.shiftKey
+                    && colIndex === typeable.length - 1 && rowIndex === rows.length - 1) {
+                    event.preventDefault();
+                    addRow({});
+                    const newCells = typeableCells(body.lastElementChild);
+                    (newCells[0] || cell).focus();
+                }
+            });
+
             /* A wide table (a PFMEA can carry a dozen columns) scrolls
                inside its own box rather than pushing the whole form
                sideways with no way back. */
-            wrapper.append(el("div", { class: "table-wrap" }, table), addBtn);
+            wrapper.append(
+                el("div", { class: "table-wrap" }, table),
+                addBtn,
+                el("span", { class: "field-hint", text: "Tab and Enter move between cells. Paste a block straight from Excel." })
+            );
 
             const readTable = () => [...body.querySelectorAll("tr")].map((tr) => {
                 const inputs = tr.querySelectorAll("input, select, textarea");
