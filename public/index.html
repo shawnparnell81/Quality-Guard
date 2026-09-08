@@ -1329,6 +1329,52 @@
         </div>
     </section>
 
+    <!-- ============ LAYERED PROCESS AUDIT (LPA) ============ -->
+    <section class="view" id="view-lpa" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Layered Process Audit<span class="clause-ref">9.2.2</span></h1>
+            <p class="view-sub">Recurring checklist audits by layer and area. Schedules roll forward on their own; an auditor answers pass / fail per question on the floor, and a fail can raise a linked NCR.</p>
+        </div>
+
+        <div id="lpa-main">
+            <div class="kpis" id="lpa-stats"></div>
+
+            <div class="panel" style="margin-top:16px">
+                <div class="panel-head">
+                    <h2 class="panel-title">Due &amp; recent audits</h2>
+                    <button class="btn no-print" type="button" id="lpa-new-audit" data-requires="lpa.audit" style="margin-left:auto">Ad-hoc audit</button>
+                </div>
+                <div class="panel-body" id="lpa-audits"></div>
+            </div>
+
+            <div class="grid-2" style="margin-top:16px">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Schedules</h2>
+                        <button class="btn no-print" type="button" id="lpa-new-schedule" data-requires="lpa.manage" style="margin-left:auto">New schedule</button>
+                    </div>
+                    <div class="panel-body" id="lpa-schedules"></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Templates</h2>
+                        <button class="btn no-print" type="button" id="lpa-new-template" data-requires="lpa.manage" style="margin-left:auto">New template</button>
+                    </div>
+                    <div class="panel-body" id="lpa-templates"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="lpa-audit" hidden>
+            <div class="panel-head">
+                <button class="btn no-print" type="button" id="lpa-audit-back">&larr; Back</button>
+                <h2 class="panel-title" id="lpa-audit-title">Audit</h2>
+                <span id="lpa-audit-score" style="margin-left:auto"></span>
+            </div>
+            <div class="panel-body" id="lpa-audit-body"></div>
+        </div>
+    </section>
+
     <!-- ============ PPAP SUBMISSION PACKAGE ============ -->
     <section class="view" id="view-ppap" hidden>
         <div class="view-head">

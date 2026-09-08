@@ -14,7 +14,7 @@ export const dashboard = Router();
 
 dashboard.get("/", async (request, response, next) => {
     try {
-        const [events, weekly, gages, training, vendors] = await Promise.all([
+        const [events, weekly, gages, training, vendors, lpaStats] = await Promise.all([
             query(`
                 select rt.key as type,
                        count(*) filter (where r.closed_at is null) as open,
@@ -81,7 +81,24 @@ dashboard.get("/", async (request, response, next) => {
                below it shows the moment real receiving history came
                in for one vendor but not another. */
             scoredVendors(request.user.org_id).then((all) =>
-                all.filter((vendor) => vendor.status !== "onboarding"))
+                all.filter((vendor) => vendor.status !== "onboarding")),
+
+            /* LPA health: open instances, misses in the last 30 days,
+               and the rolling pass rate. Read-only here - schedules
+               only roll forward on GET /api/lpa. */
+            query(`
+                select
+                  count(*) filter (where status in ('scheduled', 'in_progress'))                as open,
+                  count(*) filter (where status in ('scheduled', 'in_progress')
+                                     and due_on < current_date)                                 as overdue,
+                  count(*) filter (where status = 'missed'
+                                     and created_at > now() - interval '30 days')               as missed_30d,
+                  coalesce(sum(score_pass) filter (where status = 'complete'
+                                     and performed_on > current_date - 30), 0)                  as pass_30d,
+                  coalesce(sum(score_total) filter (where status = 'complete'
+                                     and performed_on > current_date - 30), 0)                  as total_30d
+                  from lpa_audits where org_id = $1
+            `, [request.user.org_id])
         ]);
 
         const byType = {};
@@ -138,6 +155,13 @@ dashboard.get("/", async (request, response, next) => {
                figure disagree with clause 9.2's finding on the
                Readiness screen. One definition of overdue, not two. */
             audits: { overdue: byType.audit?.overdue ?? 0 },
+            lpa: {
+                open: Number(lpaStats.rows[0].open),
+                overdue: Number(lpaStats.rows[0].overdue) + Number(lpaStats.rows[0].missed_30d),
+                pass_rate: Number(lpaStats.rows[0].total_30d) > 0
+                    ? Math.round((Number(lpaStats.rows[0].pass_30d) / Number(lpaStats.rows[0].total_30d)) * 100)
+                    : null
+            },
             trends,
             trend_records: trendRecords
         });

@@ -1612,6 +1612,27 @@ th.col-you { color: var(--brand); }
 .ppap-el.is-missing { border-left-color: var(--crit); background: var(--crit-tint); }
 .ppap-el .row-actions { flex-shrink: 0; display: flex; gap: 5px; flex-wrap: wrap; }
 
+/* Layered Process Audit. */
+.lpa-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lpa-list > li { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+.lpa-list .row-actions { flex-shrink: 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lpa-audit-row.is-missed { border-left: 3px solid var(--crit); padding-left: 8px; }
+.lpa-q {
+    display: flex; gap: 12px; align-items: flex-start; justify-content: space-between;
+    padding: 9px 6px; border-bottom: 1px solid var(--hairline); border-left: 3px solid transparent;
+}
+.lpa-q:last-child { border-bottom: 0; }
+.lpa-q.is-pass { border-left-color: var(--ok); }
+.lpa-q.is-fail { border-left-color: var(--crit); background: var(--crit-tint); }
+.lpa-q-text { min-width: 0; }
+.lpa-q-controls { flex-shrink: 0; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.lpa-note { font-size: 12px; padding: 3px 6px; width: 8rem; }
+.lpa-res.is-pass { background: var(--ok); color: #fff; border-color: var(--ok); }
+.lpa-res.is-fail { background: var(--crit); color: #fff; border-color: var(--crit); }
+.lpa-res.is-na { background: var(--surface-2); }
+.lpa-q-edit { display: flex; gap: 10px; align-items: center; justify-content: space-between;
+    padding: 5px 0; border-bottom: 1px solid var(--hairline); }
+
 /* A box of checkboxes (openEntityForm "checklist" field). */
 .checklist {
     max-height: 200px;

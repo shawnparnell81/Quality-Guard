@@ -52,13 +52,13 @@ const ROLES = [
 const GRANTS = {
     operator: [
         "ncr.read", "ncr.create", "production.read", "document.read",
-        "drawing.read", "training.read"],
+        "drawing.read", "training.read", "lpa.read"],
 
     quality_inspector: [
         "ncr.read", "ncr.create", "ncr.contain", "capa.read", "complaint.read",
         "document.read", "drawing.read", "production.read", "shipping.read",
         "shipping.release", "gage.read", "training.read", "audit.read", "di.read",
-        "receiving.log", "fair.read", "fair.manage"],
+        "receiving.log", "fair.read", "fair.manage", "lpa.read", "lpa.audit"],
 
     quality_tech: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition",
@@ -66,7 +66,7 @@ const GRANTS = {
         "document.read", "drawing.read", "production.read", "production.hold",
         "shipping.read", "gage.read", "gage.calibrate", "training.read",
         "training.record", "audit.read", "di.read", "risk.read", "vendor.read",
-        "scar.issue", "receiving.log", "fair.read", "fair.manage"],
+        "scar.issue", "receiving.log", "fair.read", "fair.manage", "lpa.read", "lpa.audit"],
 
     quality_engineer: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "mrb.signoff",
@@ -76,7 +76,7 @@ const GRANTS = {
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "di.read", "di.manage", "risk.read", "risk.manage",
         "vendor.read", "scar.issue", "apqp.manage", "receiving.log", "fair.read", "fair.manage",
-        "review.manage", "ppap.manage"],
+        "review.manage", "ppap.manage", "lpa.read", "lpa.audit", "lpa.manage"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
@@ -89,7 +89,7 @@ const GRANTS = {
         "document.read", "document.create", "drawing.read",
         "change.create", "production.read", "production.hold", "production.release",
         "gage.read", "training.read", "training.record", "di.read", "di.manage", "apqp.manage",
-        "wo.log", "ppap.manage"],
+        "wo.log", "ppap.manage", "lpa.read", "lpa.audit"],
 
     document_controller: [
         "ncr.read", "document.read", "document.create", "document.approve",
@@ -106,7 +106,7 @@ const GRANTS = {
         "document.read", "drawing.read",
         "production.read", "production.hold", "production.release",
         "shipping.read", "training.read", "training.record", "risk.read",
-        "purchasing.log", "wo.log", "review.manage"],
+        "purchasing.log", "wo.log", "review.manage", "lpa.read", "lpa.audit"],
 
     engineering_manager: [
         "ncr.read", "ncr.create", "ncr.disposition", "mrb.signoff",
@@ -116,7 +116,7 @@ const GRANTS = {
         "change.create", "change.approve",
         "production.read", "production.release", "training.read",
         "audit.read", "di.read", "di.manage", "risk.read", "risk.manage", "user.read",
-        "apqp.manage", "review.manage", "ppap.manage"],
+        "apqp.manage", "review.manage", "ppap.manage", "lpa.read", "lpa.audit", "lpa.manage"],
 
     quality_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "ncr.use_as_is",
@@ -134,7 +134,7 @@ const GRANTS = {
         "di.read", "di.manage", "di.close",
         "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
         "purchasing.log", "wo.log", "layout.manage", "fair.read", "fair.manage", "review.manage",
-        "ppap.manage"]
+        "ppap.manage", "lpa.read", "lpa.audit", "lpa.manage"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
