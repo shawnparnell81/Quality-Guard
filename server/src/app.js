@@ -30,6 +30,7 @@ import { lpa } from "./routes/lpa.js";
 import { logs } from "./routes/logs.js";
 import { layout } from "./routes/layout.js";
 import { formImport } from "./routes/form-import.js";
+import { notifications } from "./routes/notifications.js";
 import { streamHandler } from "./stream.js";
 
 const app = express();
@@ -142,6 +143,7 @@ app.use("/api", lpa);
 app.use("/api", logs);
 app.use("/api", layout);
 app.use("/api", formImport);
+app.use("/api", notifications);
 app.use("/api", masterdata);
 
 app.use((request, response) => {
