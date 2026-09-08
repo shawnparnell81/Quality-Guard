@@ -20,6 +20,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import ExcelJS from "exceljs";
+
 import { provisionOrganization } from "../scripts/provision-org.js";
 import { pool, query } from "../src/db.js";
 
@@ -60,6 +62,15 @@ async function loginAs(email, pw) {
         cookie = extractCookie(changed) || cookie;
     }
     return cookie;
+}
+
+/* Fetch an .xlsx export and read it back with exceljs. */
+async function exportSheet(cookie, path) {
+    const r = await fetch(BASE + path, { headers: { Cookie: cookie } });
+    const buffer = Buffer.from(await r.arrayBuffer());
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    return { status: r.status, headers: r.headers, workbook, sheet: workbook.getWorksheet("Records") };
 }
 
 async function api(cookie, method, path, payload) {
@@ -199,4 +210,32 @@ test("one org's rows and count never leak into another", async () => {
     assert.equal(r.status, 200);
     assert.equal(r.body.total, 0);
     assert.equal(r.body.records.length, 0);
+});
+
+test("export returns an .xlsx of the filtered set", async () => {
+    const { status, headers, sheet } = await exportSheet(adminCookie,
+        "/api/records/export?type=ncr&q=" + TAG + "&sort=title&dir=asc");
+
+    assert.equal(status, 200);
+    assert.match(headers.get("content-type"), /spreadsheetml\.sheet/);
+    assert.match(headers.get("content-disposition"), /attachment; filename="ncr-register-\d{4}-\d{2}-\d{2}\.xlsx"/);
+
+    assert.ok(sheet, "the workbook has a Records sheet");
+    assert.equal(sheet.rowCount, TITLES.length + 1, "one header row plus every filtered record");
+
+    const header = sheet.getRow(1).values.slice(1);   // exceljs 1-indexes
+    assert.ok(header.includes("Number"));
+    assert.ok(header.includes("Title"));
+    assert.ok(header.includes("Disposition"), "data keys become columns");
+
+    /* sort=title asc is honoured in the sheet, too. */
+    const titleCol = header.indexOf("Title") + 1;
+    const titles = [];
+    for (let r = 2; r <= sheet.rowCount; r++) titles.push(sheet.getRow(r).getCell(titleCol).value);
+    assert.deepEqual(titles, [...titles].sort());
+});
+
+test("export respects tenant isolation", async () => {
+    const { sheet } = await exportSheet(otherCookie, "/api/records/export?type=ncr&q=" + TAG);
+    assert.equal(sheet.rowCount, 1, "header only - none of org A's rows");
 });

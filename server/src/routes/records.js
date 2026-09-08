@@ -8,6 +8,7 @@
 
 import { Router } from "express";
 import PDFDocument from "pdfkit";
+import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
 import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
 import { upload } from "../uploads.js";
@@ -272,52 +273,58 @@ const SORT_COLUMNS = {
     severity: "r.severity"
 };
 
+/* The shared WHERE for the list and the export: same type / status /
+   severity / open / q filters, so an exported sheet is exactly what
+   the register shows. Returns the fragment (leading " and ", or "")
+   and the params array starting with the org id - no limit/offset. */
+function buildRecordFilter(request) {
+    const conditions = [];
+    const params = [request.user.org_id];
+
+    if (request.query.type) {
+        params.push(request.query.type);
+        conditions.push("rt.key = $" + params.length);
+    }
+    if (request.query.status) {
+        params.push(request.query.status);
+        conditions.push("r.status = $" + params.length);
+    }
+    if (request.query.severity) {
+        params.push(request.query.severity);
+        conditions.push("r.severity = $" + params.length);
+    }
+    if (request.query.open === "true") {
+        conditions.push("r.closed_at is null");
+    }
+    const q = String(request.query.q || "").trim();
+    if (q) {
+        params.push("%" + q + "%");
+        conditions.push("(r.number ilike $" + params.length + " or r.title ilike $" + params.length + ")");
+    }
+
+    return { where: conditions.length ? " and " + conditions.join(" and ") : "", params };
+}
+
+function sortClause(request) {
+    const column = SORT_COLUMNS[request.query.sort] || "r.opened_at";
+    const dir = request.query.dir === "asc" ? "asc" : "desc";
+    return " order by " + column + " " + dir + " nulls last, r.number desc";
+}
+
 records.get("/", async (request, response, next) => {
     try {
-        const conditions = [];
-        const params = [request.user.org_id];
-
-        if (request.query.type) {
-            params.push(request.query.type);
-            conditions.push("rt.key = $" + params.length);
-        }
-
-        if (request.query.status) {
-            params.push(request.query.status);
-            conditions.push("r.status = $" + params.length);
-        }
-
-        if (request.query.severity) {
-            params.push(request.query.severity);
-            conditions.push("r.severity = $" + params.length);
-        }
-
-        if (request.query.open === "true") {
-            conditions.push("r.closed_at is null");
-        }
-
-        const q = String(request.query.q || "").trim();
-        if (q) {
-            params.push("%" + q + "%");
-            conditions.push("(r.number ilike $" + params.length + " or r.title ilike $" + params.length + ")");
-        }
-
-        const where = conditions.length ? " and " + conditions.join(" and ") : "";
-
-        const sortColumn = SORT_COLUMNS[request.query.sort] || "r.opened_at";
-        const dir = request.query.dir === "asc" ? "asc" : "desc";
+        const { where, params } = buildRecordFilter(request);
 
         const limit = Math.min(Number(request.query.limit) || 100, 500);
         const offset = Math.max(Number(request.query.offset) || 0, 0);
-        params.push(limit, offset);
+        const paged = params.concat(limit, offset);
 
         const [rows, totals] = await Promise.all([
-            query(SELECT_RECORD + where
-                + " order by " + sortColumn + " " + dir + " nulls last, r.number desc"
-                + " limit $" + (params.length - 1) + " offset $" + params.length, params),
+            query(SELECT_RECORD + where + sortClause(request)
+                + " limit $" + (paged.length - 1) + " offset $" + paged.length, paged),
             query("select count(*)::int as total from records r"
                 + " join record_types rt on rt.id = r.record_type_id"
-                + " where r.org_id = $1" + where, params.slice(0, params.length - 2))
+                + " where r.org_id = $1" + where, params)
         ]);
 
         response.json({
@@ -325,6 +332,75 @@ records.get("/", async (request, response, next) => {
             total: totals.rows[0].total,
             records: rows.rows
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- export ----------
+   GET /api/records/export?type=ncr&q=bore&severity=crit&open=true
+
+   The current register, filtered and sorted the same way, as an
+   .xlsx. No paging - the whole filtered set, capped so a runaway
+   query cannot pin the process. Standard record columns first, then
+   one column per data key seen across the set. */
+const EXPORT_CAP = 5000;
+
+records.get("/export", async (request, response, next) => {
+    try {
+        const { where, params } = buildRecordFilter(request);
+        const result = await query(
+            SELECT_RECORD + where + sortClause(request) + " limit " + EXPORT_CAP, params);
+
+        const dataKeys = [];
+        for (const row of result.rows) {
+            for (const key of Object.keys(row.data || {})) {
+                if (!dataKeys.includes(key)) dataKeys.push(key);
+            }
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = "QMS Guardian";
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet("Records");
+
+        sheet.columns = [
+            { header: "Number", key: "number", width: 18 },
+            { header: "Type", key: "type_name", width: 20 },
+            { header: "Title", key: "title", width: 44 },
+            { header: "Status", key: "status", width: 16 },
+            { header: "Severity", key: "severity", width: 10 },
+            { header: "Owner", key: "owner", width: 20 },
+            { header: "Opened", key: "opened_at", width: 20 },
+            { header: "Due", key: "due_at", width: 14 },
+            { header: "Closed", key: "closed_at", width: 20 },
+            ...dataKeys.map((k) => ({ header: humanizeKey(k), key: "data:" + k, width: 22 }))
+        ];
+        sheet.getRow(1).font = { bold: true };
+
+        for (const row of result.rows) {
+            const line = {
+                number: row.number, type_name: row.type_name, title: row.title,
+                status: humanizeKey(row.status), severity: row.severity,
+                owner: row.owner || "",
+                opened_at: row.opened_at, due_at: row.due_at, closed_at: row.closed_at
+            };
+            for (const key of dataKeys) {
+                const value = (row.data || {})[key];
+                line["data:" + key] = value == null ? ""
+                    : (typeof value === "object" ? JSON.stringify(value) : value);
+            }
+            sheet.addRow(line);
+        }
+
+        const label = (request.query.type || "records").toString().replace(/[^a-z0-9_-]/gi, "");
+        const stamp = new Date().toISOString().slice(0, 10);
+        response.setHeader("Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition",
+            'attachment; filename="' + label + "-register-" + stamp + '.xlsx"');
+        await workbook.xlsx.write(response);
+        response.end();
     } catch (error) {
         next(error);
     }

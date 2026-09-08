@@ -809,6 +809,11 @@ td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
     outline: none;
     border-color: var(--brand);
 }
+.reg-export {
+    margin-left: auto;
+    text-decoration: none;
+    white-space: nowrap;
+}
 
 th.th-sortable { cursor: pointer; user-select: none; }
 th.th-sortable:hover { color: var(--ink); }
