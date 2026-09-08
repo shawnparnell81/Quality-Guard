@@ -1,0 +1,15 @@
+# Caddy terminates TLS and reverse-proxies to the app.
+#
+# DOMAIN and TLS_EMAIL come from the environment (docker-compose.yml,
+# fed from .env). A real domain pointed at this host gets an automatic
+# Let's Encrypt certificate; "localhost" (the default) uses Caddy's
+# internal CA - the browser warns once, which is fine for a trial.
+
+{
+	email {$TLS_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:3001
+}
