@@ -48,6 +48,7 @@ import { wirePalette } from "./palette.js";
 import { buildNav, markActiveDept, applyNavLayout } from "./nav.js";
 import { startStream } from "./stream.js";
 import { wireNotifications } from "./notifications.js";
+import { maybeShowOnboarding } from "./onboarding.js";
 
 /* The department menu bar is data-driven (nav.js). Render it before
    anything queries .nav-item. */
@@ -427,6 +428,10 @@ async function start() {
     showReadinessBadge();
     updateNavCounts();
     show("dashboard");
+
+    /* First-run wizard, for an admin whose org has not been set up.
+       After the dashboard so it opens over a populated page. */
+    maybeShowOnboarding();
 }
 
 start();

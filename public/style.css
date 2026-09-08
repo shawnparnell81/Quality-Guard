@@ -2519,6 +2519,67 @@ th.col-you { color: var(--brand); }
 }
 .toast-info  { background: var(--ink);  color: var(--ground); }
 
+/* ---------- first-run onboarding wizard (P5.3) ---------- */
+
+.onb-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-4);
+    background: rgba(6, 16, 15, .55);
+}
+.onb-card {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 2 * var(--sp-4));
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+    padding: var(--sp-5);
+}
+.onb-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--sp-3);
+}
+.onb-progress { font-size: var(--fs-xs); color: var(--ink-3); letter-spacing: .04em; text-transform: uppercase; }
+.onb-skip {
+    background: none; border: 0; padding: 0;
+    font: inherit; font-size: var(--fs-xs);
+    color: var(--ink-3); text-decoration: underline; cursor: pointer;
+}
+.onb-title { margin: 0 0 var(--sp-1); font-size: var(--fs-lg); font-weight: 600; }
+.onb-hint { margin: 0 0 var(--sp-4); font-size: var(--fs-sm); color: var(--ink-2); }
+.onb-body { margin-bottom: var(--sp-5); }
+.onb-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); }
+
+.onb-field { display: grid; gap: var(--sp-1); }
+.onb-label { font-size: var(--fs-xs); color: var(--ink-2); }
+.onb-input {
+    font: inherit; font-size: var(--fs-sm);
+    padding: 7px 9px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    background: var(--ground);
+    color: var(--ink);
+    width: 100%;
+}
+.onb-checks, .onb-templates { display: grid; gap: var(--sp-2); }
+.onb-check { display: flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-sm); cursor: pointer; }
+.onb-check input { margin-top: 2px; }
+.onb-invite { display: grid; gap: var(--sp-2); }
+.onb-invite-row { display: grid; grid-template-columns: 1fr 1fr 130px; gap: var(--sp-2); }
+.onb-done p { margin: 0 0 var(--sp-1); font-size: var(--fs-sm); }
+
+@media (max-width: 620px) {
+    .onb-invite-row { grid-template-columns: 1fr; }
+}
+
 /* ============================================================
    Responsive pass (P3.6).
 

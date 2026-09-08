@@ -155,6 +155,7 @@ export function xhrUpload(path, formData, onProgress, method = "POST") {
 export const api = {
     health:       ()        => get("/health"),
     organization: ()        => get("/organization"),
+    updateOrganization: (payload) => request("PATCH", "/organization", payload),
 
     me:            ()       => get("/me"),
     roles:         ()       => get("/roles"),
