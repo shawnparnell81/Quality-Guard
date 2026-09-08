@@ -789,6 +789,26 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
                 values ($1, $2, 'records', $2, 'created', $3, $4)
             `, [request.user.org_id, inserted.rows[0].id, number, request.user.id]);
 
+            /* A SCAR names the NCR or receiving record that triggered it
+               in data.triggered_by; wire that into record_links so it
+               shows in the SCAR's "Linked records" and the other way
+               round. A number that does not resolve to a record in this
+               org is left as plain text - the field still says where it
+               came from. */
+            if (type === "scar" && data.triggered_by) {
+                const source = await client.query(
+                    "select id from records where org_id = $1 and number = $2",
+                    [request.user.org_id, String(data.triggered_by).trim()]
+                );
+                if (source.rowCount > 0 && source.rows[0].id !== inserted.rows[0].id) {
+                    await client.query(`
+                        insert into record_links (from_record_id, to_record_id, link_type)
+                        values ($1, $2, 'caused_by')
+                        on conflict do nothing
+                    `, [inserted.rows[0].id, source.rows[0].id]);
+                }
+            }
+
             return inserted.rows[0];
         }).catch(async (error) => {
             /* Lost a race to a concurrent identical retry - the unique

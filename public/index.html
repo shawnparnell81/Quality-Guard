@@ -1226,6 +1226,49 @@
         </div>
     </section>
 
+    <!-- ============ SUPPLIER CORRECTIVE ACTION (SCAR) ============ -->
+    <section class="view" id="view-scar" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Supplier Corrective Action<span class="clause-ref">8.4</span></h1>
+            <p class="view-sub">A supplier 8D against a rejected shipment: raised from a receiving reject or its NCR, tracked from issued through the supplier's response and verification to closed.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">SCAR register</h2>
+                    <div class="row">
+                        <select class="filter-severity" data-type="scar" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="scar"> Open only</label>
+                        <button class="btn btn-primary" data-requires="scar.issue" data-new-record="scar">New SCAR</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>SCAR</th><th>Supplier</th><th>Defect</th><th>Part</th><th>Response due</th><th>Status</th></tr></thead>
+                        <tbody id="scar-register"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" id="scar-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="scar-detail-number">Select a SCAR</h2>
+                    <span id="scar-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="scar-edit" data-edit-record="scar">Edit</button>
+                    <button type="button" class="btn no-print" id="scar-print">Print</button>
+                    <button type="button" class="btn no-print" id="scar-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="scar-detail"></div>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ AUDIT -> CAPA WORKFLOW (reference) ============ -->
     <section class="view" id="view-audit-workflow" hidden>
         <div class="view-head">
