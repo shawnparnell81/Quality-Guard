@@ -406,6 +406,267 @@ records.get("/export", async (request, response, next) => {
     }
 });
 
+/* ---------- bulk import ----------
+   One .xlsx, one record per data row, for a single type. A header
+   row names the columns; "Title" is required, "Severity" and
+   "Owner" are optional standard columns, and every other header is
+   matched to a form field by its key or its human label. Fields that
+   cannot come from a flat cell (table, file, signature) are ignored,
+   unless one is required for the type - then the whole import is
+   refused, because those records have to be built in the app.
+
+   A field the form marks required but that cannot come from a cell
+   (a signature, an attachment, a sub-table) does not block the
+   import - bulk import is a migration tool, and those sign-offs are
+   finished in the app afterwards - but every such field is named in
+   a top-level warning so nobody is surprised.
+
+   POST /api/records/import?type=ncr[&dry_run=true]  (multipart, file)
+   GET  /api/records/import-template?type=ncr        (the blank sheet) */
+
+const FLAT_FIELD_TYPES = new Set(["text", "memo", "number", "date", "select", "link", "user"]);
+
+async function loadPublishedForm(recordTypeId) {
+    const row = await query(`
+        select version, schema from form_versions
+         where record_type_id = $1 and published_at is not null
+         order by version desc limit 1
+    `, [recordTypeId]);
+    return row.rowCount > 0 ? row.rows[0] : null;
+}
+
+const normalizeHeader = (s) => String(s || "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+
+/* Turn one spreadsheet cell into the value a form field expects. */
+function coerceCell(field, raw) {
+    if (raw === null || raw === undefined || raw === "") return undefined;
+    /* exceljs hands back rich objects for some cells. */
+    if (typeof raw === "object") {
+        if (raw instanceof Date) raw = raw.toISOString();
+        else if (raw.text !== undefined) raw = raw.text;              // hyperlink / rich text
+        else if (raw.result !== undefined) raw = raw.result;          // formula
+        else raw = String(raw);
+    }
+    if (field.type === "number") {
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : { __error: "not a number" };
+    }
+    if (field.type === "date") {
+        const d = new Date(raw);
+        return Number.isNaN(d.getTime()) ? { __error: "not a date" } : d.toISOString().slice(0, 10);
+    }
+    const text = String(raw).trim();
+    if (field.type === "select" && Array.isArray(field.options) && field.options.length) {
+        const hit = field.options.find((o) => normalizeHeader(o) === normalizeHeader(text));
+        return hit !== undefined ? hit : { __error: "not one of: " + field.options.join(", ") };
+    }
+    return text;
+}
+
+/* Parse the upload into
+   { rows:[{ row, title, severity, owner, data, errors:[] }], warnings:[], fatal } */
+function readImportSheet(buffer, schema) {
+    return (async () => {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
+        const sheet = workbook.worksheets[0];
+        if (!sheet || sheet.rowCount < 2) return { rows: [], warnings: [], fatal: "The sheet has no data rows" };
+
+        const fields = (schema.fields || []).filter((f) => FLAT_FIELD_TYPES.has(f.type));
+        const warnings = [];
+        const requiredUnimportable = (schema.fields || [])
+            .filter((f) => f.required && !FLAT_FIELD_TYPES.has(f.type))
+            .map((f) => (f.label || f.key) + " (" + f.type + ")");
+        if (requiredUnimportable.length) {
+            warnings.push("Imported records will still need " + requiredUnimportable.join(", ")
+                + " completed in the app.");
+        }
+
+        const byHeader = new Map();
+        for (const f of fields) {
+            byHeader.set(normalizeHeader(f.key), f);
+            if (f.label) byHeader.set(normalizeHeader(f.label), f);
+        }
+
+        const headerCells = sheet.getRow(1).values;   // 1-indexed, [0] empty
+        const columns = [];                            // { col, kind:'title'|'severity'|'owner'|'field', field? }
+        headerCells.forEach((text, col) => {
+            if (col === 0) return;
+            const norm = normalizeHeader(text);
+            if (norm === "title") columns.push({ col, kind: "title" });
+            else if (norm === "severity") columns.push({ col, kind: "severity" });
+            else if (norm === "owner" || norm === "owner initials") columns.push({ col, kind: "owner" });
+            else if (byHeader.has(norm)) columns.push({ col, kind: "field", field: byHeader.get(norm) });
+            /* unknown headers are ignored, not an error */
+        });
+        if (!columns.some((c) => c.kind === "title")) {
+            return { rows: [], warnings, fatal: 'The sheet needs a "Title" column' };
+        }
+
+        const rows = [];
+        for (let r = 2; r <= sheet.rowCount; r++) {
+            const excelRow = sheet.getRow(r);
+            const rawByCol = (col) => excelRow.getCell(col).value;
+            const nonEmpty = columns.some((c) => {
+                const v = rawByCol(c.col);
+                return v !== null && v !== undefined && v !== "";
+            });
+            if (!nonEmpty) continue;   // a blank line in the middle of the sheet
+
+            const entry = { row: r, title: "", severity: "ok", owner: null, data: {}, errors: [] };
+            for (const c of columns) {
+                const raw = rawByCol(c.col);
+                if (c.kind === "title") {
+                    entry.title = raw == null ? "" : String(typeof raw === "object" && raw.text !== undefined ? raw.text : raw).trim();
+                } else if (c.kind === "severity") {
+                    const s = String(raw || "").trim().toLowerCase();
+                    entry.severity = ["ok", "warn", "crit"].includes(s) ? s : "ok";
+                } else if (c.kind === "owner") {
+                    entry.owner = raw == null || raw === "" ? null : String(raw).trim().toUpperCase();
+                } else {
+                    const value = coerceCell(c.field, raw);
+                    if (value && typeof value === "object" && value.__error) {
+                        entry.errors.push((c.field.label || c.field.key) + ": " + value.__error);
+                    } else if (value !== undefined) {
+                        entry.data[c.field.key] = value;
+                    }
+                }
+            }
+            if (!entry.title) entry.errors.push("Title is required");
+            rows.push(entry);
+        }
+        return { rows, warnings, fatal: null };
+    })();
+}
+
+records.get("/import-template", requirePermission(createPermissionFor), async (request, response, next) => {
+    try {
+        const type = String(request.query.type || "");
+        const typeRow = await query(
+            "select id, name from record_types where org_id = $1 and key = $2",
+            [request.user.org_id, type]);
+        if (typeRow.rowCount === 0) return response.status(400).json({ error: "Unknown record type: " + type });
+
+        const form = await loadPublishedForm(typeRow.rows[0].id);
+        const flat = ((form && form.schema.fields) || []).filter((f) => FLAT_FIELD_TYPES.has(f.type));
+
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = "QMS Guardian";
+        const sheet = workbook.addWorksheet("Import");
+        sheet.columns = [
+            { header: "Title", key: "title", width: 44 },
+            { header: "Severity", key: "severity", width: 12 },
+            { header: "Owner", key: "owner", width: 12 },
+            ...flat.map((f) => ({
+                header: f.label || humanizeKey(f.key), key: f.key,
+                width: Math.max(14, (f.label || f.key).length + 4)
+            }))
+        ];
+        sheet.getRow(1).font = { bold: true };
+        /* a hint row so people see the shape, deleted before upload */
+        const hint = { title: "Example: bore diameter oversize on lot 4471", severity: "warn", owner: "MO" };
+        for (const f of flat) {
+            if (f.type === "select" && Array.isArray(f.options) && f.options.length) hint[f.key] = f.options[0];
+            else if (f.type === "date") hint[f.key] = new Date().toISOString().slice(0, 10);
+            else if (f.type === "number") hint[f.key] = 1;
+        }
+        sheet.addRow(hint);
+        sheet.getRow(2).font = { italic: true, color: { argb: "FF888888" } };
+
+        const stamp = new Date().toISOString().slice(0, 10);
+        response.setHeader("Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition",
+            'attachment; filename="' + type.replace(/[^a-z0-9_-]/gi, "") + "-import-" + stamp + '.xlsx"');
+        await workbook.xlsx.write(response);
+        response.end();
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.post("/import", requirePermission(createPermissionFor), upload.single("file"),
+    async (request, response, next) => {
+        try {
+            const type = String(request.query.type || request.body?.type || "");
+            const dryRun = request.query.dry_run === "true" || request.body?.dry_run === "true";
+            if (!request.file) return response.status(400).json({ error: "An .xlsx file is required" });
+
+            const typeRow = await query(
+                "select id, prefix from record_types where org_id = $1 and key = $2",
+                [request.user.org_id, type]);
+            if (typeRow.rowCount === 0) return response.status(400).json({ error: "Unknown record type: " + type });
+            const recordType = typeRow.rows[0];
+
+            const form = await loadPublishedForm(recordType.id);
+            const schema = form ? form.schema : { fields: [] };
+            const formVersion = form ? form.version : 1;
+
+            let parsed;
+            try {
+                parsed = await readImportSheet(request.file.buffer, schema);
+            } catch {
+                return response.status(422).json({ error: "That file could not be read as an .xlsx workbook" });
+            }
+            if (parsed.fatal) return response.status(422).json({ error: parsed.fatal });
+            if (parsed.rows.length === 0) return response.status(422).json({ error: "No data rows found in the sheet" });
+
+            const requiredKeys = (schema.fields || [])
+                .filter((f) => f.required && FLAT_FIELD_TYPES.has(f.type))
+                .map((f) => ({ key: f.key, label: f.label || f.key }));
+
+            /* Finish validating each row: computed columns, then the
+               type's own required fields. */
+            for (const entry of parsed.rows) {
+                entry.data = applyComputedColumns(schema, withComputedRpn(type, entry.data));
+                entry.data = applyFairResults(type, entry.data);
+                for (const req of requiredKeys) {
+                    if (entry.data[req.key] === undefined) entry.errors.push(req.label + " is required");
+                }
+            }
+
+            const valid = parsed.rows.filter((e) => e.errors.length === 0);
+            const errors = parsed.rows
+                .filter((e) => e.errors.length > 0)
+                .map((e) => ({ row: e.row, title: e.title || "(no title)", messages: e.errors }));
+
+            if (dryRun) {
+                return response.json({
+                    type, dry_run: true, total_rows: parsed.rows.length,
+                    will_create: valid.length, warnings: parsed.warnings, errors,
+                    preview: valid.slice(0, 20).map((e) => ({ row: e.row, title: e.title, data: e.data }))
+                });
+            }
+
+            if (valid.length === 0) {
+                return response.status(422).json({
+                    error: "Nothing to import - every row has a problem",
+                    warnings: parsed.warnings, errors
+                });
+            }
+
+            const created = await withTransaction(async (client) => {
+                const out = [];
+                for (const entry of valid) {
+                    const row = await insertRecordRow(client, {
+                        orgId: request.user.org_id, userId: request.user.id,
+                        recordType, type, title: entry.title, severity: entry.severity,
+                        ownerInitials: entry.owner, data: entry.data, formVersion, dueAt: null
+                    });
+                    out.push(row.number);
+                }
+                return out;
+            });
+
+            response.status(201).json({
+                type, created_count: created.length, created,
+                skipped: errors.length, warnings: parsed.warnings, errors
+            });
+        } catch (error) {
+            next(error);
+        }
+    });
+
 /* ---------- search, for the command palette ----------
    GET /api/records/search?q=bore
 
@@ -800,6 +1061,82 @@ records.get("/:number/pdf", async (request, response, next) => {
     }
 });
 
+/* Insert one record inside a caller-supplied transaction: allocate
+   the next number for the type and year, resolve the owner initials,
+   start it at the workflow's first state, write the creation audit
+   row, and wire a SCAR's triggered_by into record_links. Shared by
+   the single-record POST and the bulk importer so both number and
+   audit records the same way. */
+async function insertRecordRow(client, ctx) {
+    const {
+        orgId, userId, recordType, type, title, severity = "ok",
+        ownerInitials, data, formVersion, dueAt = null, idempotencyKey = null
+    } = ctx;
+
+    const year = new Date().getFullYear();
+    const pattern = recordType.prefix + "-" + year + "-%";
+
+    const last = await client.query(`
+        select number from records
+         where org_id = $1 and record_type_id = $2 and number like $3
+         order by number desc limit 1
+    `, [orgId, recordType.id, pattern]);
+
+    const nextSeq = last.rowCount === 0
+        ? 1
+        : Number(last.rows[0].number.split("-").pop()) + 1;
+
+    const number = recordType.prefix + "-" + year + "-" + String(nextSeq).padStart(4, "0");
+
+    const ownerRow = ownerInitials
+        ? await client.query(
+            "select id from users where org_id = $1 and initials = $2",
+            [orgId, ownerInitials])
+        : { rowCount: 0, rows: [] };
+    const ownerId = ownerRow.rowCount ? ownerRow.rows[0].id : null;
+
+    /* A new record starts at whatever this type's workflow calls its
+       first state, not a literal 'draft'. 8D's first state is 'd1',
+       for instance - a type with no workflow defined at all still
+       falls back to 'draft' so creating one never hard-fails. */
+    const firstState = await client.query(
+        "select key from workflow_states where record_type_id = $1 order by position limit 1",
+        [recordType.id]
+    );
+    const initialStatus = firstState.rowCount > 0 ? firstState.rows[0].key : "draft";
+
+    const inserted = await client.query(`
+        insert into records
+            (org_id, record_type_id, number, title, status, severity,
+             owner_id, data, form_version, created_by, due_at, idempotency_key)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        returning id, number, status
+    `, [orgId, recordType.id, number, title, initialStatus, severity, ownerId,
+        data, formVersion, userId, dueAt, idempotencyKey]);
+
+    await client.query(`
+        insert into audit_log
+            (org_id, record_id, entity, entity_id, field, new_value, changed_by)
+        values ($1, $2, 'records', $2, 'created', $3, $4)
+    `, [orgId, inserted.rows[0].id, number, userId]);
+
+    if (type === "scar" && data.triggered_by) {
+        const source = await client.query(
+            "select id from records where org_id = $1 and number = $2",
+            [orgId, String(data.triggered_by).trim()]
+        );
+        if (source.rowCount > 0 && source.rows[0].id !== inserted.rows[0].id) {
+            await client.query(`
+                insert into record_links (from_record_id, to_record_id, link_type)
+                values ($1, $2, 'caused_by')
+                on conflict do nothing
+            `, [inserted.rows[0].id, source.rows[0].id]);
+        }
+    }
+
+    return inserted.rows[0];
+}
+
 /* ---------- create ----------
    POST /api/records
    { "type": "ncr", "title": "...", "owner": "MO", "data": { ... } }
@@ -888,83 +1225,11 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
         }
 
         const created = await withTransaction(async (client) => {
-            /* Next number for this type and year. A single writer is
-               fine at this scale; a busy plant would use a sequence
-               per type instead. */
-            const year = new Date().getFullYear();
-            const pattern = recordType.prefix + "-" + year + "-%";
-
-            const last = await client.query(`
-                select number from records
-                 where org_id = $1 and record_type_id = $2 and number like $3
-                 order by number desc limit 1
-            `, [request.user.org_id, recordType.id, pattern]);
-
-            const nextSeq = last.rowCount === 0
-                ? 1
-                : Number(last.rows[0].number.split("-").pop()) + 1;
-
-            const number = recordType.prefix + "-" + year + "-"
-                + String(nextSeq).padStart(4, "0");
-
-            const ownerRow = owner
-                ? await client.query(
-                    "select id from users where org_id = $1 and initials = $2",
-                    [request.user.org_id, owner]
-                  )
-                : { rowCount: 0, rows: [] };
-
-            const ownerId = ownerRow.rowCount ? ownerRow.rows[0].id : null;
-
-            /* A new record starts at whatever this type's workflow calls
-               its first state, not a literal 'draft'. 8D's first state
-               is 'd1', for instance - a type with no workflow defined at
-               all still falls back to 'draft' so creating one never
-               hard-fails, but nothing shipped today should hit that
-               fallback. */
-            const firstState = await client.query(
-                "select key from workflow_states where record_type_id = $1 order by position limit 1",
-                [recordType.id]
-            );
-            const initialStatus = firstState.rowCount > 0 ? firstState.rows[0].key : "draft";
-
-            const inserted = await client.query(`
-                insert into records
-                    (org_id, record_type_id, number, title, status, severity,
-                     owner_id, data, form_version, created_by, due_at, idempotency_key)
-                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                returning id, number, status
-            `, [request.user.org_id, recordType.id, number, title, initialStatus,
-                severity, ownerId, data, formVersion, request.user.id, dueAt.value,
-                idempotency_key || null]);
-
-            await client.query(`
-                insert into audit_log
-                    (org_id, record_id, entity, entity_id, field, new_value, changed_by)
-                values ($1, $2, 'records', $2, 'created', $3, $4)
-            `, [request.user.org_id, inserted.rows[0].id, number, request.user.id]);
-
-            /* A SCAR names the NCR or receiving record that triggered it
-               in data.triggered_by; wire that into record_links so it
-               shows in the SCAR's "Linked records" and the other way
-               round. A number that does not resolve to a record in this
-               org is left as plain text - the field still says where it
-               came from. */
-            if (type === "scar" && data.triggered_by) {
-                const source = await client.query(
-                    "select id from records where org_id = $1 and number = $2",
-                    [request.user.org_id, String(data.triggered_by).trim()]
-                );
-                if (source.rowCount > 0 && source.rows[0].id !== inserted.rows[0].id) {
-                    await client.query(`
-                        insert into record_links (from_record_id, to_record_id, link_type)
-                        values ($1, $2, 'caused_by')
-                        on conflict do nothing
-                    `, [inserted.rows[0].id, source.rows[0].id]);
-                }
-            }
-
-            return inserted.rows[0];
+            return insertRecordRow(client, {
+                orgId: request.user.org_id, userId: request.user.id,
+                recordType, type, title, severity, ownerInitials: owner,
+                data, formVersion, dueAt: dueAt.value, idempotencyKey: idempotency_key || null
+            });
         }).catch(async (error) => {
             /* Lost a race to a concurrent identical retry - the unique
                index caught what the check above could not. Hand back

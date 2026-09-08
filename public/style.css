@@ -836,6 +836,25 @@ th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
 .reg-pager:empty { display: none; }
 .reg-pager .btn[disabled] { opacity: .4; cursor: default; }
 
+/* bulk-import dialog */
+.imp .imp-file { display: block; font-size: 12px; margin-bottom: 4px; }
+.imp-report { font-size: 12.5px; }
+.imp-report p { margin: 6px 0; }
+.imp-report .imp-ok { color: var(--ok, #2e7d32); font-weight: 500; }
+.imp-report .imp-warn { color: var(--crit, #c62828); }
+.imp-errs {
+    margin: 6px 0 0;
+    padding: 8px 10px;
+    max-height: 220px;
+    overflow-y: auto;
+    list-style: none;
+    background: var(--surface-2);
+    border-radius: 6px;
+    font-size: 12px;
+}
+.imp-errs li { margin: 2px 0; }
+.imp-errs .imp-row { font-family: "IBM Plex Mono", monospace; color: var(--ink-3); }
+
 .rec-id {
     font-family: "IBM Plex Mono", monospace;
     font-size: 12px;
