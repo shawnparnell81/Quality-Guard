@@ -22,6 +22,7 @@ import { buildUploader } from "../attach-upload.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
 import { recordLink, looksLikeRecordNumber } from "../record-nav.js";
+import { onStreamEvent } from "../stream.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     formatDate, humanize, statusKind, printElement, toast
@@ -242,6 +243,17 @@ function fieldValueDd(field, value) {
    change, only a control to actually send them. */
 const activeFilters = {};
 const PAGE_SIZE = 50;
+
+/* tbody id -> register type, so selectRow (which only gets the tbody)
+   can remember what is selected without every call site passing the
+   type in. */
+const TBODY_TYPE = Object.fromEntries(
+    Object.entries(REGISTERS).map(([type, config]) => [config.tbody, type])
+);
+/* The record the user last had selected in each register. A live
+   refresh keeps it selected instead of snapping back to the first
+   row. */
+const lastSelected = {};
 
 /* A register's sort / search / page state survives navigation and a
    reload, per type and browser. The severity and open filters from
@@ -565,10 +577,16 @@ export async function renderRegister(type) {
             tr.tabIndex = -1;
         });
 
-        /* Every register shows one record in full, not only NCR. */
+        /* Every register shows one record in full, not only NCR. On a
+           re-render (a live update, a filter change) keep whatever was
+           selected if it is still in the list, rather than snapping
+           back to the top. */
         if (records.length > 0) {
-            selectRow(tbody, records[0].number);
-            await renderRecordDetail(type, records[0].number);
+            const remembered = lastSelected[type];
+            const keep = remembered && records.some((r) => r.number === remembered)
+                ? remembered : records[0].number;
+            selectRow(tbody, keep);
+            await renderRecordDetail(type, keep);
         } else {
             clearDetail(type);
         }
@@ -697,6 +715,8 @@ function selectRow(tbody, number) {
             tr.setAttribute("aria-selected", on ? "true" : "false");
         }
     });
+    const type = TBODY_TYPE[tbody.id];
+    if (type && number) lastSelected[type] = number;
 }
 
 function clearDetail(type) {
@@ -820,6 +840,29 @@ export function wireRegisterClicks() {
             saveView(type);
             renderRegister(type);
         }
+    });
+
+    /* Live updates: when the server says a record changed, refresh the
+       register that is currently on screen. Debounced so a bulk import
+       (dozens of frames) redraws once, and held off while a dialog is
+       open so an edit in progress is never yanked out from under the
+       user. renderRegister keeps the current selection. */
+    const visibleRegister = () => {
+        const entry = Object.entries(REGISTERS).find(([, config]) => {
+            const tbody = document.getElementById(config.tbody);
+            const view = tbody && tbody.closest(".view");
+            return view && !view.hidden;
+        });
+        return entry ? entry[0] : null;
+    };
+    let liveTimer = null;
+    onStreamEvent("records", () => {
+        if (document.querySelector("dialog[open]") || !visibleRegister()) return;
+        clearTimeout(liveTimer);
+        liveTimer = setTimeout(() => {
+            const type = visibleRegister();
+            if (type && !document.querySelector("dialog[open]")) renderRegister(type);
+        }, 400);
     });
 
     /* Every "raise a record" and "edit this record" button on every
