@@ -32,6 +32,7 @@ import { layout } from "./routes/layout.js";
 import { formImport } from "./routes/form-import.js";
 import { notifications } from "./routes/notifications.js";
 import { streamHandler } from "./stream.js";
+import { startDigestSchedule } from "./digest.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -168,6 +169,7 @@ const server = app.listen(PORT, () => {
     console.log("  Landing: http://localhost:" + PORT + "/");
     console.log("  App:     http://localhost:" + PORT + "/app");
     console.log("  Health:  http://localhost:" + PORT + "/api/health");
+    startDigestSchedule();
 });
 
 /* A dev server that fails to bind looks identical to one that is
