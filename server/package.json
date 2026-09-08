@@ -15,6 +15,7 @@
     "db:seed": "node --env-file=.env scripts/run-sql.js db/seed.sql",
     "db:passwords": "node --env-file=.env scripts/set-passwords.js",
     "db:migrate": "node --env-file=.env scripts/migrate.js",
+    "db:schema-check": "node --env-file=.env scripts/schema-check.js",
     "provision-org": "node --env-file=.env scripts/provision-org.js",
     "db:backup": "node --env-file=.env scripts/backup.js",
     "db:restore": "node --env-file=.env scripts/restore.js",
