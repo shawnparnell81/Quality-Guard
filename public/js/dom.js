@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    Small DOM helpers.
 
@@ -9,6 +10,12 @@
 /* Builds an element. Text content is set with textContent, never
    innerHTML, so a lot number containing < or & can never become
    markup. */
+/**
+ * @param {string} tag
+ * @param {Record<string, any>} [props]
+ * @param {any} [children] a node, a string, or an array of either / null
+ * @returns {HTMLElement}
+ */
 export function el(tag, props = {}, children = []) {
     const node = document.createElement(tag);
 
@@ -141,6 +148,11 @@ export function toast(message, kind = "ok") {
    28">, sized in CSS like any other element; stroke uses currentColor
    so a tile's own text colour (is-crit / is-warn) controls it without
    this needing to know about severity at all. */
+/**
+ * @param {string} svgId
+ * @param {number[]} values
+ * @param {{ recordsByWeek?: string[][], onPointClick?: (index: number, numbers: string[]) => void }} [opts]
+ */
 export function drawSparkline(svgId, values, { recordsByWeek, onPointClick } = {}) {
     const svg = document.getElementById(svgId);
     if (!svg || !values || values.length === 0) return;
@@ -170,8 +182,8 @@ export function drawSparkline(svgId, values, { recordsByWeek, onPointClick } = {
 
     const [lastX, lastY] = points[points.length - 1];
     const dot = document.createElementNS(ns, "circle");
-    dot.setAttribute("cx", lastX);
-    dot.setAttribute("cy", lastY);
+    dot.setAttribute("cx", String(lastX));
+    dot.setAttribute("cy", String(lastY));
     dot.setAttribute("r", "2.3");
     dot.setAttribute("fill", "currentColor");
     svg.append(dot);
@@ -188,8 +200,8 @@ export function drawSparkline(svgId, values, { recordsByWeek, onPointClick } = {
             if (!numbers || numbers.length === 0) return;
 
             const hit = document.createElementNS(ns, "circle");
-            hit.setAttribute("cx", x);
-            hit.setAttribute("cy", y);
+            hit.setAttribute("cx", String(x));
+            hit.setAttribute("cy", String(y));
             hit.setAttribute("r", "6");
             hit.setAttribute("fill", "transparent");
             hit.setAttribute("role", "button");
@@ -248,7 +260,7 @@ export function formatDate(value) {
 
 export function daysAgo(value) {
     if (!value) return "-";
-    const days = Math.floor((Date.now() - new Date(value)) / 86400000);
+    const days = Math.floor((Date.now() - new Date(value).getTime()) / 86400000);
     return days + " d";
 }
 
