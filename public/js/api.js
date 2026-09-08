@@ -111,6 +111,47 @@ function withQuery(path, params) {
     return search ? path + "?" + search : path;
 }
 
+/* A multipart POST that reports upload progress - fetch() cannot, so
+   this is the one place XMLHttpRequest earns its keep. onProgress
+   gets a 0..1 fraction (null when the total is unknown). Resolves
+   with the parsed JSON body, rejects with an Error carrying .status
+   and .payload the same way request()/postForm() do. */
+export function xhrUpload(path, formData, onProgress, method = "POST") {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, BASE + path);
+        xhr.withCredentials = true;
+
+        xhr.upload.addEventListener("progress", (event) => {
+            if (typeof onProgress === "function") {
+                onProgress(event.lengthComputable ? event.loaded / event.total : null);
+            }
+        });
+
+        xhr.addEventListener("load", () => {
+            let payload = {};
+            try { payload = JSON.parse(xhr.responseText || "{}"); } catch { /* not json */ }
+
+            if (xhr.status === 401) { window.location.href = "/login.html"; return; }
+            if (xhr.status === 428) { window.location.href = "/change-password.html"; return; }
+
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(payload);
+            } else {
+                const error = new Error(payload.error || xhr.status + " " + xhr.statusText);
+                error.status = xhr.status;
+                error.payload = payload;
+                reject(error);
+            }
+        });
+        xhr.addEventListener("error", () =>
+            reject(new Error("Cannot reach the server. Is it running?")));
+        xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
+
+        xhr.send(formData);
+    });
+}
+
 export const api = {
     health:       ()        => get("/health"),
     organization: ()        => get("/organization"),
