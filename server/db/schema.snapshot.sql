@@ -135,7 +135,9 @@ CREATE TABLE public.document_revisions (
     original_filename text,
     mime_type text,
     size_bytes bigint,
-    storage_path text
+    storage_path text,
+    body text,
+    superseded_at timestamp with time zone
 );
 COMMENT ON COLUMN public.document_revisions.storage_path IS 'Path under server/storage/documents/ where this revision''s real file lives. Required for every revision created through the API; historical seed revisions predate real file storage and may have none.';
 CREATE TABLE public.documents (
@@ -149,7 +151,9 @@ CREATE TABLE public.documents (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     record_id uuid,
     category text,
-    CONSTRAINT documents_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_approval'::text, 'released'::text, 'obsolete'::text])))
+    versioning text DEFAULT 'letter'::text NOT NULL,
+    CONSTRAINT documents_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_approval'::text, 'released'::text, 'obsolete'::text]))),
+    CONSTRAINT documents_versioning_check CHECK ((versioning = ANY (ARRAY['letter'::text, 'numeric'::text])))
 );
 CREATE TABLE public.drawing_revisions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,

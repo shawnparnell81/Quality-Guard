@@ -1116,7 +1116,7 @@ masterdata.get("/documents", async (request, response, next) => {
         }
 
         const result = await query(`
-            select d.doc_number, d.title, d.current_revision, d.status, d.category,
+            select d.doc_number, d.title, d.current_revision, d.status, d.category, d.versioning,
                    u.full_name as owner,
                    (select count(*) from document_revisions dr
                      where dr.document_id = d.id) as revision_count,
@@ -1143,6 +1143,7 @@ masterdata.get("/documents/:docNumber/revisions", async (request, response, next
         const result = await query(`
             select dr.revision, dr.change_summary, dr.effective_date, dr.created_at,
                    dr.original_filename, dr.mime_type, (dr.storage_path is not null) as has_file,
+                   dr.body, (dr.body is not null) as has_body, dr.superseded_at,
                    author.full_name   as author,
                    approver.full_name as approved_by
               from document_revisions dr
@@ -1165,11 +1166,20 @@ masterdata.get("/documents/:docNumber/revisions", async (request, response, next
    the shared `upload` handler defined at the top of this file. */
 
 /* Next after whatever the most recently created revision was, by
-   creation order rather than alphabetical - a revision letter is
-   assigned once and never resorted, so the newest one really is
-   "created_at desc limit 1", the same row the revisions list above
-   already treats as most recent. */
-function nextRevisionLetter(previous) {
+   creation order rather than alphabetical - a revision is assigned
+   once and never resorted, so the newest one really is "created_at
+   desc limit 1", the same row the revisions list above already
+   treats as most recent.
+
+   scheme is documents.versioning: 'letter' (A -> B -> Z -> AA is not
+   handled; a document that runs past Z is a document that should
+   have been superseded) or 'numeric' (1.0 -> 2.0, whole-number
+   up-issues). */
+function nextRevision(previous, scheme) {
+    if (scheme === "numeric") {
+        const major = previous ? parseInt(String(previous), 10) : 0;
+        return (Number.isFinite(major) ? major + 1 : 1) + ".0";
+    }
     if (!previous) return "A";
     const code = previous.toUpperCase().charCodeAt(previous.length - 1);
     return previous.slice(0, -1) + String.fromCharCode(code + 1);
@@ -1180,9 +1190,17 @@ masterdata.post("/documents", requirePermission("document.create"), upload.singl
     async (request, response, next) => {
         try {
             const { doc_number, title, change_summary, record, category } = request.body || {};
+            const bodyText = (request.body?.body || "").trim();
+            const versioning = (request.body?.versioning || "letter").trim();
 
-            if (!doc_number || !title || !request.file) {
-                return response.status(400).json({ error: "doc_number, title, and file are required" });
+            if (!doc_number || !title) {
+                return response.status(400).json({ error: "doc_number and title are required" });
+            }
+            if (!request.file && !bodyText) {
+                return response.status(400).json({ error: "either a file or a body is required" });
+            }
+            if (versioning !== "letter" && versioning !== "numeric") {
+                return response.status(400).json({ error: "versioning must be 'letter' or 'numeric'" });
             }
 
             const existing = await query(
@@ -1205,24 +1223,33 @@ masterdata.post("/documents", requirePermission("document.create"), upload.singl
                 recordId = found.rows[0].id;
             }
 
-            const storagePath = await saveDocumentFile(request.file.originalname, request.file.buffer);
+            const storagePath = request.file
+                ? await saveDocumentFile(request.file.originalname, request.file.buffer)
+                : null;
+            const firstRevision = nextRevision(null, versioning);   // 'A' or '1.0'
 
             const created = await withTransaction(async (client) => {
                 const doc = await client.query(`
-                    insert into documents (org_id, doc_number, title, owner_id, record_id, category)
-                    values ($1, $2, $3, $4, $5, $6)
-                    returning id, doc_number, title, status, current_revision
+                    insert into documents (org_id, doc_number, title, owner_id, record_id, category, versioning)
+                    values ($1, $2, $3, $4, $5, $6, $7)
+                    returning id, doc_number, title, status, current_revision, versioning
                 `, [request.user.org_id, doc_number, title, request.user.id, recordId,
-                    (category || "").trim() || null]);
+                    (category || "").trim() || null, versioning]);
 
                 const revision = await client.query(`
                     insert into document_revisions
                         (document_id, revision, change_summary, author_id,
-                         original_filename, mime_type, size_bytes, storage_path)
-                    values ($1, 'A', $2, $3, $4, $5, $6, $7)
-                    returning revision, change_summary, created_at
-                `, [doc.rows[0].id, change_summary || "Initial upload", request.user.id,
-                    request.file.originalname, request.file.mimetype, request.file.size, storagePath]);
+                         original_filename, mime_type, size_bytes, storage_path, body)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    returning revision, change_summary, created_at, (body is not null) as has_body
+                `, [doc.rows[0].id, firstRevision,
+                    change_summary || (request.file ? "Initial upload" : "Initial draft"),
+                    request.user.id,
+                    request.file ? request.file.originalname : null,
+                    request.file ? request.file.mimetype : null,
+                    request.file ? request.file.size : null,
+                    storagePath,
+                    request.file ? null : bodyText]);
 
                 return { document: doc.rows[0], revision: revision.rows[0] };
             });
@@ -1247,12 +1274,13 @@ masterdata.post("/documents", requirePermission("document.create"), upload.singl
 masterdata.post("/documents/:docNumber/revisions", requirePermission("document.create"), upload.single("file"),
     async (request, response, next) => {
         try {
-            if (!request.file) {
-                return response.status(400).json({ error: "file is required" });
+            const bodyText = (request.body?.body || "").trim();
+            if (!request.file && !bodyText) {
+                return response.status(400).json({ error: "either a file or a body is required" });
             }
 
             const doc = await query(
-                "select id from documents where org_id = $1 and doc_number = $2",
+                "select id, versioning from documents where org_id = $1 and doc_number = $2",
                 [request.user.org_id, request.params.docNumber]
             );
             if (doc.rowCount === 0) {
@@ -1265,7 +1293,8 @@ masterdata.post("/documents/:docNumber/revisions", requirePermission("document.c
                 [documentId]
             );
 
-            const revision = request.body?.revision || nextRevisionLetter(latest.rows[0]?.revision);
+            const revision = request.body?.revision
+                || nextRevision(latest.rows[0]?.revision, doc.rows[0].versioning);
 
             const clash = await query(
                 "select 1 from document_revisions where document_id = $1 and revision = $2",
@@ -1275,7 +1304,9 @@ masterdata.post("/documents/:docNumber/revisions", requirePermission("document.c
                 return response.status(409).json({ error: "Revision " + revision + " already exists for this document" });
             }
 
-            const storagePath = await saveDocumentFile(request.file.originalname, request.file.buffer);
+            const storagePath = request.file
+                ? await saveDocumentFile(request.file.originalname, request.file.buffer)
+                : null;
 
             /* Uploading a revision is not the same act as making it
                official - see WI-0412 in this org's own seed data, a
@@ -1284,16 +1315,24 @@ masterdata.post("/documents/:docNumber/revisions", requirePermission("document.c
                the register reflects that something is now pending,
                but current_revision - the one a plain download without
                a revision number returns - does not change until
-               /release says so. */
+               /release says so. The earlier revision is not obsoleted
+               here either; that happens when the successor is
+               released. */
             const created = await withTransaction(async (client) => {
                 const inserted = await client.query(`
                     insert into document_revisions
                         (document_id, revision, change_summary, author_id,
-                         original_filename, mime_type, size_bytes, storage_path)
-                    values ($1, $2, $3, $4, $5, $6, $7, $8)
-                    returning revision, change_summary, created_at
-                `, [documentId, revision, request.body?.change_summary || "Revision uploaded", request.user.id,
-                    request.file.originalname, request.file.mimetype, request.file.size, storagePath]);
+                         original_filename, mime_type, size_bytes, storage_path, body)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    returning revision, change_summary, created_at, (body is not null) as has_body
+                `, [documentId, revision,
+                    request.body?.change_summary || (request.file ? "Revision uploaded" : "Revision drafted"),
+                    request.user.id,
+                    request.file ? request.file.originalname : null,
+                    request.file ? request.file.mimetype : null,
+                    request.file ? request.file.size : null,
+                    storagePath,
+                    request.file ? null : bodyText]);
 
                 await client.query(
                     "update documents set status = 'in_approval' where id = $1 and status <> 'obsolete'",
@@ -1331,13 +1370,14 @@ masterdata.post("/documents/:docNumber/revisions/:revision/release", async (requ
         }
 
         const doc = await query(
-            "select id from documents where org_id = $1 and doc_number = $2",
+            "select id, current_revision from documents where org_id = $1 and doc_number = $2",
             [request.user.org_id, request.params.docNumber]
         );
         if (doc.rowCount === 0) {
             return response.status(404).json({ error: "Document not found" });
         }
         const documentId = doc.rows[0].id;
+        const outgoing = doc.rows[0].current_revision;
 
         const revision = await query(
             "select id from document_revisions where document_id = $1 and revision = $2",
@@ -1352,6 +1392,15 @@ masterdata.post("/documents/:docNumber/revisions/:revision/release", async (requ
                 "update document_revisions set approved_by = $1, effective_date = now() where id = $2",
                 [request.user.id, revision.rows[0].id]
             );
+            /* The revision this one replaces is obsolete from now -
+               stamped on the row so history shows exactly when it
+               stopped being current. */
+            if (outgoing && outgoing !== request.params.revision) {
+                await client.query(
+                    "update document_revisions set superseded_at = now() where document_id = $1 and revision = $2 and superseded_at is null",
+                    [documentId, outgoing]
+                );
+            }
             await client.query(
                 "update documents set current_revision = $1, status = 'released' where id = $2",
                 [request.params.revision, documentId]
@@ -1361,7 +1410,11 @@ masterdata.post("/documents/:docNumber/revisions/:revision/release", async (requ
         publish(request.user.org_id, {
             entity: "documents", id: request.params.docNumber, action: "transitioned"
         });
-        response.json({ doc_number: request.params.docNumber, current_revision: request.params.revision });
+        response.json({
+            doc_number: request.params.docNumber,
+            current_revision: request.params.revision,
+            superseded: outgoing && outgoing !== request.params.revision ? outgoing : null
+        });
     } catch (error) {
         next(error);
     }
@@ -1397,14 +1450,26 @@ masterdata.get("/documents/:docNumber/revisions/:revision/download", async (requ
         const revisionKey = request.params.revision;
 
         const result = await query(`
-            select dr.original_filename, dr.mime_type, dr.storage_path
+            select dr.original_filename, dr.mime_type, dr.storage_path, dr.body, dr.revision
               from document_revisions dr
               join documents d on d.id = dr.document_id
              where d.org_id = $1 and d.doc_number = $2
                and dr.revision = case when $3 = 'current' then d.current_revision else $3 end
         `, [request.user.org_id, request.params.docNumber, revisionKey]);
 
-        if (result.rowCount === 0 || !result.rows[0].storage_path) {
+        if (result.rowCount === 0) {
+            return response.status(404).json({ error: "No such revision" });
+        }
+
+        /* A revision written in the app carries its text, not a file. */
+        if (!result.rows[0].storage_path && result.rows[0].body != null) {
+            response.setHeader("Content-Type", "text/plain; charset=utf-8");
+            response.setHeader("Content-Disposition",
+                "inline; filename=\"" + request.params.docNumber + "-" + result.rows[0].revision + ".txt\"");
+            return response.send(result.rows[0].body);
+        }
+
+        if (!result.rows[0].storage_path) {
             return response.status(404).json({ error: "No file on that revision" });
         }
 
