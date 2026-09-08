@@ -51,9 +51,11 @@ try {
     }
 
     console.log(pending.length + " migration(s) to apply.");
-    console.log("Taking a backup first...");
-    const safety = await backup("pre-migrate");
-    console.log("  " + safety.file);
+    console.log("Taking a database backup first...");
+    /* Schema migrations never touch stored files, so the pre-migrate
+       safety copy is the dump only - fast, and enough to roll back. */
+    const safety = await backup("pre-migrate", { skipStorage: true });
+    console.log("  " + safety.dir);
     console.log("");
 
     for (const filename of pending) {
