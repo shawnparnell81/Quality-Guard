@@ -271,69 +271,60 @@ evaluate.get("/reviews", async (request, response, next) => {
 /* The twelve inputs clause 9.3.2 names, assembled from the modules
    that already hold them. Nothing here is typed in by hand, which is
    the point: a management review pack that has to be compiled
-   manually is a management review pack that goes stale. */
-evaluate.get("/reviews/:reference/inputs", async (request, response, next) => {
-    try {
-        const found = await query(
-            "select id, reference, period, status from management_reviews where org_id = $1 and reference = $2",
-            [request.user.org_id, request.params.reference]
-        );
+   manually is a management review pack that goes stale. Shared by the
+   screen (GET .../inputs) and the minutes PDF. */
+async function compileReviewInputs(orgId, reference) {
+    const [events, gages, training, vendors, risks, objectives, priorActions] =
+        await Promise.all([
+            query(`
+                select rt.key,
+                       count(*) filter (where r.closed_at is null)::int as open,
+                       count(*) filter (where r.closed_at is null and r.due_at < now())::int as overdue
+                  from record_types rt
+             left join records r on r.record_type_id = rt.id
+                 where rt.org_id = $1 group by rt.key
+            `, [orgId]),
 
-        if (found.rowCount === 0) {
-            return response.status(404).json({ error: "No such review" });
-        }
+            query(`select count(*) filter (where next_due < current_date)::int as past_due
+                     from gages where org_id = $1`, [orgId]),
 
-        const [events, gages, training, vendors, risks, objectives, priorActions] =
-            await Promise.all([
-                query(`
-                    select rt.key,
-                           count(*) filter (where r.closed_at is null)::int as open,
-                           count(*) filter (where r.closed_at is null and r.due_at < now())::int as overdue
-                      from record_types rt
-                 left join records r on r.record_type_id = rt.id
-                     where rt.org_id = $1 group by rt.key
-                `, [request.user.org_id]),
+            query(`select count(*)::int as gaps
+                     from users u
+                     join document_requirements req
+                       on req.role = u.role and req.org_id = u.org_id
+                     join documents d on d.id = req.document_id
+                left join training_records tr
+                       on tr.user_id = u.id and tr.document_id = d.id
+                    where u.org_id = $1 and u.active
+                      and (tr.id is null or tr.revision_trained is distinct from d.current_revision)`,
+                  [orgId]),
 
-                query(`select count(*) filter (where next_due < current_date)::int as past_due
-                         from gages where org_id = $1`, [request.user.org_id]),
+            query(`select count(*) filter (where grade = 'D')::int as grade_d,
+                          count(*) filter (where status = 'scar_open')::int as scar_open
+                     from vendors where org_id = $1`, [orgId]),
 
-                query(`select count(*)::int as gaps
-                         from users u
-                         join document_requirements req
-                           on req.role = u.role and req.org_id = u.org_id
-                         join documents d on d.id = req.document_id
-                    left join training_records tr
-                           on tr.user_id = u.id and tr.document_id = d.id
-                        where u.org_id = $1 and u.active
-                          and (tr.id is null or tr.revision_trained is distinct from d.current_revision)`,
-                      [request.user.org_id]),
+            query(`select count(*) filter (where r.status = 'unmitigated')::int as unmitigated
+                     from records r join record_types rt on rt.id = r.record_type_id
+                    where r.org_id = $1 and rt.key = 'risk'`, [orgId]),
 
-                query(`select count(*) filter (where grade = 'D')::int as grade_d,
-                              count(*) filter (where status = 'scar_open')::int as scar_open
-                         from vendors where org_id = $1`, [request.user.org_id]),
+            query(`select count(*)::int as total from quality_objectives where org_id = $1`,
+                  [orgId]),
 
-                query(`select count(*) filter (where r.status = 'unmitigated')::int as unmitigated
-                         from records r join record_types rt on rt.id = r.record_type_id
-                        where r.org_id = $1 and rt.key = 'risk'`, [request.user.org_id]),
+            /* Both tables carry a status column, so this one has to
+               be qualified or Postgres cannot tell which is meant. */
+            query(`select count(*)::int as total,
+                          count(*) filter (where a.status = 'done')::int as done
+                     from management_review_actions a
+                     join management_reviews m on m.id = a.review_id
+                    where m.org_id = $1 and m.reference <> $2`,
+                  [orgId, reference])
+        ]);
 
-                query(`select count(*)::int as total from quality_objectives where org_id = $1`,
-                      [request.user.org_id]),
+    const byType = {};
+    for (const row of events.rows) byType[row.key] = row;
+    const count = (key, field) => byType[key] ? byType[key][field] : 0;
 
-                /* Both tables carry a status column, so this one has to
-                   be qualified or Postgres cannot tell which is meant. */
-                query(`select count(*)::int as total,
-                              count(*) filter (where a.status = 'done')::int as done
-                         from management_review_actions a
-                         join management_reviews m on m.id = a.review_id
-                        where m.org_id = $1 and m.reference <> $2`,
-                      [request.user.org_id, request.params.reference])
-            ]);
-
-        const byType = {};
-        for (const row of events.rows) byType[row.key] = row;
-        const count = (key, field) => byType[key] ? byType[key][field] : 0;
-
-        const inputs = [
+    return [
             { clause: "9.3.2 a", input: "Status of actions from previous reviews", module: "Management Review",
               summary: priorActions.rows[0].done + " of " + priorActions.rows[0].total + " closed" },
             { clause: "9.3.2 b", input: "Changes in external and internal issues", module: "Risk Register",
@@ -356,22 +347,384 @@ evaluate.get("/reviews/:reference/inputs", async (request, response, next) => {
               summary: training.rows[0].gaps + " competency gaps" },
             { clause: "9.3.2 e", input: "Effectiveness of actions on risk", module: "Risk Register",
               summary: risks.rows[0].unmitigated + " still unmitigated" },
-            { clause: "9.3.2 f", input: "Opportunities for improvement", module: "Internal Audit",
-              summary: count("capa", "open") + " improvement actions live" }
-        ];
+        { clause: "9.3.2 f", input: "Opportunities for improvement", module: "Internal Audit",
+          summary: count("capa", "open") + " improvement actions live" }
+    ];
+}
 
-        const actions = await query(`
-            select a.decision, a.due_on, a.status, u.full_name as owner
-              from management_review_actions a
-         left join users u on u.id = a.owner_id
-             where a.review_id = $1 order by a.position
-        `, [found.rows[0].id]);
+evaluate.get("/reviews/:reference/inputs", async (request, response, next) => {
+    try {
+        const found = await query(
+            "select id, reference, period, status from management_reviews where org_id = $1 and reference = $2",
+            [request.user.org_id, request.params.reference]
+        );
+        if (found.rowCount === 0) {
+            return response.status(404).json({ error: "No such review" });
+        }
+
+        const [inputs, actions, attendance] = await Promise.all([
+            compileReviewInputs(request.user.org_id, request.params.reference),
+            query(`
+                select a.id, a.decision, a.due_on, a.status, a.linked_record, a.position,
+                       u.full_name as owner,
+                       lr.status as linked_status
+                  from management_review_actions a
+             left join users u on u.id = a.owner_id
+             left join records lr on lr.org_id = $2 and lr.number = a.linked_record
+                 where a.review_id = $1 order by a.position
+            `, [found.rows[0].id, request.user.org_id]),
+            query(`
+                select id, name, role, present, position
+                  from management_review_attendance
+                 where review_id = $1 order by position, name
+            `, [found.rows[0].id])
+        ]);
 
         response.json({
             review: found.rows[0],
             inputs,
-            actions: actions.rows
+            actions: actions.rows,
+            attendance: attendance.rows
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ============================================================
+   Management review, the write side (clause 9.3). All of it needs
+   review.manage - the same permission the charts do.
+   ============================================================ */
+
+async function reviewByReference(orgId, reference) {
+    const found = await query(
+        "select id, reference from management_reviews where org_id = $1 and reference = $2",
+        [orgId, reference]
+    );
+    return found.rows[0] || null;
+}
+
+/* POST /api/reviews  { period, held_on?, chair?, reference? }
+   reference is auto-assigned (MR-YYYY-NN) when not given. */
+evaluate.post("/reviews", requirePermission("review.manage"), async (request, response, next) => {
+    try {
+        const { period, held_on, chair, reference } = request.body || {};
+        if (!period || !String(period).trim()) {
+            return response.status(400).json({ error: "period is required" });
+        }
+
+        const year = new Date().getFullYear();
+        let ref = reference && String(reference).trim();
+        if (!ref) {
+            const last = await query(
+                `select reference from management_reviews
+                  where org_id = $1 and reference like $2
+                  order by reference desc limit 1`,
+                [request.user.org_id, "MR-" + year + "-%"]
+            );
+            const seq = last.rowCount === 0
+                ? 1
+                : Number(last.rows[0].reference.split("-").pop()) + 1;
+            ref = "MR-" + year + "-" + String(seq).padStart(2, "0");
+        }
+
+        const chairId = chair
+            ? (await query("select id from users where org_id = $1 and initials = $2",
+                [request.user.org_id, chair])).rows[0]?.id || null
+            : null;
+
+        const created = await query(`
+            insert into management_reviews (org_id, reference, period, held_on, chair_id, status)
+            values ($1, $2, $3, $4, $5, 'planned')
+            returning reference, period, held_on, status
+        `, [request.user.org_id, ref, String(period).trim(), held_on || null, chairId]);
+
+        response.status(201).json(created.rows[0]);
+    } catch (error) {
+        if (error.code === "23505") {
+            return response.status(409).json({ error: "A review already uses that reference" });
+        }
+        next(error);
+    }
+});
+
+/* PATCH /api/reviews/MR-2026-03  { status?, held_on?, chair?, notes? } */
+evaluate.patch("/reviews/:reference", requirePermission("review.manage"), async (request, response, next) => {
+    try {
+        const review = await reviewByReference(request.user.org_id, request.params.reference);
+        if (!review) return response.status(404).json({ error: "No such review" });
+
+        const { status, held_on, chair, notes } = request.body || {};
+        if (status && !["planned", "in_progress", "closed"].includes(status)) {
+            return response.status(400).json({ error: "status must be planned, in_progress or closed" });
+        }
+
+        const chairProvided = Object.prototype.hasOwnProperty.call(request.body || {}, "chair");
+        const chairId = chairProvided
+            ? (chair
+                ? (await query("select id from users where org_id = $1 and initials = $2",
+                    [request.user.org_id, chair])).rows[0]?.id || null
+                : null)
+            : undefined;
+
+        const updated = await query(`
+            update management_reviews set
+                status  = coalesce($2, status),
+                held_on = case when $3::boolean then $4::date else held_on end,
+                chair_id = case when $5::boolean then $6::uuid else chair_id end,
+                notes   = coalesce($7, notes)
+             where id = $1
+            returning reference, period, held_on, status
+        `, [review.id, status || null,
+            Object.prototype.hasOwnProperty.call(request.body || {}, "held_on"), held_on || null,
+            chairProvided, chairId ?? null,
+            notes ?? null]);
+
+        response.json(updated.rows[0]);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* POST /api/reviews/MR-2026-03/actions  { decision, owner?, due_on? } */
+evaluate.post("/reviews/:reference/actions", requirePermission("review.manage"),
+    async (request, response, next) => {
+        try {
+            const review = await reviewByReference(request.user.org_id, request.params.reference);
+            if (!review) return response.status(404).json({ error: "No such review" });
+
+            const { decision, owner, due_on } = request.body || {};
+            if (!decision || !String(decision).trim()) {
+                return response.status(400).json({ error: "decision is required" });
+            }
+
+            const ownerId = owner
+                ? (await query("select id from users where org_id = $1 and initials = $2",
+                    [request.user.org_id, owner])).rows[0]?.id || null
+                : null;
+
+            const next_position = await query(
+                "select coalesce(max(position), 0) + 1 as n from management_review_actions where review_id = $1",
+                [review.id]
+            );
+
+            const created = await query(`
+                insert into management_review_actions (review_id, decision, owner_id, due_on, status, position)
+                values ($1, $2, $3, $4, 'open', $5)
+                returning id, decision, due_on, status, linked_record, position
+            `, [review.id, String(decision).trim(), ownerId, due_on || null, next_position.rows[0].n]);
+
+            response.status(201).json(created.rows[0]);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* PATCH /api/reviews/MR-2026-03/actions/<id>
+   { status?, owner?, due_on?, linked_record? } */
+evaluate.patch("/reviews/:reference/actions/:id", requirePermission("review.manage"),
+    async (request, response, next) => {
+        try {
+            const review = await reviewByReference(request.user.org_id, request.params.reference);
+            if (!review) return response.status(404).json({ error: "No such review" });
+
+            const { status, owner, due_on, linked_record } = request.body || {};
+            if (status && !["open", "in_progress", "done", "dropped"].includes(status)) {
+                return response.status(400).json({ error: "bad status" });
+            }
+
+            const ownerProvided = Object.prototype.hasOwnProperty.call(request.body || {}, "owner");
+            const ownerId = ownerProvided
+                ? (owner
+                    ? (await query("select id from users where org_id = $1 and initials = $2",
+                        [request.user.org_id, owner])).rows[0]?.id || null
+                    : null)
+                : undefined;
+
+            const updated = await query(`
+                update management_review_actions set
+                    status = coalesce($3, status),
+                    due_on = case when $4::boolean then $5::date else due_on end,
+                    owner_id = case when $6::boolean then $7::uuid else owner_id end,
+                    linked_record = case when $8::boolean then $9::text else linked_record end
+                 where id = $1 and review_id = $2
+                returning id, decision, due_on, status, linked_record, position
+            `, [request.params.id, review.id,
+                status || null,
+                Object.prototype.hasOwnProperty.call(request.body || {}, "due_on"), due_on || null,
+                ownerProvided, ownerId ?? null,
+                Object.prototype.hasOwnProperty.call(request.body || {}, "linked_record"),
+                linked_record ? String(linked_record).trim() : null]);
+
+            if (updated.rowCount === 0) return response.status(404).json({ error: "No such action" });
+            response.json(updated.rows[0]);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+evaluate.delete("/reviews/:reference/actions/:id", requirePermission("review.manage"),
+    async (request, response, next) => {
+        try {
+            const review = await reviewByReference(request.user.org_id, request.params.reference);
+            if (!review) return response.status(404).json({ error: "No such review" });
+            const done = await query(
+                "delete from management_review_actions where id = $1 and review_id = $2",
+                [request.params.id, review.id]
+            );
+            if (done.rowCount === 0) return response.status(404).json({ error: "No such action" });
+            response.json({ deleted: true });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* Attendance ------------------------------------------------ */
+
+evaluate.post("/reviews/:reference/attendance", requirePermission("review.manage"),
+    async (request, response, next) => {
+        try {
+            const review = await reviewByReference(request.user.org_id, request.params.reference);
+            if (!review) return response.status(404).json({ error: "No such review" });
+
+            const { name, role, present } = request.body || {};
+            if (!name || !String(name).trim()) {
+                return response.status(400).json({ error: "name is required" });
+            }
+            const nextPos = await query(
+                "select coalesce(max(position), 0) + 1 as n from management_review_attendance where review_id = $1",
+                [review.id]
+            );
+            const created = await query(`
+                insert into management_review_attendance (org_id, review_id, name, role, present, position)
+                values ($1, $2, $3, $4, $5, $6)
+                returning id, name, role, present, position
+            `, [request.user.org_id, review.id, String(name).trim(),
+                (role || "").trim() || null, present !== false, nextPos.rows[0].n]);
+            response.status(201).json(created.rows[0]);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+evaluate.delete("/reviews/:reference/attendance/:id", requirePermission("review.manage"),
+    async (request, response, next) => {
+        try {
+            const review = await reviewByReference(request.user.org_id, request.params.reference);
+            if (!review) return response.status(404).json({ error: "No such review" });
+            const done = await query(
+                "delete from management_review_attendance where id = $1 and review_id = $2",
+                [request.params.id, review.id]
+            );
+            if (done.rowCount === 0) return response.status(404).json({ error: "No such attendee" });
+            response.json({ deleted: true });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* GET /api/reviews/MR-2026-03/pdf
+   The minutes pack an auditor asks for: who was there, every 9.3.2
+   input with its live number, and the 9.3.3 actions with owner, due
+   date, status and the CAPA carrying each one out. */
+evaluate.get("/reviews/:reference/pdf", async (request, response, next) => {
+    try {
+        const orgId = request.user.org_id;
+        const found = await query(`
+            select m.id, m.reference, m.period, m.held_on, m.status, m.notes,
+                   u.full_name as chair
+              from management_reviews m
+         left join users u on u.id = m.chair_id
+             where m.org_id = $1 and m.reference = $2
+        `, [orgId, request.params.reference]);
+        if (found.rowCount === 0) return response.status(404).json({ error: "No such review" });
+        const review = found.rows[0];
+
+        const [inputRows, attendance, actions, orgRow] = await Promise.all([
+            compileReviewInputs(orgId, review.reference),
+            query("select name, role, present from management_review_attendance where review_id = $1 order by position, name",
+                [review.id]),
+            query(`
+                select a.decision, a.due_on, a.status, a.linked_record,
+                       u.full_name as owner, lr.status as linked_status
+                  from management_review_actions a
+             left join users u on u.id = a.owner_id
+             left join records lr on lr.org_id = $2 and lr.number = a.linked_record
+                 where a.review_id = $1 order by a.position
+            `, [review.id, orgId]),
+            query("select name from organizations where id = $1", [orgId])
+        ]);
+
+        const orgName = orgRow.rows[0]?.name || "Organization";
+        const doc = new PDFDocument({ size: "LETTER", margin: 44 });
+        response.setHeader("Content-Type", "application/pdf");
+        response.setHeader("Content-Disposition",
+            "attachment; filename=\"" + review.reference + "-minutes.pdf\"");
+        doc.pipe(response);
+
+        drawLetterhead(doc, orgName, orgName + " - Management Review Minutes");
+
+        doc.fontSize(17).fillColor(INK).font("Helvetica-Bold")
+            .text("Management Review " + review.reference + ", clause 9.3");
+        doc.fontSize(9.5).fillColor(INK_2).font("Helvetica").text(
+            "Period: " + review.period
+            + "     Held: " + (review.held_on ? new Date(review.held_on).toLocaleDateString() : "not yet held")
+            + "     Chair: " + (review.chair || "-")
+            + "     Status: " + review.status);
+        doc.moveDown(1);
+
+        doc.fontSize(12).fillColor(INK).font("Helvetica-Bold").text("Attendance");
+        doc.moveDown(0.3);
+        doc.fontSize(9).fillColor(INK_2).font("Helvetica");
+        if (attendance.rowCount === 0) {
+            doc.text("No attendance recorded.");
+        } else {
+            for (const a of attendance.rows) {
+                doc.text((a.present ? "✓ " : "✗ ") + a.name
+                    + (a.role ? "  -  " + a.role : "")
+                    + (a.present ? "" : "  (absent)"));
+            }
+        }
+        doc.moveDown(1);
+
+        doc.fontSize(12).fillColor(INK).font("Helvetica-Bold").text("Clause 9.3.2 inputs");
+        doc.moveDown(0.3);
+        for (const row of inputRows) {
+            doc.fontSize(9.5).fillColor(INK).font("Helvetica-Bold")
+                .text(row.clause + "  " + row.input, { continued: false });
+            doc.fontSize(9).fillColor(INK_2).font("Helvetica")
+                .text("From " + row.module + "  -  " + row.summary);
+            doc.moveDown(0.5);
+        }
+        doc.moveDown(0.6);
+
+        doc.fontSize(12).fillColor(INK).font("Helvetica-Bold").text("Clause 9.3.3 decisions and actions");
+        doc.moveDown(0.3);
+        if (actions.rowCount === 0) {
+            doc.fontSize(9).fillColor(INK_2).font("Helvetica").text("No actions recorded.");
+        } else {
+            for (const a of actions.rows) {
+                doc.fontSize(9.5).fillColor(INK).font("Helvetica-Bold").text(a.decision);
+                doc.fontSize(9).fillColor(INK_2).font("Helvetica").text(
+                    "Owner: " + (a.owner || "-")
+                    + "     Due: " + (a.due_on ? new Date(a.due_on).toLocaleDateString() : "-")
+                    + "     Status: " + a.status
+                    + (a.linked_record
+                        ? "     Carried by: " + a.linked_record
+                          + (a.linked_status ? " (" + a.linked_status + ")" : "")
+                        : ""));
+                doc.moveDown(0.5);
+            }
+        }
+
+        if (review.notes) {
+            doc.moveDown(0.6);
+            doc.fontSize(12).fillColor(INK).font("Helvetica-Bold").text("Notes");
+            doc.fontSize(9).fillColor(INK_2).font("Helvetica").text(review.notes);
+        }
+
+        drawFooter(doc, orgName);
+        doc.end();
     } catch (error) {
         next(error);
     }

@@ -75,7 +75,8 @@ const GRANTS = {
         "production.read", "production.hold", "shipping.read",
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "di.read", "di.manage", "risk.read", "risk.manage",
-        "vendor.read", "scar.issue", "apqp.manage", "receiving.log", "fair.read", "fair.manage"],
+        "vendor.read", "scar.issue", "apqp.manage", "receiving.log", "fair.read", "fair.manage",
+        "review.manage"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
@@ -98,14 +99,14 @@ const GRANTS = {
     purchasing_manager: [
         "ncr.read", "capa.read", "document.read",
         "vendor.read", "vendor.approve", "vendor.suspend", "scar.issue",
-        "production.read", "audit.read", "risk.read", "purchasing.log"],
+        "production.read", "audit.read", "risk.read", "purchasing.log", "review.manage"],
 
     production_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "capa.read",
         "document.read", "drawing.read",
         "production.read", "production.hold", "production.release",
         "shipping.read", "training.read", "training.record", "risk.read",
-        "purchasing.log", "wo.log"],
+        "purchasing.log", "wo.log", "review.manage"],
 
     engineering_manager: [
         "ncr.read", "ncr.create", "ncr.disposition", "mrb.signoff",
@@ -114,7 +115,8 @@ const GRANTS = {
         "drawing.read", "drawing.create", "drawing.edit", "drawing.release",
         "change.create", "change.approve",
         "production.read", "production.release", "training.read",
-        "audit.read", "di.read", "di.manage", "risk.read", "risk.manage", "user.read", "apqp.manage"],
+        "audit.read", "di.read", "di.manage", "risk.read", "risk.manage", "user.read",
+        "apqp.manage", "review.manage"],
 
     quality_manager: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "ncr.use_as_is",
@@ -131,7 +133,7 @@ const GRANTS = {
         "audit.read", "audit.schedule", "audit.close",
         "di.read", "di.manage", "di.close",
         "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
-        "purchasing.log", "wo.log", "layout.manage", "fair.read", "fair.manage"]
+        "purchasing.log", "wo.log", "layout.manage", "fair.read", "fair.manage", "review.manage"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
