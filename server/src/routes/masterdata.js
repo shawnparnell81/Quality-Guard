@@ -36,6 +36,8 @@ masterdata.get("/organization", async (request, response, next) => {
     try {
         const org = await query(`
             select o.name as organization,
+                   o.standards,
+                   (o.onboarded_at is not null) as onboarded,
                    s.code as site_code,
                    s.name as site_name
               from organizations o
@@ -68,6 +70,58 @@ masterdata.get("/organization", async (request, response, next) => {
         next(error);
     }
 });
+
+/* PATCH /api/organization
+   { name?, standards?: string[], onboarded?: true }
+
+   The first-run wizard (P5.3) writes here: the confirmed company
+   name, the standard(s) the org runs to, and - with onboarded:true -
+   the flag that stops the wizard reappearing. Admin-level only. */
+const KNOWN_STANDARDS = new Set([
+    "ISO 9001", "IATF 16949", "AS9100", "ISO 13485", "ISO 14001", "ISO 45001"
+]);
+
+masterdata.patch("/organization", requirePermission("roles.manage"),
+    async (request, response, next) => {
+        try {
+            const body = request.body || {};
+            const sets = [];
+            const params = [request.user.org_id];
+
+            if (typeof body.name === "string") {
+                const name = body.name.trim();
+                if (!name) return response.status(400).json({ error: "name cannot be empty" });
+                params.push(name);
+                sets.push("name = $" + params.length);
+            }
+
+            if (Array.isArray(body.standards)) {
+                const clean = [...new Set(body.standards
+                    .filter((s) => typeof s === "string")
+                    .map((s) => s.trim())
+                    .filter((s) => KNOWN_STANDARDS.has(s)))];
+                params.push(JSON.stringify(clean));
+                sets.push("standards = $" + params.length + "::jsonb");
+            }
+
+            if (body.onboarded === true) {
+                sets.push("onboarded_at = coalesce(onboarded_at, now())");
+            }
+
+            if (sets.length === 0) {
+                return response.status(400).json({ error: "Nothing to update" });
+            }
+
+            const updated = await query(
+                "update organizations set " + sets.join(", ") + " where id = $1"
+                + " returning name, standards, (onboarded_at is not null) as onboarded",
+                params);
+
+            response.json(updated.rows[0]);
+        } catch (error) {
+            next(error);
+        }
+    });
 
 /* ---------- form schema ----------
    GET /api/record-types/ncr/form

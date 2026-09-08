@@ -348,7 +348,9 @@ CREATE TABLE public.org_layouts (
 CREATE TABLE public.organizations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     name text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    onboarded_at timestamp with time zone,
+    standards jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 CREATE TABLE public.parts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
