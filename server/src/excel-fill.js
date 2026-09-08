@@ -282,20 +282,58 @@ function overflowSheetName(label, taken) {
     return name.slice(0, 31);
 }
 
-/* Merge ranges ("A1:D2") that begin below `headerRowNo` and overlap
-   columns [loCol, hiCol] (1-based). Writing extra data rows into a
-   grid that has these would collide with a merge, so those tables cap
-   at `capacity` and spill; a grid with none can just grow. */
-function mergesBelow(ws, headerRowNo, loCol, hiCol) {
+/* Classify the merges that sit under a grid's header, inside its
+   column span:
+     regular  - none, or every merged body row carries the same set of
+                single-row horizontal merges (Process Flow's "F:G on
+                every row"). Such a grid can grow: write past the
+                template's rows, carry the row style, and re-apply that
+                merge pattern on each new row.
+     irregular - multi-row merges, or the pattern varies row to row
+                (the 8-D decision worksheets). Those cap and spill.
+   `through` is the last row already covered by the pattern; `spans`
+   is the per-row [c1, c2] pairs to replicate. */
+function mergePattern(ws, headerRowNo, loCol, hiCol) {
+    const byRow = new Map();
+    let irregular = false;
+    let through = headerRowNo;
+
     for (const range of ws.model.merges || []) {
         const m = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(range);
         if (!m) continue;
         const top = Number(m[2]);
+        const bottom = Number(m[4]);
         const c1 = letterToCol(m[1]);
         const c2 = letterToCol(m[3]);
-        if (top > headerRowNo && c2 >= loCol && c1 <= hiCol) return true;
+        if (bottom <= headerRowNo) continue;              // header or above
+        if (c2 < loCol || c1 > hiCol) continue;           // outside the grid's columns
+        if (top !== bottom) { irregular = true; continue; }
+        if (!byRow.has(top)) byRow.set(top, []);
+        byRow.get(top).push([c1, c2]);
+        if (top > through) through = top;
     }
-    return false;
+
+    if (byRow.size === 0) return { spans: [], regular: !irregular, through };
+
+    const keyOf = (spans) => spans.map((s) => s.join(":")).sort().join("|");
+    const distinct = new Set([...byRow.values()].map(keyOf));
+    const regular = !irregular && distinct.size === 1;
+    return { spans: regular ? [...byRow.values()][0] : [], regular, through };
+}
+
+/* A blank template body row to copy cell styling from when a grid
+   grows past its own rows - the first row under the header that has
+   no text in the grid's columns, else the first body row. */
+function styleSourceRow(ws, firstDataRow, loCol, hiCol) {
+    for (let r = firstDataRow; r < firstDataRow + 40; r++) {
+        let blank = true;
+        for (let c = loCol; c <= hiCol; c++) {
+            const v = ws.getCell(r, c).value;
+            if (v !== null && v !== undefined && String(v).trim() !== "") { blank = false; break; }
+        }
+        if (blank) return r;
+    }
+    return firstDataRow;
 }
 
 export async function fillTemplate(templateBuffer, map, schema, values) {
@@ -331,21 +369,37 @@ export async function fillTemplate(templateBuffer, map, schema, values) {
         const letters = Object.values(t.columns || {}).map(letterToCol);
         const loCol = Math.min(...letters, 1);
         const hiCol = Math.max(...letters, 1);
-        const headerRowNo = Number(t.first_data_row) - 1;
+        const firstRow = Number(t.first_data_row);
+        const headerRowNo = firstRow - 1;
 
-        /* A clean grid (no merges under the header in its columns) can
-           just grow past the template's blank rows; one that has merges
-           there caps at capacity and spills, so nothing is mangled. */
-        const canGrow = !mergesBelow(ws, headerRowNo, loCol, hiCol);
-        const capacity = canGrow
-            ? rows.length
-            : (Number(t.capacity) > 0 ? Number(t.capacity) : rows.length);
+        /* A grid with no merges under its header, or one whose merges
+           are a regular per-row pattern, can grow past the template's
+           rows; an irregular one caps and spills. */
+        const pattern = mergePattern(ws, headerRowNo, loCol, hiCol);
+        const canGrow = pattern.regular;
+        const templateRows = Number(t.capacity) > 0 ? Number(t.capacity) : 25;
+        const capacity = canGrow ? rows.length : templateRows;
+        const styleFrom = canGrow ? styleSourceRow(ws, firstRow, loCol, hiCol) : firstRow;
+        const cols1 = [...letters, ...(t.row_number_col ? [letterToCol(t.row_number_col)] : [])];
         const overflow = [];
 
         rows.forEach((row, i) => {
             if (!row || typeof row !== "object") return;
             if (i >= capacity) { overflow.push(row); return; }
-            const excelRowNo = Number(t.first_data_row) + i;
+            const excelRowNo = firstRow + i;
+
+            /* Past the template's own rows: carry the body style, and
+               re-apply the merge pattern so the grid keeps its look. */
+            const isGrownRow = i >= templateRows;
+            if (isGrownRow && styleFrom !== excelRowNo) {
+                for (const c of cols1) ws.getCell(excelRowNo, c).style = ws.getCell(styleFrom, c).style;
+                if (excelRowNo > pattern.through) {
+                    for (const [c1, c2] of pattern.spans) {
+                        try { ws.mergeCells(excelRowNo, c1, excelRowNo, c2); } catch { /* already merged */ }
+                    }
+                }
+            }
+
             if (t.row_number_col) {
                 const rnc = master(ws, t.row_number_col + excelRowNo);
                 if (!isProtectedFormula(rnc)) rnc.value = i + 1;
