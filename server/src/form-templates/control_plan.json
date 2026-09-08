@@ -3,6 +3,8 @@
   "name": "Control Plan",
   "prefix": "CP",
   "clause": "8.5.1",
+  "category": "APQP",
+  "standard": "AIAG",
   "description": "AIAG Control Plan. Header plus one line per characteristic: specification, measurement technique, sample size and frequency, control method and reaction plan.",
   "fields": [
     { "key": "control_plan_level", "label": "Control plan level", "type": "select", "required": true, "options": ["Prototype", "Pre-launch", "Production"], "section": "Header" },

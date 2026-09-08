@@ -1,0 +1,44 @@
+{
+  "key": "msa_grr",
+  "name": "MSA - Gage R&R Study",
+  "prefix": "MSA",
+  "clause": "7.1.5.1.1",
+  "category": "Measurement",
+  "standard": "AIAG",
+  "description": "AIAG Measurement Systems Analysis. Records the study set-up and every appraiser / part / trial reading; the repeatability, reproducibility, %GR&R and ndc results are entered from your MSA calculation (the app stores and reports them, it does not re-derive ANOVA).",
+  "fields": [
+    { "key": "gage_name", "label": "Gage / instrument", "type": "text", "required": true, "section": "Study set-up" },
+    { "key": "gage_number", "label": "Gage number", "type": "text", "section": "Study set-up" },
+    { "key": "characteristic", "label": "Characteristic measured", "type": "text", "section": "Study set-up" },
+    { "key": "spec_tolerance", "label": "Specification / tolerance", "type": "text", "section": "Study set-up" },
+    { "key": "resolution", "label": "Gage resolution", "type": "text", "section": "Study set-up" },
+    { "key": "units", "label": "Units", "type": "text", "section": "Study set-up" },
+    { "key": "method", "label": "Method", "type": "select", "section": "Study set-up",
+      "options": ["Average & Range", "ANOVA", "Range", "Bias", "Linearity", "Stability"] },
+    { "key": "appraisers", "label": "Number of appraisers", "type": "number", "section": "Study set-up" },
+    { "key": "parts", "label": "Number of parts", "type": "number", "section": "Study set-up" },
+    { "key": "trials", "label": "Trials per appraiser", "type": "number", "section": "Study set-up" },
+    { "key": "study_date", "label": "Study date", "type": "date", "section": "Study set-up" },
+    { "key": "analyst", "label": "Analyst", "type": "text", "section": "Study set-up" },
+    {
+      "key": "readings", "label": "Readings", "type": "table", "section": "Data",
+      "columns": [
+        { "key": "part_no", "label": "Part #", "type": "text" },
+        { "key": "appraiser", "label": "Appraiser", "type": "text" },
+        { "key": "trial", "label": "Trial", "type": "number" },
+        { "key": "measurement", "label": "Measurement", "type": "number" }
+      ]
+    },
+    { "key": "repeatability_ev", "label": "Repeatability (EV)", "type": "number", "section": "Results" },
+    { "key": "reproducibility_av", "label": "Reproducibility (AV)", "type": "number", "section": "Results" },
+    { "key": "grr", "label": "Gage R&R (GRR)", "type": "number", "section": "Results" },
+    { "key": "grr_percent", "label": "%GR&R (of tolerance)", "type": "number", "section": "Results" },
+    { "key": "part_variation_pv", "label": "Part variation (PV)", "type": "number", "section": "Results" },
+    { "key": "ndc", "label": "Number of distinct categories (ndc)", "type": "number", "section": "Results" },
+    { "key": "verdict", "label": "Verdict", "type": "select", "section": "Results",
+      "options": ["Acceptable (<10%)", "Marginal (10-30%)", "Unacceptable (>30%)"] },
+    { "key": "notes", "label": "Notes / corrective action", "type": "memo", "section": "Results" },
+    { "key": "approved_by", "label": "Approved by", "type": "signature", "section": "Results" },
+    { "key": "approved_date", "label": "Date", "type": "date", "section": "Results" }
+  ]
+}

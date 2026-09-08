@@ -2519,6 +2519,60 @@ th.col-you { color: var(--brand); }
 }
 .toast-info  { background: var(--ink);  color: var(--ground); }
 
+/* ---------- form library gallery ---------- */
+
+.lib-cat {
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: var(--sp-5) 0 var(--sp-2);
+}
+.lib-cat:first-child { margin-top: 0; }
+
+.form-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--sp-3);
+}
+.form-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-4);
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-lg);
+}
+.form-card.is-installed { border-color: var(--ok); }
+.form-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+.form-card-name { font-size: var(--fs-md); font-weight: 600; color: var(--ink); }
+.form-card-std {
+    flex: none;
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    background: var(--brand-tint);
+    color: var(--brand);
+}
+.form-card-desc {
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--ink-2);
+    flex: 1;
+}
+.form-card-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+}
+.form-card-meta { flex: 1; min-width: 100%; }
+.form-card-foot .btn { margin-left: auto; }
+
 /* ---------- first-run onboarding wizard (P5.3) ---------- */
 
 .onb-overlay {

@@ -3,6 +3,8 @@
   "name": "Process Flow Diagram",
   "prefix": "PFD",
   "clause": "8.5.1",
+  "category": "APQP",
+  "standard": "AIAG",
   "description": "AIAG Process Flow Diagram as a step list: operation type, key inputs and outputs, and the product / process characteristics introduced at each step.",
   "fields": [
     { "key": "part_number", "label": "Part number / name", "type": "text", "required": true, "section": "Header" },

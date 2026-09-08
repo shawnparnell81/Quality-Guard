@@ -3,6 +3,8 @@
   "name": "First Article Inspection Report",
   "prefix": "FAIRR",
   "clause": "8.5.1",
+  "category": "First article",
+  "standard": "AS9102",
   "description": "AS9102-style First Article Inspection Report - part accountability header plus the characteristic accountability / verification table. (The built-in FAIR record type carries a full workflow; this is the flat report form.)",
   "fields": [
     { "key": "fair_number", "label": "FAIR number", "type": "text", "required": true, "section": "Part accountability" },

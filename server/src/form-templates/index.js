@@ -30,9 +30,12 @@ export function listTemplates() {
         .map((t) => ({
             key: t.key, name: t.name, prefix: t.prefix,
             clause: t.clause, description: t.description,
-            field_count: t.fields.length
+            category: t.category || "Other",
+            standard: t.standard || null,
+            field_count: t.fields.length,
+            table_count: (t.fields || []).filter((f) => f.type === "table").length
         }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name));
 }
 
 export function getTemplate(key) {

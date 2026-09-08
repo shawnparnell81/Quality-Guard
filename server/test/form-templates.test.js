@@ -107,7 +107,14 @@ after(async () => {
 test("the template list carries metadata and an installed map", async () => {
     const r = await api(adminCookie, "GET", "/api/form-templates");
     assert.equal(r.status, 200);
-    assert.ok(r.body.templates.length >= 5, JSON.stringify(r.body.templates.map((t) => t.key)));
+    assert.ok(r.body.templates.length >= 8,
+        "the library has the full core-tool set: " + r.body.templates.map((t) => t.key).join(", "));
+
+    /* the AIAG / AS9102 core tools are all present */
+    for (const key of ["pfmea", "dfmea", "control_plan", "process_flow",
+        "fair_report", "eight_d_report", "msa_grr", "ppap_checklist"]) {
+        assert.ok(r.body.templates.some((t) => t.key === key), "library has " + key);
+    }
 
     const pfmea = r.body.templates.find((t) => t.key === "pfmea");
     assert.ok(pfmea);
@@ -115,6 +122,9 @@ test("the template list carries metadata and an installed map", async () => {
     assert.equal(typeof pfmea.clause, "string");
     assert.equal(typeof pfmea.field_count, "number");
     assert.equal(typeof pfmea.description, "string");
+    assert.equal(pfmea.category, "APQP");
+    assert.equal(pfmea.standard, "AIAG");
+    assert.ok(pfmea.table_count >= 1);
 
     assert.deepEqual(r.body.installed, {}, "nothing installed in a fresh org");
 });
@@ -155,6 +165,25 @@ test("it all needs forms.manage", async () => {
     const list = await api(operatorCookie, "GET", "/api/form-templates");
     assert.equal(list.status, 403);
 
-    const install = await api(operatorCookie, "POST", "/api/form-templates/control_plan/install");
+    const install = await api(operatorCookie, "POST", "/api/form-templates/msa_grr/install");
     assert.equal(install.status, 403);
+});
+
+test("every template in the library is well-formed and installs", async () => {
+    const { body } = await api(adminCookie, "GET", "/api/form-templates");
+    for (const meta of body.templates) {
+        const full = await api(adminCookie, "GET", "/api/form-templates/" + meta.key);
+        assert.equal(full.status, 200, meta.key);
+        assert.ok(Array.isArray(full.body.fields) && full.body.fields.length > 0, meta.key + " has fields");
+
+        /* pfmea was installed by an earlier test - a second install is
+           a 409, which is still proof the template is usable. */
+        const install = await api(adminCookie, "POST", "/api/form-templates/" + meta.key + "/install");
+        assert.ok([201, 409].includes(install.status),
+            meta.key + " installs (or is already installed): " + JSON.stringify(install.body));
+
+        const form = await api(adminCookie, "GET", "/api/record-types/" + meta.key + "/form");
+        assert.equal(form.status, 200, meta.key + " is now a record type");
+        assert.equal(form.body.fields.length, meta.field_count, meta.key + " field count round-trips");
+    }
 });

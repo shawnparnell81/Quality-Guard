@@ -36,6 +36,7 @@ import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { renderEngDocuments } from "./views/eng-documents.js";
 import { renderFormRecord, wireFormRecord } from "./views/form-record.js";
 import { renderFormImport, wireFormImport } from "./views/form-import.js";
+import { renderFormLibrary } from "./views/form-library.js";
 import { renderPoLog, renderWoLog, renderPrLog, wireLogs } from "./views/logs.js";
 import { renderMenuLayout } from "./views/menu-layout.js";
 import { badgePlaceholders } from "./placeholders.js";
@@ -95,6 +96,7 @@ const LOADERS = {
     turtle:      renderTurtle,
     scorecards:  renderScorecards,
     forms:       renderForms,
+    "form-library": renderFormLibrary,
     "form-record": renderFormRecord,
     "form-import": renderFormImport
 };
@@ -170,6 +172,16 @@ deptbar.addEventListener("click", (event) => {
    jump to the module holding a clause's evidence. */
 document.addEventListener("navigate", (event) => {
     show(event.detail.view);
+    closeMobileNav();
+});
+
+/* An in-page link carrying data-goto="<view>" jumps there, so prose
+   can point at another screen without importing the router. */
+document.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-goto]");
+    if (!link) return;
+    event.preventDefault();
+    show(link.dataset.goto);
     closeMobileNav();
 });
 

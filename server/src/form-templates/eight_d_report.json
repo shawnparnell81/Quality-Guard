@@ -3,6 +3,8 @@
   "name": "8D Report",
   "prefix": "D8R",
   "clause": "10.2",
+  "category": "Problem solving",
+  "standard": "AIAG",
   "description": "The eight disciplines as a single report form: team, problem description, interim containment, root cause (with a 5-why table), permanent corrective action, implementation, prevention, and closure. (The built-in 8D record type carries a full D1-D8 workflow; this is the flat report.)",
   "fields": [
     { "key": "reference_number", "label": "Reference / customer complaint no.", "type": "text", "section": "D1 Team" },
