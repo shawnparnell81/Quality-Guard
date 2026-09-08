@@ -184,22 +184,31 @@ export function buildField(field, options, currentValue) {
             };
 
             const hasComputed = columns.some((c) => c.type === "computed");
+            /* A form with many columns is miserable to fill in a
+               horizontal-scrolling grid, so those rows also get a
+               "open as a form" drawer. */
+            const wide = columns.length > 6;
+
+            const rowIsEmpty = (tr) => columns.every((c) =>
+                c.type === "computed" || !(tr._cells[c.key]?.value || "").trim());
 
             const addRow = (seed = {}) => {
                 const tr = el("tr");
                 const cellByKey = {};
+                const tdByKey = {};
                 for (const column of columns) {
                     const input = cellInput(column, seed[column.key]);
                     cellByKey[column.key] = input;
-                    tr.append(el("td", {}, input));
+                    const td = el("td", {}, input);
+                    tdByKey[column.key] = td;
+                    tr.append(td);
                 }
-                tr.append(el("td", {}, el("button", {
-                    class: "btn sm no-print", type: "button", text: "×",
-                    "aria-label": "Remove row", onClick: () => tr.remove()
-                })));
+                tr._cells = cellByKey;
+                tr._tds = tdByKey;
 
+                let recompute = null;
                 if (hasComputed) {
-                    const recompute = () => {
+                    recompute = () => {
                         for (const column of columns) {
                             if (column.type !== "computed") continue;
                             const cell = cellByKey[column.key];
@@ -216,9 +225,64 @@ export function buildField(field, options, currentValue) {
                     tr.addEventListener("change", recompute);
                     recompute();
                 }
+                tr._recompute = recompute;
+
+                const actions = el("td", { class: "row-tools" }, [
+                    wide ? el("button", {
+                        class: "btn sm no-print", type: "button", text: "⤡",
+                        title: "Open this row as a form", "aria-label": "Expand row",
+                        onClick: () => openRowDrawer(tr)
+                    }) : null,
+                    el("button", {
+                        class: "btn sm no-print", type: "button", text: "×",
+                        "aria-label": "Remove row", onClick: () => tr.remove()
+                    })
+                ]);
+                tr.append(actions);
 
                 body.append(tr);
+                return tr;
             };
+
+            /* One shared dialog: pull this row's real cell inputs into a
+               stacked form, put them back on close (single source of
+               truth - no mirroring). */
+            function openRowDrawer(tr) {
+                const node = ensureDialog();
+                const idx = [...body.children].indexOf(tr) + 1;
+
+                const groups = columns.map((column) => {
+                    const input = tr._cells[column.key];
+                    const g = el("div", { class: "field-group" }, [
+                        el("label", { text: column.label || column.key }),
+                        input
+                    ]);
+                    if (column.type === "computed") input.readOnly = true;
+                    return g;
+                });
+
+                const form = el("form", {}, groups);
+                form.addEventListener("input", () => tr._recompute && tr._recompute());
+                form.addEventListener("change", () => tr._recompute && tr._recompute());
+
+                /* Put the real inputs back where they came from - runs
+                   once, however the dialog closes (button or Escape). */
+                const restore = () => {
+                    for (const column of columns) tr._tds[column.key].append(tr._cells[column.key]);
+                    tr._recompute && tr._recompute();
+                };
+
+                node.replaceChildren(
+                    el("div", { class: "modal-head" },
+                        el("h2", { class: "modal-title", text: (field.label || "Row") + " - row " + idx })),
+                    el("div", { class: "modal-body" }, form),
+                    el("div", { class: "modal-foot" },
+                        el("button", { class: "btn btn-primary", type: "button", text: "Done",
+                            onClick: () => node.close() }))
+                );
+                node.addEventListener("close", restore, { once: true });
+                node.showModal();
+            }
 
             /* Replace every row - used when a saved draft is restored
                into an already-built form. */
@@ -327,27 +391,42 @@ export function buildField(field, options, currentValue) {
                 }
             });
 
+            /* There is always one blank row waiting: the moment the
+               last row gets any content, another appears - so a table
+               fills continuously without stopping to click "add". */
+            const ensureTrailingBlank = () => {
+                const last = body.lastElementChild;
+                if (last && !rowIsEmpty(last)) addRow({});
+            };
+            body.addEventListener("input", ensureTrailingBlank);
+            body.addEventListener("change", ensureTrailingBlank);
+            if (body.children.length === 0 || !rowIsEmpty(body.lastElementChild)) addRow({});
+
             /* A wide table (a PFMEA can carry a dozen columns) scrolls
                inside its own box rather than pushing the whole form
                sideways with no way back. */
             wrapper.append(
                 el("div", { class: "table-wrap" }, table),
-                addBtn,
-                el("span", { class: "field-hint", text: "Tab and Enter move between cells. Paste a block straight from Excel." })
+                el("div", { class: "row no-print", style: "gap:6px;margin-top:4px" }, [
+                    addBtn,
+                    el("button", { class: "btn sm no-print", type: "button", text: "+ 5 rows",
+                        onClick: () => { for (let i = 0; i < 5; i++) addRow({}); } })
+                ]),
+                el("span", { class: "field-hint", text:
+                    "Paste a block straight from Excel. Tab / Enter move between cells"
+                    + (wide ? "; ⤡ opens a row as a form." : ".") })
             );
 
-            const readTable = () => [...body.querySelectorAll("tr")].map((tr) => {
-                const inputs = tr.querySelectorAll("input, select, textarea");
+            const readTable = () => [...body.children].map((tr) => {
                 const row = {};
                 let any = false;
-                columns.forEach((column, index) => {
-                    const raw = (inputs[index]?.value ?? "").trim();
-                    if (raw === "") return;
-                    /* A computed cell alone does not make a row worth keeping. */
+                for (const column of columns) {
+                    const raw = (tr._cells[column.key]?.value ?? "").trim();
+                    if (raw === "") continue;
                     if (column.type !== "computed") any = true;
                     row[column.key] = (column.type === "number" || column.type === "computed")
                         ? Number(raw) : raw;
-                });
+                }
                 return any ? row : null;
             }).filter(Boolean);
 

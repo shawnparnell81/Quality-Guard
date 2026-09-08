@@ -575,8 +575,11 @@ body {
 .dim-repeater input,
 .dim-repeater select,
 .dim-repeater textarea { width: 100%; min-width: 7rem; }
-/* trailing delete-row column has no input - keep it tight */
+/* trailing tools column has no input - keep it tight */
 .dim-repeater td:last-child, .dim-repeater th:last-child { min-width: 0; width: 1%; white-space: nowrap; }
+.dim-repeater td.row-tools { white-space: nowrap; }
+.dim-repeater td.row-tools .btn { padding: 1px 7px; }
+.dim-repeater td.row-tools .btn + .btn { margin-left: 3px; }
 
 /* A computed cell (RPN and the like): read-only, filled by the form
    as its inputs change, and flagged once it crosses a threshold. */
