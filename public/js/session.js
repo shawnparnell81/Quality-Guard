@@ -1,3 +1,4 @@
+// @ts-check
 /* ============================================================
    The signed-in person and what they may do.
 
@@ -37,7 +38,8 @@ export function can(permission) {
    whether the feature exists; one that is visible and explains itself
    teaches them who to ask. */
 export function applyPermissions(root = document) {
-    for (const node of root.querySelectorAll("[data-requires]")) {
+    for (const found of root.querySelectorAll("[data-requires]")) {
+        const node = /** @type {HTMLElement & { disabled?: boolean }} */ (found);
         const permission = node.dataset.requires;
         const allowed = can(permission);
 

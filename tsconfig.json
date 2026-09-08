@@ -1,0 +1,25 @@
+{
+  "//": "No build. This checks JS in place. Files opt in with a `// @ts-check` line at the top; everything else is parsed for cross-file inference but not reported on, so adoption is incremental and CI stays quiet until a file is ready. See docs/typechecking.md.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "types": []
+  },
+  "include": [
+    "types/**/*.d.ts",
+    "public/js/**/*.js",
+    "server/src/**/*.js",
+    "server/scripts/**/*.js"
+  ],
+  "exclude": ["node_modules", "server/node_modules"]
+}
