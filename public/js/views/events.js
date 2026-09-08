@@ -52,10 +52,12 @@ const TYPE_VIEW = {
 /* Shared first column: severity stripe plus record number. */
 const idColumn = {
     className: "nowrap",
+    sortKey: "number",
     render: (row) => [severity(row.severity), recordId(row.number)]
 };
 
 const statusColumn = {
+    sortKey: "status",
     render: (row) => pill(humanize(row.status), statusKind(row.status))
 };
 
@@ -65,7 +67,7 @@ const REGISTERS = {
         columns: [
             idColumn,
             { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
-            { className: "sm", render: (row) => row.title },
+            { className: "sm", sortKey: "title", render: (row) => row.title },
             { className: "num", render: (row) =>
                 row.data.qty_affected != null ? row.data.qty_affected.toLocaleString() : "-" },
             { className: "sm", render: (row) => row.data.disposition || "-" },
@@ -77,7 +79,7 @@ const REGISTERS = {
         tbody: "capa-register",
         columns: [
             idColumn,
-            { className: "sm", render: (row) => row.title },
+            { className: "sm", sortKey: "title", render: (row) => row.title },
             { className: "sm", render: (row) => row.owner || "-" },
             { className: "mono sm", render: (row) => dueCell(row) },
             statusColumn
@@ -89,7 +91,7 @@ const REGISTERS = {
         columns: [
             idColumn,
             { className: "sm", render: (row) => row.data.customer || "-" },
-            { className: "sm", render: (row) => row.title },
+            { className: "sm", sortKey: "title", render: (row) => row.title },
             { className: "num", render: (row) =>
                 row.data.qty != null ? row.data.qty.toLocaleString() : "-" },
             { className: "mono sm", render: (row) =>
@@ -113,7 +115,7 @@ const REGISTERS = {
         tbody: "risk-table",
         columns: [
             { className: "mono sm", render: (row) => row.number },
-            { className: "sm", render: (row) => row.title },
+            { className: "sm", sortKey: "title", render: (row) => row.title },
             { className: "sm dim", render: (row) => row.data.process || "-" },
             { className: "num", render: (row) => row.data.severity ?? "-" },
             { className: "num", render: (row) => row.data.occurrence ?? "-" },
@@ -129,7 +131,7 @@ const REGISTERS = {
         columns: [
             idColumn,
             { className: "sm", render: (row) => row.data.customer || "-" },
-            { className: "sm", render: (row) => row.title },
+            { className: "sm", sortKey: "title", render: (row) => row.title },
             { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
             { className: "mono sm", render: (row) => formatDate(row.data.target_sop) },
             { className: "sm dim", render: (row) => row.data.psw_status || "-" },
@@ -153,7 +155,7 @@ const REGISTERS = {
         columns: [
             idColumn,
             { className: "sm", render: (row) => row.data.supplier || "-" },
-            { className: "sm", render: (row) => row.title },
+            { className: "sm", sortKey: "title", render: (row) => row.title },
             { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
             { className: "mono sm", render: (row) => scarDueCell(row) },
             statusColumn
@@ -238,32 +240,170 @@ function fieldValueDd(field, value) {
    these query params (records.js) - nothing here needed a backend
    change, only a control to actually send them. */
 const activeFilters = {};
+const PAGE_SIZE = 50;
+
+/* A register's sort / search / page state survives navigation and a
+   reload, per type and browser. The severity and open filters from
+   the markup feed the same object. */
+function loadView(type) {
+    if (activeFilters[type]) return activeFilters[type];
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem("qmsg:regview:v1:" + type) || "{}"); }
+    catch { stored = {}; }
+    activeFilters[type] = {
+        severity: stored.severity || "",
+        open: Boolean(stored.open),
+        q: stored.q || "",
+        sort: stored.sort || "opened",
+        dir: stored.dir === "asc" ? "asc" : "desc",
+        offset: 0
+    };
+    return activeFilters[type];
+}
+
+function saveView(type) {
+    const v = activeFilters[type] || {};
+    try {
+        localStorage.setItem("qmsg:regview:v1:" + type, JSON.stringify({
+            severity: v.severity || "", open: !!v.open, q: v.q || "",
+            sort: v.sort || "opened", dir: v.dir || "desc"
+        }));
+    } catch { /* private mode */ }
+}
 
 function currentFilterParams(type) {
-    const filter = activeFilters[type] || {};
+    const v = loadView(type);
     return {
         type,
-        severity: filter.severity || undefined,
-        open: filter.open ? "true" : undefined
+        severity: v.severity || undefined,
+        open: v.open ? "true" : undefined,
+        q: v.q || undefined,
+        sort: v.sort || undefined,
+        dir: v.dir || undefined,
+        limit: PAGE_SIZE,
+        offset: v.offset || 0
     };
 }
 
 function hasActiveFilter(type) {
-    const filter = activeFilters[type] || {};
-    return Boolean(filter.severity || filter.open);
+    const v = activeFilters[type] || {};
+    return Boolean(v.severity || v.open || (v.q && v.q.trim()));
+}
+
+/* Injects a search box + a paging footer into a register's panel the
+   first time it renders, so index.html needs no per-register markup.
+   Returns the two nodes to update on each render. */
+function registerChrome(type, config) {
+    const tbody = document.getElementById(config.tbody);
+    const panel = tbody && tbody.closest(".panel");
+    if (!panel) return {};
+
+    let toolbar = panel.querySelector(":scope > .reg-toolbar");
+    if (!toolbar) {
+        const search = el("input", {
+            type: "search", class: "reg-search", placeholder: "Search number or title...",
+            value: (activeFilters[type] || {}).q || ""
+        });
+        let debounce = null;
+        search.addEventListener("input", () => {
+            clearTimeout(debounce);
+            debounce = setTimeout(() => {
+                const v = loadView(type);
+                v.q = search.value;
+                v.offset = 0;
+                saveView(type);
+                renderRegister(type);
+            }, 250);
+        });
+        toolbar = el("div", { class: "reg-toolbar no-print" }, search);
+        const head = panel.querySelector(":scope > .panel-head");
+        if (head) head.after(toolbar); else panel.prepend(toolbar);
+    }
+
+    let pager = panel.querySelector(":scope > .reg-pager");
+    if (!pager) {
+        pager = el("div", { class: "reg-pager no-print" });
+        (panel.querySelector(":scope > .table-wrap") || panel).after(pager);
+    }
+
+    /* Sort headers: match each <th> to a column's sortKey by position. */
+    const headRow = tbody.closest("table")?.tHead?.rows[0];
+    if (headRow && !headRow.dataset.sortWired) {
+        headRow.dataset.sortWired = "1";
+        config.columns.forEach((col, index) => {
+            const th = headRow.cells[index];
+            if (!th || !col.sortKey) return;
+            th.classList.add("th-sortable");
+            th.addEventListener("click", () => {
+                const v = loadView(type);
+                if (v.sort === col.sortKey) v.dir = v.dir === "asc" ? "desc" : "asc";
+                else { v.sort = col.sortKey; v.dir = "asc"; }
+                v.offset = 0;
+                saveView(type);
+                renderRegister(type);
+            });
+        });
+    }
+    const v = activeFilters[type] || {};
+    if (headRow) {
+        config.columns.forEach((col, index) => {
+            const th = headRow.cells[index];
+            if (!th || !col.sortKey) return;
+            th.dataset.sortDir = v.sort === col.sortKey ? v.dir : "";
+        });
+    }
+
+    /* Keep the markup's severity / open controls showing the restored
+       view. */
+    const sevSelect = panel.querySelector('.filter-severity[data-type="' + type + '"]');
+    if (sevSelect && sevSelect.value !== (v.severity || "")) sevSelect.value = v.severity || "";
+    const openBox = panel.querySelector('.filter-open input[data-type="' + type + '"]');
+    if (openBox) openBox.checked = Boolean(v.open);
+    const search = toolbar.querySelector(".reg-search");
+    if (search && document.activeElement !== search && search.value !== (v.q || "")) {
+        search.value = v.q || "";
+    }
+
+    return { pager };
 }
 
 export async function renderRegister(type) {
     const config = REGISTERS[type];
     if (!config) return;
 
+    loadView(type);
     const tbody = document.getElementById(config.tbody);
     loadingRow(tbody, config.columns.length);
+    const { pager } = registerChrome(type, config);
 
     try {
-        const { records } = await api.records(currentFilterParams(type));
+        const { records, total } = await api.records(currentFilterParams(type));
+        const view = activeFilters[type];
+
         fillTable(tbody, records, config.columns,
             hasActiveFilter(type) ? "No records match this filter" : "No records of this type yet");
+
+        if (pager) {
+            const t = Number(total ?? records.length);
+            const from = t === 0 ? 0 : view.offset + 1;
+            const to = view.offset + records.length;
+            const prev = el("button", { class: "btn btn-xs", type: "button", text: "Prev" });
+            const next = el("button", { class: "btn btn-xs", type: "button", text: "Next" });
+            prev.disabled = view.offset === 0;
+            next.disabled = to >= t;
+            prev.addEventListener("click", () => {
+                view.offset = Math.max(0, view.offset - PAGE_SIZE);
+                renderRegister(type);
+            });
+            next.addEventListener("click", () => {
+                view.offset += PAGE_SIZE;
+                renderRegister(type);
+            });
+            pager.replaceChildren(
+                el("span", { class: "sm dim", text: t === 0 ? "No records" : "Showing " + from + "-" + to + " of " + t }),
+                el("span", { class: "row", style: "gap:6px" }, [prev, next])
+            );
+        }
 
         /* Tag each row with its record number so one delegated listener
            can work out what was clicked. fillTable emits rows in the
@@ -459,17 +599,23 @@ export function wireRegisterClicks() {
        many registers exist. */
     document.addEventListener("change", (event) => {
         const severitySelect = event.target.closest(".filter-severity");
-        if (severitySelect) {
+        if (severitySelect && severitySelect.dataset.type) {
             const type = severitySelect.dataset.type;
-            activeFilters[type] = { ...activeFilters[type], severity: severitySelect.value };
+            const v = loadView(type);
+            v.severity = severitySelect.value;
+            v.offset = 0;
+            saveView(type);
             renderRegister(type);
             return;
         }
 
         const openCheckbox = event.target.closest(".filter-open input");
-        if (openCheckbox) {
+        if (openCheckbox && openCheckbox.dataset.type) {
             const type = openCheckbox.dataset.type;
-            activeFilters[type] = { ...activeFilters[type], open: openCheckbox.checked };
+            const v = loadView(type);
+            v.open = openCheckbox.checked;
+            v.offset = 0;
+            saveView(type);
             renderRegister(type);
         }
     });

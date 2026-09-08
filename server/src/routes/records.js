@@ -257,7 +257,21 @@ const SELECT_RECORD = `
 `;
 
 /* ---------- list ----------
-   GET /api/records?type=ncr&status=containment&open=true&limit=50 */
+   GET /api/records?type=ncr&status=containment&open=true
+                    &q=bore&sort=due&dir=asc&limit=50&offset=50
+
+   Returns `total` (the count under the same filters, before
+   limit/offset) so a register can page and say "showing 51-100 of
+   214". */
+const SORT_COLUMNS = {
+    opened:   "r.opened_at",
+    due:      "r.due_at",
+    number:   "r.number",
+    title:    "r.title",
+    status:   "r.status",
+    severity: "r.severity"
+};
+
 records.get("/", async (request, response, next) => {
     try {
         const conditions = [];
@@ -282,15 +296,35 @@ records.get("/", async (request, response, next) => {
             conditions.push("r.closed_at is null");
         }
 
+        const q = String(request.query.q || "").trim();
+        if (q) {
+            params.push("%" + q + "%");
+            conditions.push("(r.number ilike $" + params.length + " or r.title ilike $" + params.length + ")");
+        }
+
+        const where = conditions.length ? " and " + conditions.join(" and ") : "";
+
+        const sortColumn = SORT_COLUMNS[request.query.sort] || "r.opened_at";
+        const dir = request.query.dir === "asc" ? "asc" : "desc";
+
         const limit = Math.min(Number(request.query.limit) || 100, 500);
-        params.push(limit);
+        const offset = Math.max(Number(request.query.offset) || 0, 0);
+        params.push(limit, offset);
 
-        const sql = SELECT_RECORD
-            + (conditions.length ? " and " + conditions.join(" and ") : "")
-            + " order by r.opened_at desc limit $" + params.length;
+        const [rows, totals] = await Promise.all([
+            query(SELECT_RECORD + where
+                + " order by " + sortColumn + " " + dir + " nulls last, r.number desc"
+                + " limit $" + (params.length - 1) + " offset $" + params.length, params),
+            query("select count(*)::int as total from records r"
+                + " join record_types rt on rt.id = r.record_type_id"
+                + " where r.org_id = $1" + where, params.slice(0, params.length - 2))
+        ]);
 
-        const result = await query(sql, params);
-        response.json({ count: result.rowCount, records: result.rows });
+        response.json({
+            count: rows.rowCount,
+            total: totals.rows[0].total,
+            records: rows.rows
+        });
     } catch (error) {
         next(error);
     }
