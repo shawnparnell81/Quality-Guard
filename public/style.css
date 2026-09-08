@@ -1718,6 +1718,14 @@ th.col-you { color: var(--brand); }
     border-radius: 5px; font-size: 12.5px;
 }
 
+/* Someone else has this record open in their own editor (P3.3). */
+.presence-banner {
+    margin-bottom: 14px; padding: 9px 12px;
+    border: 1px solid var(--warn); background: var(--warn-tint);
+    border-radius: 5px; font-size: 12.5px;
+}
+.presence-banner::before { content: "\26A0\FE0F"; margin-right: 6px; }
+
 /* Clickable line in the "things to fix" summary - jumps to the field. */
 .err-jump {
     display: block; width: 100%; text-align: left;

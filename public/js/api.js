@@ -208,6 +208,12 @@ export const api = {
     transition:   (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/transition", payload),
 
+    /* concurrent-edit presence (P3.3) */
+    editingHeartbeat: (number) =>
+        request("PUT", "/records/" + encodeURIComponent(number) + "/editing"),
+    stopEditing: (number) =>
+        request("DELETE", "/records/" + encodeURIComponent(number) + "/editing"),
+
     linkRecord: (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/links", payload),
     unlinkRecord: (number, target) =>

@@ -14,6 +14,7 @@
 import { api } from "./api.js";
 import { currentUser } from "./session.js";
 import { el, toast } from "./dom.js";
+import { beginEditing } from "./presence.js";
 
 /* ---------- one dialog, reused ---------- */
 
@@ -539,6 +540,19 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
 
     const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
 
+    /* Filled by the presence heartbeat (P3.3) when someone else has
+       this same record open. */
+    const presenceBanner = el("div", { class: "presence-banner", hidden: "hidden" });
+    function paintPresence(names) {
+        if (!names || names.length === 0) { presenceBanner.hidden = true; return; }
+        const who = names.length === 1 ? names[0]
+            : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+        presenceBanner.textContent = who
+            + (names.length === 1 ? " also has" : " also have")
+            + " this record open. Whoever saves last wins.";
+        presenceBanner.hidden = false;
+    }
+
     const entries = definition.fields.map((field) =>
         buildField(field, definition.options, existing ? existing.data[field.key] : undefined)
     );
@@ -587,7 +601,7 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     const autosaveHint = el("span", { class: "autosave-hint" });
     const cancel = el("button", { class: "btn", type: "button" }, "Cancel");
 
-    const form = el("form", {}, [errorBox, titleGroup, severityGroup, dueGroup]);
+    const form = el("form", {}, [errorBox, presenceBanner, titleGroup, severityGroup, dueGroup]);
     appendFieldsGrouped(form, entries);
     form.append(el("div", { class: "row", style: "margin-top:18px" }, [save, cancel, autosaveHint]));
 
@@ -660,6 +674,11 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     const isDirty = () => JSON.stringify(snapshot()) !== cleanJSON;
     editorIsDirty = isDirty;
 
+    /* Announce that this record is open for editing, and show a banner
+       if anyone else already has it. Only for an existing record - a
+       new one has no number to key on yet. */
+    const stopPresence = existing ? beginEditing(existing.number, paintPresence) : null;
+
     function applyDraft(snap) {
         titleInput.value = snap.title || "";
         severitySelect.value = snap.severity || "warn";
@@ -710,6 +729,7 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
         if (saveTimer) clearTimeout(saveTimer);
         clearInterval(hintTicker);
         window.removeEventListener("beforeunload", onBeforeUnload);
+        if (stopPresence) stopPresence();
         if (editorTeardown === teardown) editorTeardown = null;
         if (editorIsDirty === isDirty) editorIsDirty = () => false;
     }
