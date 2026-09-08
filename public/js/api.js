@@ -154,6 +154,11 @@ export const api = {
         request("POST", "/forms/imports/" + encodeURIComponent(id) + "/apply", payload),
     records:      (params)  => get(withQuery("/records", params)),
     recordsExportUrl: (params) => "/api" + withQuery("/records/export", params),
+    recordsImportTemplateUrl: (type) =>
+        "/api/records/import-template?type=" + encodeURIComponent(type),
+    importRecords: (type, formData, dryRun) => postForm(
+        "/records/import?type=" + encodeURIComponent(type) + (dryRun ? "&dry_run=true" : ""),
+        formData),
     searchRecords: (q)      => get(withQuery("/records/search", { q })),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),
     createRecord: (payload) => request("POST", "/records", payload),

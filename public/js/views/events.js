@@ -11,7 +11,7 @@
 
 import { api } from "../api.js";
 import { can } from "../session.js";
-import { openRecordEditor, confirmStep, editDueDate } from "../forms.js";
+import { openRecordEditor, confirmStep, editDueDate, ensureDialog } from "../forms.js";
 import { renderEightD, renderChange } from "./change.js";
 import { renderApqpDetail } from "./apqp.js";
 import { renderDiDetail } from "./di.js";
@@ -318,7 +318,22 @@ function registerChrome(type, config) {
         const exportLink = el("a", {
             class: "btn btn-xs reg-export", text: "Export", title: "Download this view as Excel"
         });
-        toolbar = el("div", { class: "reg-toolbar no-print" }, [search, exportLink]);
+        const kids = [search, exportLink];
+
+        /* Import sits next to the panel's own "New" button and follows
+           the same permission - if that button is not on the page,
+           this user cannot create records of this type. */
+        const newBtn = panel.querySelector("[data-new-record]");
+        if (newBtn && !newBtn.hidden) {
+            const importBtn = el("button", {
+                class: "btn btn-xs reg-import", type: "button", text: "Import",
+                title: "Create records in bulk from an Excel file"
+            });
+            importBtn.addEventListener("click", () => openRegisterImport(type));
+            kids.push(importBtn);
+        }
+
+        toolbar = el("div", { class: "reg-toolbar no-print" }, kids);
         const head = panel.querySelector(":scope > .panel-head");
         if (head) head.after(toolbar); else panel.prepend(toolbar);
     }
@@ -378,6 +393,115 @@ function registerChrome(type, config) {
     }
 
     return { pager };
+}
+
+/* ---------- bulk import ----------
+   A small two-step dialog: pick a file and preview (the server's
+   dry run), then commit. The blank template link and every row-level
+   problem come straight from the API. */
+function openRegisterImport(type) {
+    const dialog = ensureDialog();
+    const label = humanize(type);
+    let lastValidCount = 0;
+
+    const fileInput = el("input", { type: "file", accept: ".xlsx", class: "imp-file" });
+    const report = el("div", { class: "imp-report" });
+    const previewBtn = el("button", { class: "btn btn-xs", type: "button", text: "Preview" });
+    const commitBtn = el("button", { class: "btn btn-primary", type: "button", text: "Import", disabled: true });
+
+    const setBusy = (busy) => {
+        previewBtn.disabled = busy || !fileInput.files.length;
+        commitBtn.disabled = busy || lastValidCount === 0;
+    };
+
+    const renderResult = (data, committed) => {
+        report.replaceChildren();
+        if (committed) {
+            report.append(el("p", { class: "imp-ok",
+                text: data.created_count + " " + label + " record" + (data.created_count === 1 ? "" : "s")
+                    + " created" + (data.skipped ? ", " + data.skipped + " skipped" : "") + "." }));
+        } else {
+            report.append(el("p", {
+                text: data.will_create + " of " + data.total_rows + " row"
+                    + (data.total_rows === 1 ? "" : "s") + " will be created"
+                    + (data.errors.length ? ", " + data.errors.length + " skipped." : ".")
+            }));
+        }
+        for (const w of data.warnings || []) {
+            report.append(el("p", { class: "imp-warn", text: w }));
+        }
+        if (data.errors && data.errors.length) {
+            const list = el("ul", { class: "imp-errs" });
+            for (const e of data.errors.slice(0, 50)) {
+                list.append(el("li", {}, [
+                    el("span", { class: "imp-row", text: "Row " + e.row + " " }),
+                    el("span", { text: (e.title ? "“" + e.title + "”: " : "") + e.messages.join("; ") })
+                ]));
+            }
+            report.append(list);
+        }
+    };
+
+    const run = async (dryRun) => {
+        if (!fileInput.files.length) return;
+        setBusy(true);
+        const fd = new FormData();
+        fd.append("file", fileInput.files[0]);
+        try {
+            const data = await api.importRecords(type, fd, dryRun);
+            if (dryRun) {
+                lastValidCount = data.will_create;
+                renderResult(data, false);
+            } else {
+                renderResult(data, true);
+                fileInput.value = "";
+                lastValidCount = 0;
+                toast(data.created_count + " record" + (data.created_count === 1 ? "" : "s") + " imported");
+                renderRegister(type);
+            }
+        } catch (err) {
+            lastValidCount = 0;
+            const payload = err.payload || {};
+            report.replaceChildren(el("p", { class: "imp-warn", text: payload.error || err.message }));
+            if (Array.isArray(payload.errors)) {
+                const list = el("ul", { class: "imp-errs" });
+                for (const e of payload.errors.slice(0, 50)) {
+                    list.append(el("li", { text: "Row " + e.row + ": " + (e.messages || []).join("; ") }));
+                }
+                report.append(list);
+            }
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    fileInput.addEventListener("change", () => {
+        lastValidCount = 0;
+        report.replaceChildren();
+        setBusy(false);
+    });
+    previewBtn.addEventListener("click", () => run(true));
+    commitBtn.addEventListener("click", () => run(false));
+
+    dialog.replaceChildren(
+        el("div", { class: "modal-head" },
+            el("h2", { class: "modal-title", text: "Import " + label + " from Excel" })),
+        el("div", { class: "modal-body imp" }, [
+            el("p", { class: "sm", style: "margin:0 0 12px" }, [
+                "One row per record. ",
+                el("a", { href: api.recordsImportTemplateUrl(type), text: "Download a blank template" }),
+                " with the right columns."
+            ]),
+            fileInput,
+            el("div", { class: "row", style: "gap:8px; margin:10px 0" }, [previewBtn]),
+            report
+        ]),
+        el("div", { class: "modal-foot" }, [
+            el("button", { class: "btn", type: "button", text: "Close", onClick: () => dialog.close() }),
+            commitBtn
+        ])
+    );
+    dialog.showModal();
 }
 
 export async function renderRegister(type) {
