@@ -5,3 +5,8 @@ Dockerfile    text eol=lf
 Caddyfile     text eol=lf
 *.yml         text eol=lf
 *.yaml        text eol=lf
+
+# Migrations are checksummed byte-for-byte by scripts/migrate.js. If
+# Windows checks them out as CRLF, the hash stops matching the LF blob
+# in the repo and `db:migrate` refuses to run. Pin them to LF.
+*.sql         text eol=lf

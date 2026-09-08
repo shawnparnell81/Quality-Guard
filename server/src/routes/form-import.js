@@ -18,8 +18,9 @@ import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { upload } from "../uploads.js";
-import { saveUploadedFile } from "../file-storage.js";
+import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { problemWith, slugKey } from "./masterdata.js";
+import { buildDefaultMap } from "../excel-fill.js";
 
 export const formImport = Router();
 
@@ -624,7 +625,7 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
             if (bad) return response.status(422).json({ error: bad });
 
             const imp = await query(
-                "select id, name from imported_forms where org_id = $1 and id = $2",
+                "select id, name, storage_path from imported_forms where org_id = $1 and id = $2",
                 [request.user.org_id, request.params.id]
             );
             if (imp.rowCount === 0) return response.status(404).json({ error: "No such import" });
@@ -711,6 +712,30 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
                  where org_id = $1 and id = $2
             `, [request.user.org_id, request.params.id, result.applied_key,
                 JSON.stringify({ name: body.name || imp.rows[0].name, fields, rules: [] })]);
+
+            /* Keep the source spreadsheet as this form's Excel template
+               and stamp a best-guess cell map onto the version just
+               published, so exports come out on the customer's own
+               layout from the start (refined later on the Excel-layout
+               screen). Best-effort - a failure here never fails the
+               apply. */
+            try {
+                const buf = await readUploadedFile(imp.rows[0].storage_path);
+                const wb = new ExcelJS.Workbook();
+                await wb.xlsx.load(buf);
+                const templatePath = await saveUploadedFile(
+                    "excel-templates", XLSX_EXTENSIONS, "template.xlsx", buf);
+                const guess = buildDefaultMap(wb, { fields });
+                const map = { template_path: templatePath, template_name: imp.rows[0].name + ".xlsx", ...guess };
+
+                await query(`
+                    update form_versions set excel_map = $1
+                     where record_type_id = (select id from record_types where org_id = $2 and key = $3)
+                       and version = (select max(version) from form_versions
+                                       where record_type_id = (select id from record_types
+                                                                where org_id = $2 and key = $3))
+                `, [JSON.stringify(map), request.user.org_id, result.applied_key]);
+            } catch { /* no template fill for this form; the generated grid still works */ }
 
             response.json(result);
         } catch (error) {
