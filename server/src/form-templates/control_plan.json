@@ -1,0 +1,37 @@
+{
+  "key": "control_plan",
+  "name": "Control Plan",
+  "prefix": "CP",
+  "clause": "8.5.1",
+  "description": "AIAG Control Plan. Header plus one line per characteristic: specification, measurement technique, sample size and frequency, control method and reaction plan.",
+  "fields": [
+    { "key": "control_plan_level", "label": "Control plan level", "type": "select", "required": true, "options": ["Prototype", "Pre-launch", "Production"], "section": "Header" },
+    { "key": "part_number", "label": "Part number / latest change level", "type": "text", "required": true, "section": "Header" },
+    { "key": "part_name", "label": "Part name / description", "type": "text", "section": "Header" },
+    { "key": "organization", "label": "Organization / plant", "type": "text", "section": "Header" },
+    { "key": "supplier_code", "label": "Organization code", "type": "text", "section": "Header" },
+    { "key": "key_contact", "label": "Key contact / phone", "type": "text", "section": "Header" },
+    { "key": "core_team", "label": "Core team", "type": "memo", "section": "Header" },
+    { "key": "date_orig", "label": "Date (orig.)", "type": "date", "section": "Header" },
+    { "key": "date_rev", "label": "Date (rev.)", "type": "date", "section": "Header" },
+    { "key": "customer_approval_date", "label": "Customer approval / date", "type": "text", "section": "Header" },
+    {
+      "key": "lines", "label": "Control items", "type": "table", "section": "Control items",
+      "columns": [
+        { "key": "part_process_number", "label": "Part / process no.", "type": "text" },
+        { "key": "process_name", "label": "Process name / operation", "type": "text" },
+        { "key": "machine_device", "label": "Machine, device, jig, tools", "type": "text" },
+        { "key": "characteristic_number", "label": "Char. no.", "type": "text" },
+        { "key": "product_characteristic", "label": "Product characteristic", "type": "text" },
+        { "key": "process_characteristic", "label": "Process characteristic", "type": "text" },
+        { "key": "special_char_class", "label": "Special char. class", "type": "select", "options": ["", "Critical", "Significant", "Key"] },
+        { "key": "spec_tolerance", "label": "Product / process spec. & tolerance", "type": "text" },
+        { "key": "measurement_technique", "label": "Evaluation / measurement technique", "type": "text" },
+        { "key": "sample_size", "label": "Sample size", "type": "text" },
+        { "key": "sample_frequency", "label": "Sample freq.", "type": "text" },
+        { "key": "control_method", "label": "Control method", "type": "text" },
+        { "key": "reaction_plan", "label": "Reaction plan", "type": "text" }
+      ]
+    }
+  ]
+}

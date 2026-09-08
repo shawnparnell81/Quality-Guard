@@ -1615,7 +1615,16 @@
     <section class="view" id="view-form-import" hidden>
         <div class="view-head">
             <h1 class="view-title">Import Form</h1>
-            <p class="view-sub">Upload an Excel form (PFMEA, Control Plan, 8D, a custom one). The server infers a schema you can correct, then save as a new form type or a new version of an existing one.</p>
+            <p class="view-sub">Add a starter template in one click, or upload an Excel form and let the server infer a schema you can correct.</p>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Starter templates</h2><span class="panel-note">AIAG core tools</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Template</th><th>Prefix</th><th>Clause</th><th class="num">Fields</th><th></th></tr></thead>
+                    <tbody id="form-templates-list"></tbody>
+                </table>
+            </div>
         </div>
         <div class="panel">
             <div class="panel-head"><h2 class="panel-title">Upload a spreadsheet</h2><span class="panel-note">.xlsx</span></div>

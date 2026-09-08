@@ -1,0 +1,46 @@
+{
+  "key": "eight_d_report",
+  "name": "8D Report",
+  "prefix": "D8R",
+  "clause": "10.2",
+  "description": "The eight disciplines as a single report form: team, problem description, interim containment, root cause (with a 5-why table), permanent corrective action, implementation, prevention, and closure. (The built-in 8D record type carries a full D1-D8 workflow; this is the flat report.)",
+  "fields": [
+    { "key": "reference_number", "label": "Reference / customer complaint no.", "type": "text", "section": "D1 Team" },
+    { "key": "part_number", "label": "Part number", "type": "text", "section": "D1 Team" },
+    { "key": "champion", "label": "Champion", "type": "text", "section": "D1 Team" },
+    { "key": "team_leader", "label": "Team leader", "type": "text", "section": "D1 Team" },
+    { "key": "team_members", "label": "Team members", "type": "memo", "section": "D1 Team" },
+    { "key": "date_opened", "label": "Date opened", "type": "date", "section": "D1 Team" },
+
+    { "key": "problem_statement", "label": "Problem statement", "type": "memo", "required": true, "section": "D2 Problem description" },
+    { "key": "is_is_not", "label": "Is / is not analysis", "type": "memo", "section": "D2 Problem description" },
+    { "key": "quantities_affected", "label": "Quantities / locations affected", "type": "text", "section": "D2 Problem description" },
+
+    { "key": "interim_containment", "label": "Interim containment action(s)", "type": "memo", "section": "D3 Containment" },
+    { "key": "containment_verification", "label": "Containment verification", "type": "memo", "section": "D3 Containment" },
+    { "key": "containment_date", "label": "Containment in place (date)", "type": "date", "section": "D3 Containment" },
+
+    { "key": "occurrence_root_cause", "label": "Root cause of occurrence", "type": "memo", "section": "D4 Root cause" },
+    { "key": "escape_root_cause", "label": "Root cause of escape (why not detected)", "type": "memo", "section": "D4 Root cause" },
+    {
+      "key": "five_why", "label": "5-Why", "type": "table", "section": "D4 Root cause",
+      "columns": [
+        { "key": "level", "label": "Why #", "type": "text" },
+        { "key": "question", "label": "Why?", "type": "text" },
+        { "key": "answer", "label": "Because...", "type": "text" }
+      ]
+    },
+
+    { "key": "corrective_actions", "label": "Permanent corrective action(s)", "type": "memo", "section": "D5-D6 Corrective action" },
+    { "key": "corrective_action_owner", "label": "Owner & target date", "type": "text", "section": "D5-D6 Corrective action" },
+    { "key": "implementation_evidence", "label": "Implementation & validation evidence", "type": "memo", "section": "D5-D6 Corrective action" },
+    { "key": "effectiveness_percent", "label": "Effectiveness (%)", "type": "number", "section": "D5-D6 Corrective action" },
+
+    { "key": "systemic_prevention", "label": "Systemic / preventive actions (read-across)", "type": "memo", "section": "D7 Prevent recurrence" },
+    { "key": "documents_updated", "label": "Documents updated (PFMEA, control plan, WI...)", "type": "memo", "section": "D7 Prevent recurrence" },
+
+    { "key": "team_recognition", "label": "Team recognition", "type": "memo", "section": "D8 Closure" },
+    { "key": "closed_by", "label": "Closed by", "type": "text", "section": "D8 Closure" },
+    { "key": "closed_date", "label": "Date closed", "type": "date", "section": "D8 Closure" }
+  ]
+}

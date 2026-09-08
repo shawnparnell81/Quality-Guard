@@ -188,6 +188,9 @@ export const api = {
     updateRecordForm: (typeKey, fields) =>
         request("PUT", "/record-types/" + encodeURIComponent(typeKey) + "/form", { fields }),
     createRecordType: (payload) => request("POST", "/record-types", payload),
+    formTemplates:    ()        => get("/form-templates"),
+    installFormTemplate: (key)  =>
+        request("POST", "/form-templates/" + encodeURIComponent(key) + "/install"),
     importForm:       (formData) => postForm("/forms/import", formData),
     formImports:      ()        => get("/forms/imports"),
     formImportDetail: (id)      => get("/forms/imports/" + encodeURIComponent(id)),

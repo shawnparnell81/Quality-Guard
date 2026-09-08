@@ -1,0 +1,41 @@
+{
+  "key": "pfmea",
+  "name": "Process FMEA",
+  "prefix": "PFMEA",
+  "clause": "8.5.1",
+  "description": "AIAG-style Process Failure Mode and Effects Analysis. One line per failure mode, with severity / occurrence / detection and an auto-calculated RPN.",
+  "fields": [
+    { "key": "process_name", "label": "Process name", "type": "text", "required": true, "section": "Header" },
+    { "key": "part_number", "label": "Part number / name", "type": "text", "section": "Header" },
+    { "key": "process_responsibility", "label": "Process responsibility", "type": "text", "section": "Header" },
+    { "key": "model_year_program", "label": "Model year / program", "type": "text", "section": "Header" },
+    { "key": "key_date", "label": "Key date", "type": "date", "section": "Header" },
+    { "key": "core_team", "label": "Core team", "type": "memo", "section": "Header" },
+    { "key": "fmea_date_orig", "label": "FMEA date (orig.)", "type": "date", "section": "Header" },
+    { "key": "fmea_date_rev", "label": "FMEA date (rev.)", "type": "date", "section": "Header" },
+    {
+      "key": "analysis", "label": "Failure modes", "type": "table", "section": "Analysis",
+      "columns": [
+        { "key": "process_step", "label": "Process step / function", "type": "text" },
+        { "key": "requirement", "label": "Requirement", "type": "text" },
+        { "key": "failure_mode", "label": "Potential failure mode", "type": "text" },
+        { "key": "effects", "label": "Potential effect(s)", "type": "text" },
+        { "key": "severity", "label": "Sev", "type": "number" },
+        { "key": "classification", "label": "Class", "type": "select", "options": ["", "S", "CC", "SC"] },
+        { "key": "causes", "label": "Potential cause(s)", "type": "text" },
+        { "key": "occurrence", "label": "Occ", "type": "number" },
+        { "key": "controls_prevention", "label": "Current controls - prevention", "type": "text" },
+        { "key": "controls_detection", "label": "Current controls - detection", "type": "text" },
+        { "key": "detection", "label": "Det", "type": "number" },
+        { "key": "rpn", "label": "RPN", "type": "computed", "compute": "product", "inputs": ["severity", "occurrence", "detection"], "thresholds": { "warn": 80, "crit": 120 } },
+        { "key": "recommended_action", "label": "Recommended action", "type": "text" },
+        { "key": "responsibility", "label": "Responsibility & target date", "type": "text" },
+        { "key": "actions_taken", "label": "Actions taken", "type": "text" },
+        { "key": "new_sev", "label": "Sev", "type": "number" },
+        { "key": "new_occ", "label": "Occ", "type": "number" },
+        { "key": "new_det", "label": "Det", "type": "number" },
+        { "key": "new_rpn", "label": "New RPN", "type": "computed", "compute": "product", "inputs": ["new_sev", "new_occ", "new_det"], "thresholds": { "warn": 80, "crit": 120 } }
+      ]
+    }
+  ]
+}

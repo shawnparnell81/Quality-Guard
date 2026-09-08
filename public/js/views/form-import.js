@@ -20,7 +20,49 @@ const BUILT_IN = new Set([
 
 let currentImport = null;   // { id, name, fields }
 
+/* ---------- starter templates (P4.5) ---------- */
+
+async function renderFormTemplates() {
+    const tbody = document.getElementById("form-templates-list");
+    if (!tbody) return;
+    loadingRow(tbody, 5);
+
+    try {
+        const { templates, installed } = await api.formTemplates();
+        fillTable(tbody, templates, [
+            { className: "sm", render: (t) =>
+                el("span", { title: t.description || "" }, t.name) },
+            { className: "mono sm", render: (t) => t.prefix },
+            { className: "mono sm dim", render: (t) => t.clause || "-" },
+            { className: "num", render: (t) => t.field_count },
+            { render: (t) => {
+                if (installed[t.key]) return pill("Installed", "done");
+                if (!can("forms.manage")) return el("span", { class: "dim sm", text: "-" });
+                const btn = el("button", { class: "btn btn-xs", type: "button", text: "Add" });
+                btn.addEventListener("click", async () => {
+                    btn.disabled = true;
+                    btn.textContent = "Adding...";
+                    try {
+                        const r = await api.installFormTemplate(t.key);
+                        toast(r.name + " added as " + r.prefix + "-...");
+                        await renderFormImport();
+                    } catch (error) {
+                        toast(error.message, "error");
+                        btn.disabled = false;
+                        btn.textContent = "Add";
+                    }
+                });
+                return btn;
+            } }
+        ], "No templates available");
+    } catch (error) {
+        errorRow(tbody, 5, error);
+    }
+}
+
 export async function renderFormImport() {
+    await renderFormTemplates();
+
     const tbody = document.getElementById("form-import-list");
     if (!tbody) return;
     loadingRow(tbody, 5);

@@ -1,0 +1,29 @@
+{
+  "key": "process_flow",
+  "name": "Process Flow Diagram",
+  "prefix": "PFD",
+  "clause": "8.5.1",
+  "description": "AIAG Process Flow Diagram as a step list: operation type, key inputs and outputs, and the product / process characteristics introduced at each step.",
+  "fields": [
+    { "key": "part_number", "label": "Part number / name", "type": "text", "required": true, "section": "Header" },
+    { "key": "process_owner", "label": "Process owner", "type": "text", "section": "Header" },
+    { "key": "organization", "label": "Organization / plant", "type": "text", "section": "Header" },
+    { "key": "date_orig", "label": "Date (orig.)", "type": "date", "section": "Header" },
+    { "key": "date_rev", "label": "Date (rev.)", "type": "date", "section": "Header" },
+    { "key": "core_team", "label": "Core team", "type": "memo", "section": "Header" },
+    {
+      "key": "steps", "label": "Process steps", "type": "table", "section": "Flow",
+      "columns": [
+        { "key": "step_number", "label": "Step no.", "type": "text" },
+        { "key": "operation_description", "label": "Operation description", "type": "text" },
+        { "key": "operation_type", "label": "Type", "type": "select", "options": ["Operation", "Transport", "Inspection", "Storage", "Delay"] },
+        { "key": "incoming_from", "label": "From step", "type": "text" },
+        { "key": "key_inputs", "label": "Key process inputs", "type": "text" },
+        { "key": "key_outputs", "label": "Key process outputs", "type": "text" },
+        { "key": "product_characteristic", "label": "Product characteristic", "type": "text" },
+        { "key": "process_characteristic", "label": "Process characteristic", "type": "text" },
+        { "key": "special_char", "label": "Special char.", "type": "select", "options": ["", "Yes", "No"] }
+      ]
+    }
+  ]
+}
