@@ -18,6 +18,7 @@ import { renderDiDetail } from "./di.js";
 import { renderFairDetail } from "./fair.js";
 import { renderPpapDetail } from "./ppap.js";
 import { openEntityForm } from "../entity-form.js";
+import { buildUploader } from "../attach-upload.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
 import { recordLink, looksLikeRecordNumber } from "../record-nav.js";
@@ -1166,32 +1167,12 @@ export async function renderRecordDetail(type, number) {
             children.push(el("p", { class: "sm dim", text: "No attachments yet." }));
         }
 
-        /* Browse for a file - the common case. */
-        const fileInput = el("input", { type: "file", class: "sm no-print" });
-        const uploadButton = el("button", { class: "btn no-print", type: "button" }, "Upload");
-
-        uploadButton.addEventListener("click", async () => {
-            if (!fileInput.files || !fileInput.files[0]) {
-                toast("Choose a file first", "error");
-                return;
-            }
-            const form = new FormData();
-            form.append("file", fileInput.files[0]);
-            uploadButton.disabled = true;
-            uploadButton.textContent = "Uploading...";
-            try {
-                await api.uploadAttachment(record.number, form);
-                await renderRecordDetail(type, number);
-            } catch (error) {
-                toast(error.message, "error");
-                uploadButton.disabled = false;
-                uploadButton.textContent = "Upload";
-            }
-        });
-
-        children.push(el("div", {
-            class: "row no-print", style: "gap:6px;margin:4px 0 6px;flex-wrap:wrap"
-        }, [fileInput, uploadButton]));
+        /* Drop one file or a dozen; each gets its own progress bar and
+           the panel refreshes once the batch settles. */
+        children.push(buildUploader({
+            url: "/records/" + encodeURIComponent(record.number) + "/attachments",
+            onComplete: () => renderRecordDetail(type, number)
+        }));
 
         /* Or point at a file kept on a network share. */
         const addFilename = el("input", { type: "text", placeholder: "Filename", class: "sm" });

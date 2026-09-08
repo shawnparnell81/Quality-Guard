@@ -855,6 +855,67 @@ th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
 .imp-errs li { margin: 2px 0; }
 .imp-errs .imp-row { font-family: "IBM Plex Mono", monospace; color: var(--ink-3); }
 
+/* ---------- multi-file drop-zone uploader ---------- */
+
+.uploader { margin: 4px 0 10px; }
+.uploader-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    border: 1px dashed var(--hairline);
+    border-radius: 8px;
+    background: var(--surface-2);
+    color: var(--ink-3);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+}
+.uploader-zone:hover { border-color: var(--brand); }
+.uploader-zone.is-dragover {
+    border-color: var(--brand);
+    background: var(--brand-tint, rgba(25, 118, 210, .08));
+    color: var(--ink);
+}
+.uploader-zone.is-busy { opacity: .7; pointer-events: none; }
+.uploader-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.uploader-queue { display: grid; gap: 4px; margin-top: 6px; }
+.uploader-queue:empty { display: none; }
+.uploader-item {
+    display: grid;
+    grid-template-columns: 1fr auto 120px auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.uploader-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uploader-track {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--hairline-2);
+    overflow: hidden;
+}
+.uploader-bar {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--brand);
+    transition: width .15s;
+}
+.uploader-item.is-done .uploader-bar { background: var(--ok, #2e7d32); }
+.uploader-item.is-error .uploader-bar { background: var(--crit, #c62828); width: 100% !important; }
+.uploader-item.is-indeterminate .uploader-bar {
+    width: 40% !important;
+    animation: uploader-slide 1s linear infinite;
+}
+@keyframes uploader-slide {
+    from { margin-left: -40%; }
+    to   { margin-left: 100%; }
+}
+.uploader-status { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.uploader-item.is-error .uploader-status { color: var(--crit, #c62828); }
+
 .rec-id {
     font-family: "IBM Plex Mono", monospace;
     font-size: 12px;

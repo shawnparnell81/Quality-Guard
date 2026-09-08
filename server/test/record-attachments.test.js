@@ -156,6 +156,28 @@ test("a file uploaded to a record is listed and streams back byte for byte", asy
     assert.equal(bytes.length, pdf.length);
 });
 
+test("several files uploaded one after another to one record all land", async () => {
+    /* The drop-zone widget uploads a batch as separate requests; this
+       is that sequence, server side. */
+    const number = await raiseNcr(adminCookie, "Attachment batch");
+    const names = ["layout.pdf", "capa.pdf", "supplier-8d.pdf"];
+
+    for (const name of names) {
+        const pdf = await makePdf(name);
+        const form = new FormData();
+        form.append("file", new Blob([pdf], { type: "application/pdf" }), name);
+        const up = await fetch(BASE + "/api/records/" + number + "/attachments", {
+            method: "POST", headers: { Cookie: adminCookie }, body: form
+        });
+        assert.equal(up.status, 201, name + ": " + await up.text());
+    }
+
+    const list = await api(adminCookie, "GET", "/api/records/" + number + "/attachments");
+    assert.equal(list.body.count, 3);
+    assert.deepEqual(list.body.attachments.map((a) => a.filename).sort(), [...names].sort());
+    assert.ok(list.body.attachments.every((a) => a.has_file));
+});
+
 test("the older link-to-a-file-on-a-share form still works", async () => {
     const number = await raiseNcr(adminCookie, "Attachment link");
 
