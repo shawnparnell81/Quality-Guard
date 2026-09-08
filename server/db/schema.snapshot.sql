@@ -28,6 +28,7 @@ CREATE TABLE public.attachments (
     uploaded_by uuid,
     uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
     storage_path text,
+    row_ref text,
     CONSTRAINT attachments_has_a_location CHECK (((storage_path IS NOT NULL) OR (storage_key IS NOT NULL)))
 );
 CREATE TABLE public.audit_log (

@@ -15,6 +15,8 @@ import { api } from "./api.js";
 import { currentUser } from "./session.js";
 import { el, toast } from "./dom.js";
 import { beginEditing } from "./presence.js";
+import { buildUploader } from "./attach-upload.js";
+import { openFileWindow } from "./doc-windows.js";
 
 /* ---------- one dialog, reused ---------- */
 
@@ -39,8 +41,10 @@ export function ensureDialog() {
 
 /* currentValue is undefined when raising a new record, and whatever
    is already stored under field.key when editing one - the only
-   difference between the two forms is which values arrive filled in. */
-export function buildField(field, options, currentValue) {
+   difference between the two forms is which values arrive filled in.
+   context carries the record number when editing an existing record,
+   so a table with rowAttachments can offer a per-row file button. */
+export function buildField(field, options, currentValue, context = {}) {
     const id = "field-" + field.key;
     const wrapper = el("div", { class: "field-group" });
 
@@ -80,6 +84,13 @@ export function buildField(field, options, currentValue) {
                 }))
             ]);
             break;
+
+        case "boolean": {
+            input = el("input", { type: "checkbox", id, name: field.key });
+            input.checked = currentValue === true || currentValue === "true";
+            wrapper.append(input);
+            return { wrapper, input, field };
+        }
 
         case "link": {
             const list = options[field.target] || [];
@@ -164,6 +175,11 @@ export function buildField(field, options, currentValue) {
                     s.value = value != null ? String(value) : "";
                     return s;
                 }
+                if (column.type === "boolean") {
+                    const c = el("input", { type: "checkbox" });
+                    c.checked = value === true || value === "true";
+                    return c;
+                }
                 if (column.type === "computed") {
                     /* Filled in by recompute(), never typed into. */
                     const i = el("input", {
@@ -189,11 +205,21 @@ export function buildField(field, options, currentValue) {
                "open as a form" drawer. */
             const wide = columns.length > 6;
 
-            const rowIsEmpty = (tr) => columns.every((c) =>
-                c.type === "computed" || !(tr._cells[c.key]?.value || "").trim());
+            const rowIsEmpty = (tr) => columns.every((c) => {
+                if (c.type === "computed") return true;
+                const cell = tr._cells[c.key];
+                if (c.type === "boolean") return !cell?.checked;
+                return !(cell?.value || "").trim();
+            });
+
+            const canRowAttach = Boolean(field.rowAttachments && context.recordNumber);
 
             const addRow = (seed = {}) => {
                 const tr = el("tr");
+                /* Stable per-row id, assigned by the server on save. A row
+                   built here without one gets its id on the next save;
+                   readTable passes an existing id straight back through. */
+                tr._rowId = (seed && typeof seed._id === "string" && seed._id) ? seed._id : null;
                 const cellByKey = {};
                 const tdByKey = {};
                 for (const column of columns) {
@@ -227,7 +253,18 @@ export function buildField(field, options, currentValue) {
                 }
                 tr._recompute = recompute;
 
+                const attachBtn = canRowAttach ? el("button", {
+                    class: "btn sm no-print", type: "button", text: "📎",
+                    title: tr._rowId ? "Files on this row" : "Save the record first, then attach",
+                    "aria-label": "Row files",
+                    disabled: tr._rowId ? undefined : "disabled",
+                    onClick: () => openRowAttachments(
+                        context.recordNumber, field.key + ":" + tr._rowId,
+                        (field.label || "Row") + " row " + ([...body.children].indexOf(tr) + 1))
+                }) : null;
+
                 const actions = el("td", { class: "row-tools" }, [
+                    attachBtn,
                     wide ? el("button", {
                         class: "btn sm no-print", type: "button", text: "⤡",
                         title: "Open this row as a form", "aria-label": "Expand row",
@@ -342,7 +379,11 @@ export function buildField(field, options, currentValue) {
                         const target = cells[startCol + c];
                         const column = columns[startCol + c];
                         if (!target || !column || column.type === "computed") return;
-                        target.value = String(value).trim();
+                        if (column.type === "boolean") {
+                            target.checked = /^(1|x|y|yes|true|✓)$/i.test(String(value).trim());
+                        } else {
+                            target.value = String(value).trim();
+                        }
                         target.dispatchEvent(new Event("input", { bubbles: true }));
                         target.dispatchEvent(new Event("change", { bubbles: true }));
                     });
@@ -421,13 +462,22 @@ export function buildField(field, options, currentValue) {
                 const row = {};
                 let any = false;
                 for (const column of columns) {
-                    const raw = (tr._cells[column.key]?.value ?? "").trim();
+                    const cell = tr._cells[column.key];
+                    if (column.type === "boolean") {
+                        if (cell?.checked) { row[column.key] = true; any = true; }
+                        continue;
+                    }
+                    const raw = (cell?.value ?? "").trim();
                     if (raw === "") continue;
                     if (column.type !== "computed") any = true;
                     row[column.key] = (column.type === "number" || column.type === "computed")
                         ? Number(raw) : raw;
                 }
-                return any ? row : null;
+                if (!any) return null;
+                /* Carry the server-assigned row id straight back through
+                   so a per-row attachment stays pinned across a save. */
+                if (tr._rowId) row._id = tr._rowId;
+                return row;
             }).filter(Boolean);
 
             return { wrapper, input: null, field, readTable, writeTable };
@@ -468,6 +518,54 @@ function describeComputed(column, columns) {
     return column.label + " = " + (column.inputs || []).map(labelOf).join(join);
 }
 
+/* Files pinned to one row of a table field. The file itself is an
+   ordinary record attachment tagged row_ref = "<fieldKey>:<rowId>";
+   this dialog just filters the record's attachments to that one row
+   and points buildUploader at the same endpoint with the tag. */
+async function openRowAttachments(recordNumber, rowRef, title) {
+    const node = ensureDialog();
+    const listBox = el("div", { class: "chip-list" });
+
+    const load = async () => {
+        listBox.replaceChildren(el("span", { class: "sm dim", text: "Loading..." }));
+        try {
+            const { attachments } = await api.attachments(recordNumber);
+            const mine = (attachments || []).filter((a) => a.row_ref === rowRef);
+            if (mine.length === 0) {
+                listBox.replaceChildren(el("p", { class: "sm dim", text: "No files on this row yet." }));
+                return;
+            }
+            listBox.replaceChildren(...mine.map((a) => a.has_file
+                ? el("button", {
+                    class: "chip chip-link", type: "button", title: "Open " + a.filename,
+                    onClick: () => openFileWindow(
+                        api.attachmentFileUrl(recordNumber, a.id), a.filename, a.mime_type)
+                }, a.filename)
+                : el("span", { class: "chip", text: a.filename + "  (link)" })));
+        } catch (error) {
+            listBox.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
+        }
+    };
+
+    node.replaceChildren(
+        el("div", { class: "modal-head" },
+            el("h2", { class: "modal-title", text: "Files · " + title })),
+        el("div", { class: "modal-body" }, [
+            listBox,
+            buildUploader({
+                url: api.recordAttachmentsUrl(recordNumber),
+                fields: { row_ref: rowRef },
+                onComplete: load
+            })
+        ]),
+        el("div", { class: "modal-foot" },
+            el("button", { class: "btn btn-primary", type: "button", text: "Done",
+                onClick: () => node.close() }))
+    );
+    node.showModal();
+    load();
+}
+
 /* A computed cell wears an amber / red class once it crosses the
    thresholds the column defines (RPN >= 100, >= 150). */
 function paintThreshold(cell, column, value) {
@@ -483,6 +581,12 @@ export function readValue(entry) {
     if (entry.field.type === "table") {
         const rows = entry.readTable ? entry.readTable() : [];
         return rows.length ? rows : undefined;
+    }
+
+    /* A checkbox: ticked stores true, unticked is left unset (the same
+       "nothing to record" as an empty text box). */
+    if (entry.field.type === "boolean") {
+        return entry.input.checked ? true : undefined;
     }
 
     const raw = entry.input.value;
@@ -633,7 +737,8 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     }
 
     const entries = definition.fields.map((field) =>
-        buildField(field, definition.options, existing ? existing.data[field.key] : undefined)
+        buildField(field, definition.options, existing ? existing.data[field.key] : undefined,
+            { recordNumber: existing ? existing.number : null })
     );
 
     const titleInput = el("input", {
@@ -766,6 +871,8 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
             const value = (snap.data || {})[entry.field.key];
             if (entry.field.type === "table") {
                 if (entry.writeTable) entry.writeTable(Array.isArray(value) ? value : []);
+            } else if (entry.field.type === "boolean") {
+                entry.input.checked = value === true || value === "true";
             } else if (entry.input) {
                 const raw = value == null ? "" : String(value);
                 entry.input.value = entry.field.type === "date" ? raw.slice(0, 10) : raw;

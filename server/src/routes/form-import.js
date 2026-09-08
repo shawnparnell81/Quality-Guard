@@ -37,12 +37,14 @@ function slugColumn(label, taken) {
 }
 
 /* A 0-indexed grid of trimmed strings, plus which cells are bold and
-   how wide a merged cell runs, and any data-validation list options. */
+   how wide a merged cell runs, any data-validation list options, and
+   any cell formula (so an "=E2*F2*G2" column can become computed). */
 export function readGrid(worksheet) {
     const rows = [];
     const bold = new Set();
     const wide = new Map();      // "r,c" -> merged column span
     const lists = new Map();     // "r,c" -> string[]
+    const formulas = new Map();  // "r,c" -> formula string, no leading "="
 
     /* exceljs stores merges as "A1:D2" ranges. */
     for (const range of worksheet.model.merges || []) {
@@ -74,10 +76,14 @@ export function readGrid(worksheet) {
                     .split(",").map((s) => s.trim()).filter(Boolean);
                 if (opts.length) lists.set((r - 1) + "," + (c - 1), opts);
             }
+            if (!isFollower && cell.formula) {
+                formulas.set((r - 1) + "," + (c - 1),
+                    String(cell.formula).replace(/^=/, "").trim());
+            }
         }
         rows.push(out);
     }
-    return { rows, bold, wide, lists };
+    return { rows, bold, wide, lists, formulas };
 }
 
 function colToNum(letters) {
@@ -130,19 +136,105 @@ function fieldType(label, options) {
     return "text";
 }
 
-const COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select"]);
+const COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "boolean"]);
+
+const BOOL_TOKENS = new Set(["true", "false", "yes", "no", "y", "n", "x", "✓", "✔", "checked", "unchecked"]);
+const BOOL_YES = new Set(["true", "yes", "y", "x", "✓", "✔", "checked"]);
 
 /* A table column can only be a scalar; sample the cells beneath to
-   sharpen the guess from the header text. */
+   sharpen the guess from the header text. Returns { type, options? } -
+   options is set only when the body cells themselves spell out a small
+   fixed set. */
 function columnType(label, samples, listOpts) {
-    if (listOpts && listOpts.length) return "select";
+    if (listOpts && listOpts.length) return { type: "select", options: listOpts };
+
     const nonEmpty = samples.filter((s) => s !== "");
     if (nonEmpty.length >= 2) {
-        if (nonEmpty.every((s) => /^-?\d+(\.\d+)?$/.test(s))) return "number";
-        if (nonEmpty.every((s) => !Number.isNaN(Date.parse(s)) && /\d{4}|[/-]/.test(s))) return "date";
+        if (nonEmpty.every((s) => /^-?\d+(\.\d+)?$/.test(s))) return { type: "number" };
+        if (nonEmpty.every((s) => !Number.isNaN(Date.parse(s)) && /\d{4}|[/-]/.test(s))) return { type: "date" };
+
+        const low = nonEmpty.map((s) => s.toLowerCase());
+        if (low.every((s) => BOOL_TOKENS.has(s)) && low.some((s) => BOOL_YES.has(s))) {
+            return { type: "boolean" };
+        }
+
+        /* A short, repeating set of words in the body is a pick list
+           the form never bothered to make a real dropdown. */
+        const distinct = [...new Set(nonEmpty)];
+        if (nonEmpty.length >= 3 && distinct.length >= 2 && distinct.length <= 6
+            && distinct.length < nonEmpty.length
+            && distinct.every((s) => s.length <= 24 && !/^-?\d/.test(s))) {
+            return { type: "select", options: distinct };
+        }
     }
+
     const t = fieldType(label, null);
-    return COLUMN_TYPES.has(t) ? t : "text";
+    return { type: COLUMN_TYPES.has(t) ? t : "text" };
+}
+
+function numToCol(n) {
+    let s = "";
+    while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - m - 1) / 26; }
+    return s;
+}
+
+/* "E2*F2*G2" -> { op:"*", refs:["E2","F2","G2"] }; "SUM(E2:G2)" and
+   "E2+F2+G2" -> { op:"+", ... }. Only a single operator over plain
+   same-row cell refs; anything fancier is left as a number column. */
+function parseArithmetic(formula) {
+    const s = String(formula).replace(/\s+/g, "");
+
+    const sum = /^SUM\(([A-Z]+)(\d+):([A-Z]+)\d+\)$/i.exec(s);
+    if (sum) {
+        const a = colToNum(sum[1]);
+        const b = colToNum(sum[3]);
+        if (b <= a) return null;
+        const refs = [];
+        for (let c = a; c <= b; c++) refs.push(numToCol(c) + sum[2]);
+        return { op: "+", refs };
+    }
+
+    if (!/^[A-Z]+\d+([*+][A-Z]+\d+)+$/.test(s)) return null;
+    const hasMul = s.includes("*");
+    const hasAdd = s.includes("+");
+    if (hasMul === hasAdd) return null;              // mixed or neither
+    const op = hasMul ? "*" : "+";
+    return { op, refs: s.split(op) };
+}
+
+/* Turn a column whose body cells are a spreadsheet formula over its
+   sibling number columns into a { type:"computed" } column - the same
+   shape the record engine recomputes on save. */
+function applyFormulaColumns(columns, head, headerRow, formulas) {
+    const colAtIndex = (idx) => {
+        const pos = head.findIndex((c) => c.i === idx);
+        return pos >= 0 ? columns[pos] : null;
+    };
+    columns.forEach((col, pos) => {
+        if (col.type === "computed") return;
+        const ci = head[pos].i;
+        let formula = null;
+        for (let k = 1; k <= 6; k++) {
+            const cand = formulas.get((headerRow + k) + "," + ci);
+            if (cand) { formula = cand; break; }
+        }
+        if (!formula) return;
+
+        const parsed = parseArithmetic(formula);
+        if (!parsed) return;
+
+        const inputs = parsed.refs.map((ref) => {
+            const m = /^([A-Z]+)\d+$/.exec(ref);
+            return m ? colAtIndex(colToNum(m[1]) - 1) : null;
+        });
+        if (inputs.length < 2 || inputs.some((c) => !c)) return;
+        if (inputs.some((c) => c === col || c.type !== "number")) return;
+
+        col.type = "computed";
+        col.compute = parsed.op === "+" ? "sum" : "product";
+        col.inputs = inputs.map((c) => c.key);
+        delete col.options;
+    });
 }
 
 /* ---------- the inference itself ---------- */
@@ -164,13 +256,20 @@ function sectionLabel(text) {
     return cleanLabel(s).slice(0, 70);
 }
 
-export function inferSchema(sheetName, grid) {
-    const { rows, bold, wide, lists } = grid;
+export function inferSchema(sheetName, grid, shared = {}) {
+    const { rows, bold, wide, lists, formulas = new Map() } = grid;
     const fields = [];
-    const usedKeys = new Set();
-    const tableSigs = new Set();
+    /* usedKeys / tableSigs can be shared across the sheets of one
+       workbook so keys stay unique and the same grid on two sheets is
+       not emitted twice. Each defaults to a fresh set for a lone call. */
+    const usedKeys = shared.usedKeys || new Set();
+    const tableSigs = shared.tableSigs || new Set();
     let section = null;
-    let bigTableSeen = false;
+    /* How many wide (6+ column) grids have been taken. The first is
+       almost always the form's real body; a legend or a second page
+       repeat comes after. A genuine second data-backed grid is still
+       allowed, up to a small cap, so multi-table sheets work. */
+    let bigTables = 0;
 
     const realCells = (ri) => (rows[ri] || [])
         .map((text, i) => ({ text, i }))
@@ -290,12 +389,17 @@ export function inferSchema(sheetName, grid) {
             if (real.length === 0) { r++; continue; }
         } else {
 
-        /* Past the main grid, only sections matter - what is left is
-           almost always a legend, a rating scale, or a repeat of the
-           grid on a second page. */
-        if (bigTableSeen) { r++; continue; }
-
         const head = headerCols(r);
+
+        /* Past the first wide grid, what is left is almost always a
+           legend or a second-page repeat - skip it. The exception is a
+           genuine second grid that has real data under it (a workbook
+           with two populated tables), up to a small cap. */
+        if (bigTables >= 1 && !(head && acceptTable(r, head) && dataUnder(r, head) && bigTables < 3)) {
+            r++;
+            continue;
+        }
+
         if (head && acceptTable(r, head)) {
             const colKeys = new Set();
             const seenLabels = new Map();
@@ -312,12 +416,16 @@ export function inferSchema(sheetName, grid) {
                 const samples = [];
                 for (let k = 1; k <= 12 && rows[r + k]; k++) samples.push(rows[r + k][c.i] || "");
                 const listOpts = lists.get((r + 1) + "," + c.i);
-                const col = { key: slugColumn(label, colKeys), label, type: columnType(label, samples, listOpts) };
-                if (col.type === "select") col.options = listOpts;
+                const ct = columnType(label, samples, listOpts);
+                const col = { key: slugColumn(label, colKeys), label, type: ct.type };
+                if (ct.options && ct.options.length) col.options = ct.options;
                 return col;
             });
             /* A repeater 6+ columns wide has no room for textareas. */
             if (columns.length > 6) for (const col of columns) if (col.type === "memo") col.type = "text";
+
+            /* "=E2*F2*G2" columns become computed (RPN, and the like). */
+            applyFormulaColumns(columns, head, r, formulas);
 
             const sig = columns.map((c) => c.label.toLowerCase()).join("|");
             if (columns.length >= 2 && !tableSigs.has(sig)) {
@@ -329,7 +437,7 @@ export function inferSchema(sheetName, grid) {
                     ...(section ? { section } : {}),
                     columns
                 });
-                if (columns.length >= 6) bigTableSeen = true;
+                if (columns.length >= 6) bigTables++;
             }
             r = skipBody(r + 1, head);
             continue;
@@ -369,6 +477,8 @@ export function inferSchema(sheetName, grid) {
 
 const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
+const IGNORE_SHEET_RX = /instruction|intruction|example|guide|legend|scale|notes?$|rating|glossary|revision history|cover/i;
+
 /* Pick the sheet most likely to be the form: the most-filled one,
    with instruction / legend sheets discounted and a sheet whose name
    the file name contains promoted. */
@@ -378,11 +488,48 @@ export function chooseSheet(workbook, preferName) {
     const want = normName(preferName);
     const score = (s) => {
         let v = (s.actualRowCount || 0) * (s.actualColumnCount || 1);
-        if (/instruction|intruction|example|guide|legend|scale|notes?$/i.test(s.name)) v *= 0.3;
+        if (IGNORE_SHEET_RX.test(s.name)) v *= 0.3;
         if (want && normName(s.name) && want.includes(normName(s.name))) v *= 3;
         return v;
     };
     return sheets.slice().sort((a, b) => score(b) - score(a))[0];
+}
+
+/* Every sheet worth reading, in workbook order: has content, and is
+   not an obvious instructions / legend / cover sheet. Falls back to
+   the single best sheet if that filter would leave nothing. */
+export function chooseSheets(workbook) {
+    const withRows = workbook.worksheets.filter((s) => (s.actualRowCount || 0) > 0);
+    const real = withRows.filter((s) => !IGNORE_SHEET_RX.test(s.name));
+    if (real.length) return real;
+    return withRows.length ? [withRows[0]] : [];
+}
+
+/* Infer one schema from a whole workbook. Each contributing sheet
+   keeps its own section headings, and when more than one sheet feeds
+   in, the sheet name becomes the outermost section so fields from
+   different sheets stay grouped. Keys and table signatures are shared
+   across sheets. */
+export function inferWorkbook(workbook, baseName) {
+    const sheets = chooseSheets(workbook);
+    if (!sheets.length) return { name: baseName, fields: [], rules: [] };
+
+    const shared = { usedKeys: new Set(), tableSigs: new Set() };
+    const multi = sheets.length > 1;
+    const fields = [];
+
+    for (const sheet of sheets) {
+        const one = inferSchema(sheet.name || baseName, readGrid(sheet), shared);
+        for (const field of one.fields) {
+            if (multi) {
+                const own = field.section ? sheet.name + " · " + field.section : sheet.name;
+                field.section = own.slice(0, 90);
+            }
+            fields.push(field);
+        }
+    }
+
+    return { name: baseName, fields, rules: [], sheets: sheets.map((s) => s.name) };
 }
 
 /* ============================================================
@@ -402,15 +549,11 @@ formImport.post("/forms/import", requirePermission("forms.manage"),
 
             const baseName = (request.file.originalname || "Imported form").replace(/\.[^.]+$/, "");
 
-            const sheet = chooseSheet(workbook, baseName);
-            if (!sheet) return response.status(422).json({ error: "The workbook has no readable sheet" });
-
-            const schema = inferSchema(sheet.name || baseName, readGrid(sheet));
-            schema.name = baseName;
+            const schema = inferWorkbook(workbook, baseName);
 
             if (schema.fields.length === 0) {
                 return response.status(422).json({
-                    error: "No fields could be inferred from that sheet",
+                    error: "No fields could be inferred from that workbook",
                     detail: "Expected labelled rows (\"Customer:\") or a header row over a table."
                 });
             }
@@ -421,13 +564,15 @@ formImport.post("/forms/import", requirePermission("forms.manage"),
                 values ($1, $2, $3, $4, $5, $6)
                 returning id, name, status, created_at
             `, [request.user.org_id, baseName, request.file.originalname,
-                storagePath, JSON.stringify(schema), request.user.id]);
+                storagePath, JSON.stringify({ name: baseName, fields: schema.fields, rules: [] }),
+                request.user.id]);
 
             response.status(201).json({
                 import_id: saved.rows[0].id,
                 name: baseName,
-                sheet: sheet.name,
+                sheet: (schema.sheets || [])[0] || null,
                 sheet_names: workbook.worksheets.map((w) => w.name),
+                sheets_used: schema.sheets || [],
                 fields: schema.fields
             });
         } catch (error) {

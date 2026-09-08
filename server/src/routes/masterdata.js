@@ -259,20 +259,24 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
 });
 
 const FIELD_TYPES = new Set([
-    "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table"
+    "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table", "boolean"
 ]);
 
 /* A table field's columns can only be scalars - a repeating grid of
    grids is not something any real QMS form needs and not something
    the renderer supports. "computed" is a read-only cell: the product
    or sum of other number columns in the same row (RPN = severity x
-   occurrence x detection). */
-const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed"]);
+   occurrence x detection). "boolean" is a checkbox cell, stored as
+   true / false. */
+const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed", "boolean"]);
 const COMPUTE_OPS = new Set(["product", "sum"]);
 
 function tableProblem(field) {
     if (!Array.isArray(field.columns) || field.columns.length === 0) {
         return "\"" + field.label + "\" needs at least one column";
+    }
+    if (field.rowAttachments !== undefined && typeof field.rowAttachments !== "boolean") {
+        return "\"" + field.label + "\"'s rowAttachments must be true or false";
     }
     const seen = new Set();
     const byKey = new Map();
