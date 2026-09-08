@@ -1044,7 +1044,11 @@
             <p class="view-sub">The standard names twelve required inputs. Every one is assembled from the module that holds it, so the pack cannot go stale.</p>
         </div>
         <div class="panel" style="margin-bottom:16px">
-            <div class="panel-head"><h2 class="panel-title">Reviews</h2><span class="panel-note">quarterly</span></div>
+            <div class="panel-head">
+                <h2 class="panel-title">Reviews</h2>
+                <span class="panel-note">quarterly</span>
+                <button class="btn btn-primary no-print" type="button" id="review-new" data-requires="review.manage" style="margin-left:auto">New review</button>
+            </div>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Reference</th><th>Period</th><th>Held</th><th>Chair</th><th>Status</th></tr></thead>
@@ -1052,9 +1056,18 @@
                 </table>
             </div>
         </div>
+        <div class="panel" id="review-detail-panel" style="margin-bottom:16px">
+            <div class="panel-head">
+                <h2 class="panel-title" id="review-reference">Select a review</h2>
+                <span id="review-status"></span>
+                <span style="margin-left:auto"></span>
+                <button class="btn no-print" type="button" id="review-minutes">Minutes PDF</button>
+            </div>
+            <div class="panel-body no-print" id="review-transitions"></div>
+        </div>
         <div class="grid-2">
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title" id="review-reference">Select a review</h2><span class="panel-note">clause 9.3.2 inputs</span></div>
+                <div class="panel-head"><h2 class="panel-title">Clause 9.3.2 inputs</h2><span class="panel-note">auto-compiled</span></div>
                 <div class="table-wrap">
                     <table>
                         <thead><tr><th>Clause</th><th>Required input</th><th>From</th><th>Now</th></tr></thead>
@@ -1063,13 +1076,17 @@
                 </div>
             </div>
             <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Decisions and actions</h2><span class="panel-note">clause 9.3.3</span></div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Decision</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead>
-                        <tbody id="review-actions"></tbody>
-                    </table>
+                <div class="panel-head">
+                    <h2 class="panel-title">Attendance</h2>
+                    <button class="btn no-print" type="button" id="review-add-attendee" data-requires="review.manage" style="margin-left:auto">Add attendee</button>
                 </div>
+                <div class="panel-body" id="review-attendance"></div>
+                <div class="panel-head" style="margin-top:6px">
+                    <h2 class="panel-title">Decisions &amp; actions</h2>
+                    <span class="panel-note">clause 9.3.3</span>
+                    <button class="btn no-print" type="button" id="review-add-action" data-requires="review.manage" style="margin-left:auto">Add action</button>
+                </div>
+                <div class="panel-body" id="review-actions"></div>
             </div>
         </div>
         <div class="panel" style="margin-top:16px">

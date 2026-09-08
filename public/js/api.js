@@ -241,6 +241,20 @@ export const api = {
     objectives:    ()       => get("/objectives"),
     reviews:       ()       => get("/reviews"),
     reviewInputs:  (ref)    => get("/reviews/" + encodeURIComponent(ref) + "/inputs"),
+    createReview:  (payload) => request("POST", "/reviews", payload),
+    updateReview:  (ref, payload) =>
+        request("PATCH", "/reviews/" + encodeURIComponent(ref), payload),
+    addReviewAction: (ref, payload) =>
+        request("POST", "/reviews/" + encodeURIComponent(ref) + "/actions", payload),
+    updateReviewAction: (ref, id, payload) =>
+        request("PATCH", "/reviews/" + encodeURIComponent(ref) + "/actions/" + encodeURIComponent(id), payload),
+    deleteReviewAction: (ref, id) =>
+        request("DELETE", "/reviews/" + encodeURIComponent(ref) + "/actions/" + encodeURIComponent(id)),
+    addReviewAttendee: (ref, payload) =>
+        request("POST", "/reviews/" + encodeURIComponent(ref) + "/attendance", payload),
+    deleteReviewAttendee: (ref, id) =>
+        request("DELETE", "/reviews/" + encodeURIComponent(ref) + "/attendance/" + encodeURIComponent(id)),
+    reviewMinutesUrl: (ref) => "/api/reviews/" + encodeURIComponent(ref) + "/pdf",
 
     reviewCharts:  (ref)    => get("/reviews/" + encodeURIComponent(ref) + "/charts"),
     reviewChartSeed: (ref, kind) =>

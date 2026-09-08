@@ -15,7 +15,7 @@ import { openDocumentWindow, openFileWindow } from "../doc-windows.js";
 import { renderReviewCharts } from "./review-charts.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize, toast
+    formatDate, humanize, statusKind, toast
 } from "../dom.js";
 
 /* ============================================================
@@ -451,19 +451,60 @@ export async function renderReview() {
     }
 }
 
+const REVIEW_STATE = {
+    planned: ["Planned", "hold"], in_progress: ["In progress", "prog"], closed: ["Closed", "done"]
+};
+const ACTION_STATES = ["open", "in_progress", "done", "dropped"];
+
 async function renderReviewDetail(reference) {
     selectedReview = reference;
 
     const heading = document.getElementById("review-reference");
+    const statusEl = document.getElementById("review-status");
+    const transEl = document.getElementById("review-transitions");
     const inputBody = document.getElementById("review-inputs");
+    const attendBody = document.getElementById("review-attendance");
     const actionBody = document.getElementById("review-actions");
+    const minutesBtn = document.getElementById("review-minutes");
 
     if (inputBody) loadingRow(inputBody, 4);
 
     try {
-        const { review, inputs, actions } = await api.reviewInputs(reference);
+        const { review, inputs, actions, attendance } = await api.reviewInputs(reference);
+        const canManage = can("review.manage");
 
         if (heading) heading.textContent = review.reference + ", " + review.period;
+        if (minutesBtn) minutesBtn.onclick = () => { window.location.href = api.reviewMinutesUrl(reference); };
+
+        if (statusEl) {
+            const [label, kind] = REVIEW_STATE[review.status] || ["Unknown", "hold"];
+            statusEl.replaceChildren(pill(label, kind));
+        }
+
+        if (transEl) {
+            transEl.replaceChildren();
+            const nextStatus = { planned: "in_progress", in_progress: "closed" }[review.status];
+            if (nextStatus && canManage) {
+                const button = el("button", {
+                    class: "btn btn-primary no-print", type: "button",
+                    text: nextStatus === "closed" ? "Close review" : "Start review"
+                });
+                button.addEventListener("click", () => confirmStep({
+                    title: (nextStatus === "closed" ? "Close " : "Start ") + review.reference,
+                    body: nextStatus === "closed"
+                        ? "Marks the review held and its minutes final."
+                        : "Marks the review in progress and stamps today as the held date.",
+                    confirmLabel: nextStatus === "closed" ? "Close review" : "Start review",
+                    onConfirm: async () => {
+                        await api.updateReview(reference, nextStatus === "closed"
+                            ? { status: "closed" }
+                            : { status: "in_progress", held_on: new Date().toISOString().slice(0, 10) });
+                        await renderReview();
+                    }
+                }));
+                transEl.append(button);
+            }
+        }
 
         fillTable(inputBody, inputs, [
             { className: "mono sm nowrap", render: (row) => row.clause },
@@ -476,22 +517,144 @@ async function renderReviewDetail(reference) {
             { className: "mono sm", render: (row) => row.summary }
         ]);
 
-        fillTable(actionBody, actions, [
-            { className: "sm", render: (row) => row.decision },
-            { className: "sm", render: (row) => row.owner || "-" },
-            { className: "mono sm", render: (row) => formatDate(row.due_on) },
-            { render: (row) => {
-                if (row.status === "done") return pill("Done", "done");
-                if (row.status === "in_progress") return pill("In progress", "prog");
-                if (row.status === "dropped") return pill("Dropped", "hold");
-                return pill("Open", "open");
-            } }
-        ], "No actions recorded");
+        if (attendBody) {
+            attendBody.replaceChildren(
+                (attendance && attendance.length)
+                    ? el("ul", { class: "review-list" }, attendance.map((a) => el("li", {}, [
+                        el("span", { class: "sm", text:
+                            a.name + (a.role ? " - " + a.role : "") + (a.present ? "" : "  (absent)") }),
+                        canManage
+                            ? el("button", { class: "btn btn-xs no-print", type: "button",
+                                dataset: { reviewAttendeeRemove: a.id }, "aria-label": "Remove", text: "×" })
+                            : null
+                    ])))
+                    : el("p", { class: "sm dim", text: "No attendance recorded." })
+            );
+        }
+
+        if (actionBody) {
+            actionBody.replaceChildren(
+                (actions && actions.length)
+                    ? el("ul", { class: "review-list" }, actions.map((a) => el("li", { class: "review-action" }, [
+                        el("div", {}, [
+                            el("div", { class: "sm", style: "font-weight:600", text: a.decision }),
+                            el("div", { class: "sm dim", text:
+                                (a.owner || "no owner")
+                                + (a.due_on ? "  -  due " + formatDate(a.due_on) : "") }),
+                            a.linked_record
+                                ? el("div", { class: "sm" }, [
+                                    document.createTextNode("Carried by "),
+                                    el("button", { class: "link-btn", type: "button",
+                                        dataset: { view: "capa" }, text: a.linked_record }),
+                                    " ",
+                                    a.linked_status
+                                        ? pill(humanize(a.linked_status), statusKind(a.linked_status))
+                                        : null
+                                ])
+                                : null
+                        ]),
+                        el("div", { class: "row-actions no-print" }, canManage ? [
+                            el("select", { dataset: { reviewActionStatus: a.id } },
+                                ACTION_STATES.map((v) => el("option", {
+                                    value: v, text: humanize(v),
+                                    selected: v === a.status ? "selected" : undefined
+                                }))),
+                            a.linked_record
+                                ? null
+                                : el("button", { class: "btn btn-xs", type: "button",
+                                    dataset: { reviewActionCapa: a.id, decision: a.decision }, text: "Raise CAPA" }),
+                            el("button", { class: "btn btn-xs", type: "button",
+                                dataset: { reviewActionRemove: a.id }, text: "Remove" })
+                        ] : [])
+                    ])))
+                    : el("p", { class: "sm dim", text: "No actions recorded." })
+            );
+        }
 
         renderReviewCharts(reference);
+        applyPermissions(document.getElementById("view-review"));
     } catch (error) {
         errorRow(inputBody, 4, error);
     }
+}
+
+/* The set of people a new attendee / action owner can be chosen from. */
+async function reviewUserOptions() {
+    try {
+        const { users } = await api.users();
+        return users.filter((u) => u.active !== false)
+            .map((u) => ({ value: u.initials, label: u.full_name + " (" + u.initials + ")" }));
+    } catch { return []; }
+}
+
+function openNewReviewForm() {
+    openEntityForm({
+        title: "New management review",
+        fields: [
+            { key: "period", label: "Period", type: "text", required: true, hint: "e.g. 2026 Q3" },
+            { key: "held_on", label: "Planned date", type: "date" }
+        ],
+        submitLabel: "Create",
+        successMessage: (row) => row.reference + " created",
+        onSubmit: ({ values }) => api.createReview(values),
+        onSaved: (row) => { selectedReview = row.reference; return renderReview(); }
+    });
+}
+
+async function openAddAttendeeForm(reference) {
+    const options = await reviewUserOptions();
+    openEntityForm({
+        title: "Add attendee",
+        fields: [
+            { key: "name", label: "Name", type: "text", required: true },
+            { key: "role", label: "Role at the review", type: "text", hint: "e.g. Quality Manager, Chair" }
+        ],
+        values: {},
+        submitLabel: "Add",
+        successMessage: () => "Attendee added",
+        onSubmit: ({ values }) => api.addReviewAttendee(reference, values),
+        onSaved: () => renderReviewDetail(reference)
+    });
+    void options;
+}
+
+async function openAddActionForm(reference) {
+    const owners = await reviewUserOptions();
+    openEntityForm({
+        title: "Add decision / action",
+        fields: [
+            { key: "decision", label: "Decision or action", type: "memo", required: true },
+            { key: "owner", label: "Owner", type: "select", options: owners.map((o) => o.value),
+              hint: owners.length ? "By initials." : "Add people first." },
+            { key: "due_on", label: "Due", type: "date" }
+        ],
+        submitLabel: "Add",
+        successMessage: () => "Action added",
+        onSubmit: ({ values }) => api.addReviewAction(reference, values),
+        onSaved: () => renderReviewDetail(reference)
+    });
+}
+
+function openRaiseCapaForm(reference, actionId, decision) {
+    openEntityForm({
+        title: "Raise a CAPA for this action",
+        fields: [
+            { key: "title", label: "CAPA summary", type: "text", required: true },
+            { key: "problem_statement", label: "Problem statement", type: "memo", required: true }
+        ],
+        values: { title: decision.slice(0, 120), problem_statement: decision },
+        submitLabel: "Raise CAPA and link",
+        successMessage: (row) => row.number + " raised and linked",
+        onSubmit: async ({ values }) => {
+            const capa = await api.createRecord({
+                type: "capa", title: values.title,
+                data: { source: "Management review " + reference, problem_statement: values.problem_statement }
+            });
+            await api.updateReviewAction(reference, actionId, { linked_record: capa.number });
+            return capa;
+        },
+        onSaved: () => renderReviewDetail(reference)
+    });
 }
 
 /* The inputs table names a module; this maps it to the screen. */
@@ -647,15 +810,68 @@ export function wireEvaluate() {
         });
     }
 
-    /* Module links inside the management review inputs table. */
-    const inputs = document.getElementById("review-inputs");
-    if (inputs) {
-        inputs.addEventListener("click", (event) => {
-            const button = event.target.closest(".link-btn[data-view]");
-            if (!button) return;
-            document.dispatchEvent(new CustomEvent("navigate", {
-                detail: { view: button.dataset.view }
-            }));
+    /* Module and record links anywhere in the management review screen. */
+    const reviewView = document.getElementById("view-review");
+    if (reviewView) {
+        reviewView.addEventListener("click", (event) => {
+            const link = event.target.closest(".link-btn[data-view]");
+            if (link) {
+                document.dispatchEvent(new CustomEvent("navigate", { detail: { view: link.dataset.view } }));
+                return;
+            }
+
+            const attRemove = event.target.closest("[data-review-attendee-remove]");
+            if (attRemove) {
+                api.deleteReviewAttendee(selectedReview, attRemove.dataset.reviewAttendeeRemove)
+                    .then(() => renderReviewDetail(selectedReview))
+                    .catch((error) => toast(error.message, "error"));
+                return;
+            }
+
+            const raiseCapa = event.target.closest("[data-review-action-capa]");
+            if (raiseCapa) {
+                openRaiseCapaForm(selectedReview, raiseCapa.dataset.reviewActionCapa,
+                    raiseCapa.dataset.decision || "");
+                return;
+            }
+
+            const actRemove = event.target.closest("[data-review-action-remove]");
+            if (actRemove) {
+                confirmStep({
+                    title: "Remove action",
+                    body: "Takes this decision off the review. It is not the same as marking it done.",
+                    confirmLabel: "Remove",
+                    onConfirm: async () => {
+                        await api.deleteReviewAction(selectedReview, actRemove.dataset.reviewActionRemove);
+                        await renderReviewDetail(selectedReview);
+                    }
+                });
+            }
+        });
+
+        reviewView.addEventListener("change", (event) => {
+            const select = event.target.closest("[data-review-action-status]");
+            if (!select) return;
+            api.updateReviewAction(selectedReview, select.dataset.reviewActionStatus, { status: select.value })
+                .then(() => renderReviewDetail(selectedReview))
+                .catch((error) => toast(error.message, "error"));
+        });
+    }
+
+    const reviewNew = document.getElementById("review-new");
+    if (reviewNew) reviewNew.addEventListener("click", openNewReviewForm);
+
+    const reviewAddAttendee = document.getElementById("review-add-attendee");
+    if (reviewAddAttendee) {
+        reviewAddAttendee.addEventListener("click", () => {
+            if (selectedReview) openAddAttendeeForm(selectedReview);
+        });
+    }
+
+    const reviewAddAction = document.getElementById("review-add-action");
+    if (reviewAddAction) {
+        reviewAddAction.addEventListener("click", () => {
+            if (selectedReview) openAddActionForm(selectedReview);
         });
     }
 
