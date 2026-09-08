@@ -21,12 +21,12 @@ import { el, toast } from "./dom.js";
 const TYPE_VIEW = {
     ncr: "ncr", capa: "capa", complaint: "complaints",
     audit: "audit", risk: "risk", eightd: "d8", ecn: "change",
-    di: "di", apqp: "apqp"
+    di: "di", apqp: "apqp", scar: "scar"
 };
 
-/* Built-in record types. One of these with no TYPE_VIEW entry (scar)
-   simply has no dedicated screen; anything else with no entry is a
-   type someone created, which the Custom Forms screen lists. */
+/* Built-in record types. Every one now has a TYPE_VIEW entry; a type
+   with no entry is one someone created, which the Custom Forms
+   screen lists. */
 const BUILT_IN_TYPES = new Set([
     "ncr", "capa", "eightd", "complaint", "scar",
     "audit", "ecn", "risk", "apqp", "di"

@@ -42,7 +42,7 @@ const OWN_SCREEN_REFRESH = {
    "complaints" screen, eightd -> "d8", ecn -> "change"). */
 const TYPE_VIEW = {
     ncr: "ncr", capa: "capa", complaint: "complaints",
-    audit: "audit", risk: "risk", eightd: "d8", ecn: "change"
+    audit: "audit", risk: "risk", eightd: "d8", ecn: "change", scar: "scar"
 };
 
 /* Shared first column: severity stripe plus record number. */
@@ -142,8 +142,31 @@ const REGISTERS = {
             { className: "sm dim", render: (row) => row.data.investigator || "-" },
             statusColumn
         ]
+    },
+
+    scar: {
+        tbody: "scar-register",
+        columns: [
+            idColumn,
+            { className: "sm", render: (row) => row.data.supplier || "-" },
+            { className: "sm", render: (row) => row.title },
+            { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
+            { className: "mono sm", render: (row) => scarDueCell(row) },
+            statusColumn
+        ]
     }
 };
+
+/* A SCAR's own due date is the supplier's response deadline, carried
+   in data.response_due rather than the shared records.due_at column,
+   so it needs its own overdue check. */
+function scarDueCell(row) {
+    const due = row.data.response_due;
+    if (!due) return "-";
+    const overdue = row.status !== "closed" && new Date(due) < new Date();
+    const text = formatDate(due) + (overdue ? " overdue" : "");
+    return overdue ? el("span", { style: "color:var(--crit)", text }) : text;
+}
 
 /* An overdue date is worth colouring, because it is the one thing on
    these screens that means someone has to act today. */

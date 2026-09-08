@@ -57,7 +57,8 @@ export const NAV = [
             { label: "Nonconformance", view: "ncr", countKey: "ncr", hot: true },
             { label: "CAPA", view: "capa", countKey: "capa" },
             { label: "8D Investigations", view: "d8", countKey: "eightd" },
-            { label: "Customer Complaints", view: "complaints", countKey: "complaint" }
+            { label: "Customer Complaints", view: "complaints", countKey: "complaint" },
+            { label: "Supplier Corrective (SCAR)", view: "scar", countKey: "scar" }
         ] },
         { label: "Audit & Review", items: [
             { label: "Internal Audit", view: "audit", countKey: "audit", hot: true },
