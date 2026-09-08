@@ -1,0 +1,42 @@
+{
+  "key": "ppap_checklist",
+  "name": "PPAP Submission Checklist",
+  "prefix": "PPAPC",
+  "clause": "8.3.4.4",
+  "category": "Submission",
+  "standard": "AIAG",
+  "description": "AIAG PPAP checklist: submission level and reason, the status of all 18 PPAP elements, and the Part Submission Warrant disposition. (The built-in PPAP record type manages the package itself; this is the flat warrant / checklist.)",
+  "fields": [
+    { "key": "part_number", "label": "Part number", "type": "text", "required": true, "section": "Part & submission" },
+    { "key": "part_name", "label": "Part name", "type": "text", "section": "Part & submission" },
+    { "key": "customer", "label": "Customer", "type": "text", "section": "Part & submission" },
+    { "key": "supplier_code", "label": "Supplier / org code", "type": "text", "section": "Part & submission" },
+    { "key": "drawing_number", "label": "Drawing number", "type": "text", "section": "Part & submission" },
+    { "key": "engineering_change_level", "label": "Engineering change level", "type": "text", "section": "Part & submission" },
+    { "key": "purchase_order", "label": "Purchase order number", "type": "text", "section": "Part & submission" },
+    { "key": "part_weight", "label": "Part weight", "type": "text", "section": "Part & submission" },
+    { "key": "submission_level", "label": "Submission level", "type": "select", "required": true, "section": "Part & submission",
+      "options": ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] },
+    { "key": "reason_for_submission", "label": "Reason for submission", "type": "select", "section": "Part & submission",
+      "options": ["Initial submission", "Engineering change", "Tooling: transfer / replacement / refurbishment",
+        "Correction of discrepancy", "Tooling inactive > 12 months", "Change to optional construction or material",
+        "Sub-supplier or material source change", "Change in part processing", "Parts produced at a new or additional location"] },
+    {
+      "key": "elements", "label": "PPAP element status", "type": "table", "section": "Elements",
+      "columns": [
+        { "key": "element_no", "label": "#", "type": "number" },
+        { "key": "element_name", "label": "Element", "type": "text" },
+        { "key": "status", "label": "Status", "type": "select",
+          "options": ["Submitted", "Retained at supplier", "Retained - reviewed", "Not applicable", "Not required at this level"] },
+        { "key": "reference", "label": "Reference / document no.", "type": "text" },
+        { "key": "date", "label": "Date", "type": "date" }
+      ]
+    },
+    { "key": "psw_disposition", "label": "PSW disposition", "type": "select", "section": "Part Submission Warrant",
+      "options": ["Approved", "Interim approval", "Rejected"] },
+    { "key": "psw_declared_by", "label": "Declared by (supplier)", "type": "signature", "section": "Part Submission Warrant" },
+    { "key": "psw_declared_date", "label": "Date", "type": "date", "section": "Part Submission Warrant" },
+    { "key": "psw_customer_approval", "label": "Customer approval", "type": "text", "section": "Part Submission Warrant" },
+    { "key": "psw_customer_date", "label": "Customer approval date", "type": "date", "section": "Part Submission Warrant" }
+  ]
+}
