@@ -74,6 +74,7 @@ app.get("/", (request, response) => {
 });
 
 app.get("/app", (request, response) => {
+    response.set("Cache-Control", "no-store");
     response.sendFile(join(publicDir, "index.html"));
 });
 
@@ -90,8 +91,20 @@ app.get("/app", (request, response) => {
    served from a different origin (Live Server on :5500, say) could
    never actually authenticate against this API. Cross-origin support
    was removed rather than half-fixed; open the app at this server's
-   own URL during development. */
-app.use(express.static(publicDir, { index: false }));
+   own URL during development.
+
+   no-store on the app's own JS/CSS/HTML: there is no build step and
+   no asset hashing here, so a cached app.js after an update is a
+   recurring "why isn't my change showing" trap. These files are
+   small and same-origin - correctness beats the few saved KB. */
+app.use(express.static(publicDir, {
+    index: false,
+    setHeaders(response, filePath) {
+        if (/\.(?:js|css|html)$/i.test(filePath)) {
+            response.setHeader("Cache-Control", "no-store");
+        }
+    }
+}));
 
 /* Every request gets an id (an inbound X-Request-Id is honoured so a
    proxy's trace carries through), echoed back on the response and
