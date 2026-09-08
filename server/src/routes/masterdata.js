@@ -8,6 +8,7 @@
    ============================================================ */
 
 import { Router } from "express";
+import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { scoredVendors } from "../vendor-scoring.js";
@@ -15,6 +16,9 @@ import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { upload } from "../uploads.js";
 import { publish } from "../stream.js";
+import { buildDefaultMap } from "../excel-fill.js";
+
+const XLSX_EXTENSIONS = new Set([".xlsx"]);
 
 export const masterdata = Router();
 
@@ -418,6 +422,121 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
             });
 
             response.json({ key: request.params.key, version, field_count: fields.length });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* ============================================================
+   "Fill my Excel template" - the excel_map on a form version.
+
+   GET  returns the current map (and whether a template file is set).
+   POST (multipart, field "file") stores a new template spreadsheet
+        and returns a best-guess map to review.
+   PUT  { map } saves a reviewed map onto the latest form version.
+   All need forms.manage; the map only ever attaches to the newest
+   published version.
+   ============================================================ */
+
+async function latestVersionRow(orgId, key) {
+    const row = await query(`
+        select fv.id, fv.record_type_id, fv.version, fv.schema, fv.excel_map
+          from form_versions fv
+          join record_types rt on rt.id = fv.record_type_id
+         where rt.org_id = $1 and rt.key = $2 and fv.published_at is not null
+         order by fv.version desc limit 1
+    `, [orgId, key]);
+    return row.rows[0] || null;
+}
+
+masterdata.get("/record-types/:key/excel-map", requirePermission("forms.manage"),
+    async (request, response, next) => {
+        try {
+            const fv = await latestVersionRow(request.user.org_id, request.params.key);
+            if (!fv) return response.status(404).json({ error: "No such record type" });
+            const map = fv.excel_map || null;
+            response.json({
+                version: fv.version,
+                has_template: Boolean(map && map.template_path),
+                map,
+                schema: fv.schema
+            });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+masterdata.post("/record-types/:key/excel-template", requirePermission("forms.manage"),
+    upload.single("file"), async (request, response, next) => {
+        try {
+            if (!request.file) return response.status(400).json({ error: "An .xlsx file is required" });
+            const fv = await latestVersionRow(request.user.org_id, request.params.key);
+            if (!fv) return response.status(404).json({ error: "No such record type" });
+
+            const workbook = new ExcelJS.Workbook();
+            try {
+                await workbook.xlsx.load(request.file.buffer);
+            } catch {
+                return response.status(422).json({ error: "That file could not be read as an .xlsx workbook" });
+            }
+
+            const templatePath = await saveUploadedFile(
+                "excel-templates", XLSX_EXTENSIONS, request.file.originalname, request.file.buffer);
+
+            const guess = buildDefaultMap(workbook, fv.schema || { fields: [] });
+            const map = { template_path: templatePath, template_name: request.file.originalname, ...guess };
+
+            await query("update form_versions set excel_map = $1 where id = $2",
+                [JSON.stringify(map), fv.id]);
+            await query(`
+                insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                values ($1, 'form_versions', $2, 'excel_template_set', $3, $4)
+            `, [request.user.org_id, fv.record_type_id, request.file.originalname, request.user.id]);
+
+            response.status(201).json({ version: fv.version, map });
+        } catch (error) {
+            if (error.status) return response.status(error.status).json({ error: error.message });
+            next(error);
+        }
+    });
+
+masterdata.put("/record-types/:key/excel-map", requirePermission("forms.manage"),
+    async (request, response, next) => {
+        try {
+            const incoming = request.body && request.body.map;
+            if (!incoming || typeof incoming !== "object") {
+                return response.status(422).json({ error: "A map object is required" });
+            }
+            const fv = await latestVersionRow(request.user.org_id, request.params.key);
+            if (!fv) return response.status(404).json({ error: "No such record type" });
+
+            /* Keep the stored template_path - the client edits cell
+               assignments, not where the file lives. */
+            const current = fv.excel_map || {};
+            const map = {
+                ...incoming,
+                template_path: current.template_path || incoming.template_path,
+                template_name: current.template_name || incoming.template_name
+            };
+            if (!map.template_path) {
+                return response.status(422).json({ error: "Upload a template file first" });
+            }
+
+            await query("update form_versions set excel_map = $1 where id = $2",
+                [JSON.stringify(map), fv.id]);
+            response.json({ version: fv.version, map });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+masterdata.delete("/record-types/:key/excel-map", requirePermission("forms.manage"),
+    async (request, response, next) => {
+        try {
+            const fv = await latestVersionRow(request.user.org_id, request.params.key);
+            if (!fv) return response.status(404).json({ error: "No such record type" });
+            await query("update form_versions set excel_map = null where id = $1", [fv.id]);
+            response.json({ version: fv.version, map: null });
         } catch (error) {
             next(error);
         }

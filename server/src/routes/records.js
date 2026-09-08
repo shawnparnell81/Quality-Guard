@@ -14,6 +14,7 @@ import { query, withTransaction } from "../db.js";
 import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
 import { upload } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
+import { fillTemplate, readTemplate } from "../excel-fill.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { ppapMissing } from "./ppap.js";
 import { publish } from "../stream.js";
@@ -489,6 +490,31 @@ async function loadPublishedForm(recordTypeId) {
     return row.rowCount > 0 ? row.rows[0] : null;
 }
 
+/* The customer's own Excel template for a form version, if one is set
+   up: { map, schema, templateBuffer } ready for fillTemplate /
+   readTemplate. version === undefined means "latest published".
+   Returns null when there is no map or the stored file is gone - the
+   caller then falls back to the generated grid. */
+async function loadTemplateFill(recordTypeId, version) {
+    const row = version === undefined
+        ? await query(`select schema, excel_map from form_versions
+                        where record_type_id = $1 and published_at is not null
+                        order by version desc limit 1`, [recordTypeId])
+        : await query(`select schema, excel_map from form_versions
+                        where record_type_id = $1 and version = $2`, [recordTypeId, version]);
+
+    const found = row.rows[0];
+    const map = found && found.excel_map;
+    if (!map || !map.template_path) return null;
+
+    try {
+        const templateBuffer = await readUploadedFile(map.template_path);
+        return { map, schema: found.schema || { fields: [] }, templateBuffer };
+    } catch {
+        return null;   // file missing - fall back rather than 500
+    }
+}
+
 const normalizeHeader = (s) => String(s || "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
 
 /* Turn one spreadsheet cell into the value a form field expects. */
@@ -906,14 +932,22 @@ records.get("/excel-template", requirePermission(createPermissionFor), async (re
             [request.user.org_id, type]);
         if (typeRow.rowCount === 0) return response.status(400).json({ error: "Unknown record type: " + type });
 
-        const form = await loadPublishedForm(typeRow.rows[0].id);
-        const schema = form ? form.schema : { fields: [] };
-        const { workbook } = buildFormWorkbook(schema, null);
-
         response.setHeader("Content-Type",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setHeader("Content-Disposition",
             'attachment; filename="' + type.replace(/[^a-z0-9_-]/gi, "") + '-template.xlsx"');
+
+        /* When the form has the customer's own layout mapped, the blank
+           template is that file untouched. */
+        const fill = await loadTemplateFill(typeRow.rows[0].id, undefined);
+        if (fill) {
+            response.send(Buffer.from(fill.templateBuffer));
+            return;
+        }
+
+        const form = await loadPublishedForm(typeRow.rows[0].id);
+        const schema = form ? form.schema : { fields: [] };
+        const { workbook } = buildFormWorkbook(schema, null);
         await workbook.xlsx.write(response);
         response.end();
     } catch (error) {
@@ -938,14 +972,27 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
             const schema = form ? form.schema : { fields: [] };
             const formVersion = form ? form.version : 1;
 
-            const workbook = new ExcelJS.Workbook();
-            try {
-                await workbook.xlsx.load(request.file.buffer);
-            } catch {
-                return response.status(422).json({ error: "That file could not be read as an .xlsx workbook" });
+            let parsed;
+            /* A form with the customer's own layout mapped is read back
+               from that layout's cells; otherwise from the generated
+               Form / table sheets. */
+            const fill = await loadTemplateFill(recordType.id, undefined);
+            if (fill) {
+                try {
+                    parsed = await readTemplate(request.file.buffer, fill.map, fill.schema);
+                } catch {
+                    return response.status(422).json({ error: "That file could not be read as an .xlsx workbook" });
+                }
+            } else {
+                const workbook = new ExcelJS.Workbook();
+                try {
+                    await workbook.xlsx.load(request.file.buffer);
+                } catch {
+                    return response.status(422).json({ error: "That file could not be read as an .xlsx workbook" });
+                }
+                parsed = readFormWorkbook(workbook, schema);
             }
 
-            const parsed = readFormWorkbook(workbook, schema);
             let data = applyComputedColumns(schema, withComputedRpn(type, parsed.data));
             data = applyFairResults(type, data);
 
@@ -988,17 +1035,28 @@ records.get("/:number/excel", async (request, response, next) => {
         if (found.rowCount === 0) return response.status(404).json({ error: "Record not found" });
         const record = found.rows[0];
 
+        response.setHeader("Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setHeader("Content-Disposition",
+            'attachment; filename="' + record.number + '.xlsx"');
+
+        /* If this form version has the customer's own layout mapped,
+           the export is that spreadsheet with the values dropped in. */
+        const fill = await loadTemplateFill(record.record_type_id, record.form_version);
+        if (fill) {
+            const { buffer } = await fillTemplate(
+                fill.templateBuffer, fill.map, fill.schema,
+                { title: record.title, data: record.data });
+            response.send(Buffer.from(buffer));
+            return;
+        }
+
         const form = await query(
             "select schema from form_versions where record_type_id = $1 and version = $2",
             [record.record_type_id, record.form_version]);
         const schema = form.rows[0]?.schema || { fields: [] };
 
         const { workbook } = buildFormWorkbook(schema, { title: record.title, data: record.data });
-
-        response.setHeader("Content-Type",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setHeader("Content-Disposition",
-            'attachment; filename="' + record.number + '.xlsx"');
         await workbook.xlsx.write(response);
         response.end();
     } catch (error) {

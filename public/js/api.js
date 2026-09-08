@@ -208,6 +208,14 @@ export const api = {
     recordExcelTemplateUrl: (type) =>
         "/api/records/excel-template?type=" + encodeURIComponent(type),
     recordExcelUrl: (number) => "/api/records/" + encodeURIComponent(number) + "/excel",
+    /* "fill my Excel template" - the field -> cell map for a form type */
+    excelMap:        (typeKey) => get("/record-types/" + encodeURIComponent(typeKey) + "/excel-map"),
+    saveExcelMap:    (typeKey, map) =>
+        request("PUT", "/record-types/" + encodeURIComponent(typeKey) + "/excel-map", { map }),
+    deleteExcelMap:  (typeKey) =>
+        request("DELETE", "/record-types/" + encodeURIComponent(typeKey) + "/excel-map"),
+    uploadExcelTemplate: (typeKey, formData) =>
+        postForm("/record-types/" + encodeURIComponent(typeKey) + "/excel-template", formData),
     importRecordExcel: (type, formData, dryRun) => postForm(
         "/records/excel?type=" + encodeURIComponent(type) + (dryRun ? "&dry_run=true" : ""),
         formData),

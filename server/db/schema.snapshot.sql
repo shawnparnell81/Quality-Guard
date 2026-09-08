@@ -169,7 +169,8 @@ CREATE TABLE public.form_versions (
     version integer NOT NULL,
     schema jsonb NOT NULL,
     published_at timestamp with time zone,
-    published_by uuid
+    published_by uuid,
+    excel_map jsonb
 );
 CREATE TABLE public.gage_calibrations (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
