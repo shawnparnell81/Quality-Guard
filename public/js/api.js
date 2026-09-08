@@ -214,11 +214,14 @@ export const api = {
     stopEditing: (number) =>
         request("DELETE", "/records/" + encodeURIComponent(number) + "/editing"),
 
-    /* notification centre (P3.4) */
+    /* notification centre (P3.4) + email opt-in (P3.5) */
     notifications: () => get("/notifications"),
     markNotificationRead: (id) =>
         request("POST", "/notifications/" + encodeURIComponent(id) + "/read"),
     markAllNotificationsRead: () => request("POST", "/notifications/read-all"),
+    getNotificationPrefs: () => get("/notification-prefs"),
+    setNotificationPrefs: (mode) =>
+        request("PATCH", "/notification-prefs", { email_notifications: mode }),
 
     linkRecord: (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/links", payload),

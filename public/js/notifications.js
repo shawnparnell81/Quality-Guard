@@ -37,7 +37,7 @@ export function wireNotifications() {
         event.stopPropagation();
         const willOpen = panel.hidden;
         setOpen(willOpen);
-        if (willOpen) refetch();
+        if (willOpen) { refetch(); loadPref(); }
     });
     document.addEventListener("click", (event) => {
         if (!panel.hidden && !panel.contains(event.target) && event.target !== bell) setOpen(false);
@@ -50,6 +50,24 @@ export function wireNotifications() {
         readAll.addEventListener("click", async () => {
             try { await api.markAllNotificationsRead(); } catch { /* offline */ }
             refetch();
+        });
+    }
+
+    /* Email preference (P3.5). Loaded once when the panel first opens,
+       saved on change. */
+    const pref = document.getElementById("notif-email-pref");
+    let prefLoaded = false;
+    async function loadPref() {
+        if (prefLoaded || !pref) return;
+        prefLoaded = true;
+        try {
+            const { email_notifications } = await api.getNotificationPrefs();
+            pref.value = email_notifications || "off";
+        } catch { prefLoaded = false; }
+    }
+    if (pref) {
+        pref.addEventListener("change", async () => {
+            try { await api.setNotificationPrefs(pref.value); } catch { /* offline */ }
         });
     }
 
