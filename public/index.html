@@ -1599,7 +1599,10 @@
             <div class="panel-head">
                 <h2 class="panel-title">Form</h2>
                 <select id="form-record-type" style="margin-left:8px"></select>
-                <button class="btn no-print" type="button" id="form-record-newtype" data-requires="forms.manage" style="margin-left:auto">+ New form type</button>
+                <a class="btn btn-xs no-print" id="form-record-template" style="margin-left:auto">Excel template</a>
+                <button class="btn btn-xs no-print" type="button" id="form-record-fromexcel">Fill from Excel</button>
+                <input type="file" id="form-record-excel-file" accept=".xlsx" hidden>
+                <button class="btn no-print" type="button" id="form-record-newtype" data-requires="forms.manage">+ New form type</button>
                 <button class="btn btn-primary no-print" type="button" id="form-record-new">New record</button>
             </div>
         </div>

@@ -65,6 +65,11 @@ export async function renderFormRecord() {
 
 async function renderTypeRecords(typeKey) {
     currentType = typeKey;
+
+    /* keep the "Excel template" link pointed at the chosen form */
+    const tpl = document.getElementById("form-record-template");
+    if (tpl) tpl.href = api.recordExcelTemplateUrl(typeKey);
+
     const table = document.getElementById("form-record-table");
     const note = document.getElementById("form-record-note");
     loadingRow(table, 4);
@@ -183,7 +188,12 @@ async function renderCustomDetail(typeKey, number) {
         });
     });
 
-    const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit]);
+    const pdf = el("a", { class: "btn no-print", text: "PDF",
+        href: "/api/records/" + encodeURIComponent(record.number) + "/pdf" });
+    const excel = el("a", { class: "btn no-print", text: "Excel",
+        href: api.recordExcelUrl(record.number) });
+
+    const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, pdf, excel]);
 
     if (transitions) {
         for (const step of transitions) {
@@ -301,4 +311,38 @@ export function wireFormRecord() {
     if (newType) newType.addEventListener("click", () => {
         if (can("forms.manage")) openNewTypeDialog();
     });
+
+    /* Fill from Excel: pick a file, the server parses the Form sheet
+       and every table sheet into one record. */
+    const fromExcel = document.getElementById("form-record-fromexcel");
+    const excelFile = document.getElementById("form-record-excel-file");
+    if (fromExcel && excelFile) {
+        fromExcel.addEventListener("click", () => {
+            if (!currentType) { toast("Pick a form type first", "error"); return; }
+            excelFile.value = "";
+            excelFile.click();
+        });
+        excelFile.addEventListener("change", async () => {
+            if (!excelFile.files.length) return;
+            const fd = new FormData();
+            fd.append("file", excelFile.files[0]);
+            fromExcel.disabled = true;
+            fromExcel.textContent = "Reading...";
+            try {
+                const r = await api.importRecordExcel(currentType, fd);
+                toast(r.number + " created from Excel");
+                selectedNumber = r.number;
+                await renderFormRecord();
+            } catch (error) {
+                const errs = error.payload && error.payload.errors;
+                toast(errs && errs.length ? errs[0] : error.message, "error");
+                if (errs && errs.length > 1) {
+                    window.alert("The sheet has problems:\n\n" + errs.join("\n"));
+                }
+            } finally {
+                fromExcel.disabled = false;
+                fromExcel.textContent = "Fill from Excel";
+            }
+        });
+    }
 }
