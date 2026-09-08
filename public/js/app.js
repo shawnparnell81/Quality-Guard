@@ -128,6 +128,11 @@ export async function show(name) {
         );
     });
 
+    /* The Forms sub-tab strip (shared across the four form screens). */
+    document.querySelectorAll(".forms-subnav a[data-goto]").forEach((a) => {
+        a.setAttribute("aria-current", a.dataset.goto === name ? "true" : "false");
+    });
+
     /* Underline the department button this screen belongs to. */
     markActiveDept(name);
 

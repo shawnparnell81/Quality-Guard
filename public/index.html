@@ -1539,8 +1539,14 @@
     <!-- ============ FORM LIBRARY ============ -->
     <section class="view" id="view-form-library" hidden>
         <div class="view-head">
-            <h1 class="view-title">Form Library</h1>
-            <p class="view-sub">Ready-made forms for the AIAG and AS9102 core tools. Add one to your workspace in a click, then raise records against it - no spreadsheet required. Bring your own form on the Import Form screen.</p>
+            <nav class="forms-subnav no-print">
+                <a data-goto="form-library">Library</a>
+                <a data-goto="form-record">My forms</a>
+                <a data-goto="form-import">Import</a>
+                <a data-goto="forms">Builder</a>
+            </nav>
+            <h1 class="view-title">Forms &mdash; Library</h1>
+            <p class="view-sub">Ready-made forms for the AIAG and AS9102 core tools. Add one to your workspace in a click, then raise records against it &mdash; no spreadsheet required.</p>
         </div>
         <div id="form-library-body"></div>
     </section>
@@ -1548,8 +1554,14 @@
     <!-- ============ FORM BUILDER ============ -->
     <section class="view" id="view-forms" hidden>
         <div class="view-head">
-            <h1 class="view-title">Form Builder</h1>
-            <p class="view-sub">Every record type is a form held in the database. What is shown here is the schema the server validates against, not a picture of one.</p>
+            <nav class="forms-subnav no-print">
+                <a data-goto="form-library">Library</a>
+                <a data-goto="form-record">My forms</a>
+                <a data-goto="form-import">Import</a>
+                <a data-goto="forms">Builder</a>
+            </nav>
+            <h1 class="view-title">Forms &mdash; Builder</h1>
+            <p class="view-sub">The exact field schema behind every record type - what the server validates against. Edit fields here; fill records in "My forms".</p>
         </div>
 
         <div class="grid-2">
@@ -1592,8 +1604,14 @@
     <!-- ============ CUSTOM FORMS ============ -->
     <section class="view" id="view-form-record" hidden>
         <div class="view-head">
-            <h1 class="view-title">Custom Forms</h1>
-            <p class="view-sub">Record types you created in-app or imported. Pick one to see its entries, open a record to view or edit it. Edit the fields themselves in the Form Builder.</p>
+            <nav class="forms-subnav no-print">
+                <a data-goto="form-library">Library</a>
+                <a data-goto="form-record">My forms</a>
+                <a data-goto="form-import">Import</a>
+                <a data-goto="forms">Builder</a>
+            </nav>
+            <h1 class="view-title">Forms &mdash; My forms</h1>
+            <p class="view-sub">Pick a form to see its records; raise a new one in the app, from Excel, or by duplicating an existing record.</p>
         </div>
         <div class="panel">
             <div class="panel-head">
@@ -1626,8 +1644,14 @@
     <!-- ============ IMPORT FORM ============ -->
     <section class="view" id="view-form-import" hidden>
         <div class="view-head">
-            <h1 class="view-title">Import Form</h1>
-            <p class="view-sub">For a company's own custom form. Upload an Excel file and the server infers a schema you can correct. For the standard AIAG / AS9102 forms, use the <a href="#" data-goto="form-library">Form Library</a> - they're ready to add in one click.</p>
+            <nav class="forms-subnav no-print">
+                <a data-goto="form-library">Library</a>
+                <a data-goto="form-record">My forms</a>
+                <a data-goto="form-import">Import</a>
+                <a data-goto="forms">Builder</a>
+            </nav>
+            <h1 class="view-title">Forms &mdash; Import</h1>
+            <p class="view-sub">For a company's own custom form: upload an Excel file and the server infers a schema you can correct. The standard AIAG / AS9102 forms are in the <a data-goto="form-library">Library</a>, ready in one click.</p>
         </div>
         <div class="panel">
             <div class="panel-head"><h2 class="panel-title">Upload a spreadsheet</h2><span class="panel-note">.xlsx</span></div>

@@ -2522,6 +2522,25 @@ th.col-you { color: var(--brand); }
 }
 .toast-info  { background: var(--ink);  color: var(--ground); }
 
+/* ---------- forms sub-tab strip ---------- */
+
+.forms-subnav {
+    display: flex;
+    gap: var(--sp-1);
+    margin-bottom: var(--sp-2);
+    flex-wrap: wrap;
+}
+.forms-subnav a {
+    font-size: var(--fs-sm);
+    padding: 4px 12px;
+    border-radius: 999px;
+    color: var(--ink-2);
+    cursor: pointer;
+    text-decoration: none;
+}
+.forms-subnav a:hover { background: var(--surface-2); color: var(--ink); }
+.forms-subnav a[aria-current="true"] { background: var(--brand); color: #fff; }
+
 /* ---------- form library gallery ---------- */
 
 .lib-cat {
