@@ -63,19 +63,26 @@ export function recordId(number) {
 
 /* ---------- table rendering ---------- */
 
+/* A centred "nothing here" block for a table body or a panel. Pass a
+   string for just a line, or { title, hint } for a line plus a
+   quieter second line. */
+export function emptyState(message) {
+    const { title, hint } = typeof message === "string" ? { title: message } : (message || {});
+    return el("div", { class: "table-empty" }, [
+        el("div", { class: "empty-title", text: title || "Nothing to show" }),
+        hint ? el("div", { class: "empty-hint", text: hint }) : null
+    ]);
+}
+
 /* columns: [{ label, className, headerClass, render(row) }]
-   render may return a string, a node, or an array of nodes. */
+   render may return a string, a node, or an array of nodes.
+   emptyMessage may be a string or { title, hint }. */
 export function fillTable(tbody, rows, columns, emptyMessage = "Nothing to show") {
     if (!tbody) return;
 
     if (!rows || rows.length === 0) {
         tbody.replaceChildren(
-            el("tr", {}, el("td", {
-                colspan: columns.length,
-                class: "dim sm",
-                text: emptyMessage,
-                style: "text-align:center;padding:24px"
-            }))
+            el("tr", {}, el("td", { colspan: columns.length }, emptyState(emptyMessage)))
         );
         return;
     }
@@ -92,17 +99,21 @@ export function fillTable(tbody, rows, columns, emptyMessage = "Nothing to show"
     }));
 }
 
-export function loadingRow(tbody, columnCount) {
+/* Skeleton rows while a table loads - reads as "content is coming"
+   rather than a bare "Loading...". rowCount defaults to a short
+   placeholder block. */
+export function loadingRow(tbody, columnCount, rowCount = 5) {
     if (!tbody) return;
 
-    tbody.replaceChildren(
-        el("tr", {}, el("td", {
-            colspan: columnCount,
-            class: "dim sm",
-            text: "Loading...",
-            style: "text-align:center;padding:24px"
-        }))
-    );
+    tbody.replaceChildren(...Array.from({ length: rowCount }, (_, r) => {
+        const tr = el("tr", { class: "skeleton-row" });
+        for (let c = 0; c < columnCount; c++) {
+            tr.append(el("td", {}, el("span", {
+                class: "skeleton" + (c === 0 ? "" : " sk-narrow")
+            })));
+        }
+        return tr;
+    }));
 }
 
 export function errorRow(tbody, columnCount, error) {
