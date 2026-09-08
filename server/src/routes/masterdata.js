@@ -941,7 +941,13 @@ masterdata.get("/documents", async (request, response, next) => {
             select d.doc_number, d.title, d.current_revision, d.status, d.category,
                    u.full_name as owner,
                    (select count(*) from document_revisions dr
-                     where dr.document_id = d.id) as revision_count
+                     where dr.document_id = d.id) as revision_count,
+                   exists (
+                     select 1 from document_revisions dr
+                      where dr.document_id = d.id
+                        and dr.revision = d.current_revision
+                        and dr.storage_path is not null
+                   ) as current_has_file
               from documents d
          left join users u on u.id = d.owner_id
              where d.org_id = $1 ${recordFilter} ${categoryFilter}
