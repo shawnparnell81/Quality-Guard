@@ -145,6 +145,9 @@ test("importing and applying a template stamps a best-guess excel_map on v1", as
     assert.ok(mapResp.body.map.template_path.startsWith("excel-templates/"));
     assert.ok(Object.keys(mapResp.body.map.fields).length >= 3, "some header fields anchored");
     assert.ok(Object.keys(mapResp.body.map.tables).length >= 1, "the grid was anchored");
+    /* the review screen needs the sheet list and the schema */
+    assert.ok(Array.isArray(mapResp.body.map.sheets) && mapResp.body.map.sheets.includes("Layout Inspection"));
+    assert.ok(Array.isArray(mapResp.body.schema.fields) && mapResp.body.schema.fields.length > 0);
 });
 
 test("the blank template download is the raw customer file", async () => {

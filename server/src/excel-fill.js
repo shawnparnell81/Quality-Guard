@@ -253,7 +253,12 @@ export function buildDefaultMap(workbook, schema) {
         if (found) tablesMap[f.key] = found;
     }
 
-    return { primary_sheet: primary.ws.name, fields: fieldsMap, tables: tablesMap };
+    return {
+        primary_sheet: primary.ws.name,
+        sheets: workbook.worksheets.map((w) => w.name),
+        fields: fieldsMap,
+        tables: tablesMap
+    };
 }
 
 /* ---------- filling ---------- */

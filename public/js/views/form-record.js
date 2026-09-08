@@ -18,6 +18,7 @@ import { openRecordEditor, ensureDialog } from "../forms.js";
 import { buildFieldRow, readFieldRow } from "./formbuilder.js";
 import { buildUploader } from "../attach-upload.js";
 import { openFileWindow } from "../doc-windows.js";
+import { openExcelLayout } from "./excel-layout.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, statusKind, toast
 } from "../dom.js";
@@ -264,6 +265,14 @@ async function renderCustomDetail(typeKey, number) {
         href: api.recordExcelUrl(record.number) });
 
     const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, duplicate, pdf, excel]);
+
+    if (can("forms.manage")) {
+        const layout = el("button", { class: "btn no-print", type: "button", text: "Excel layout" });
+        const typeName = document.getElementById("form-record-type")
+            ?.selectedOptions[0]?.textContent || typeKey;
+        layout.addEventListener("click", () => openExcelLayout(typeKey, typeName));
+        row.append(layout);
+    }
 
     if (transitions) {
         for (const step of transitions) {
