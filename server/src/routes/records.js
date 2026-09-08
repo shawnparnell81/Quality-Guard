@@ -891,6 +891,40 @@ function drawSectionHeading(doc, title) {
     doc.moveDown(0.5);
 }
 
+/* A table field is an array of row objects keyed by the schema's
+   column keys. Column counts vary wildly across QMS forms (a 5-Why
+   is 3 columns, a PFMEA is 20+), so rather than squash a grid into
+   portrait width, each row prints as a small labelled block - only
+   its non-empty cells - which reads cleanly at any width. */
+function drawTableField(doc, field, rows, userNames) {
+    const columns = Array.isArray(field.columns) ? field.columns : [];
+    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
+        .text((field.label || humanizeKey(field.key)) + ":");
+    doc.moveDown(0.15);
+
+    rows.forEach((row, index) => {
+        if (!row || typeof row !== "object") return;
+
+        doc.fontSize(8.5).font("Helvetica-Bold").fillColor(INK).text("  " + (index + 1) + ".");
+
+        const cells = columns.length > 0
+            ? columns.map((col) => [col.label || humanizeKey(col.key), row[col.key], col])
+            : Object.entries(row).map(([key, value]) => [humanizeKey(key), value, { type: "text" }]);
+
+        for (const [label, value, col] of cells) {
+            if (value === null || value === undefined || value === "") continue;
+            const text = formatFieldValue(col, value, userNames);
+            doc.fontSize(8.5).font("Helvetica-Bold").fillColor(INK_2)
+                .text("     " + label + ":  ", { continued: true, width })
+                .font("Helvetica").fillColor(INK).text(text, { width });
+        }
+        doc.moveDown(0.25);
+    });
+    doc.moveDown(0.4);
+}
+
 /* A date field's value is the plain "YYYY-MM-DD" string forms.js
    stores it as - readable, but not what a person reads on a printed
    form. A "user" field's value is initials, the same short code the
@@ -942,6 +976,8 @@ function drawFormFields(doc, data, schema, userNames) {
     for (const field of fields) {
         const value = values[field.key];
         if (value === null || value === undefined || value === "") continue;
+        /* an empty table array is nothing to print */
+        if (field.type === "table" && (!Array.isArray(value) || value.length === 0)) continue;
 
         shown.add(field.key);
 
@@ -953,6 +989,12 @@ function drawFormFields(doc, data, schema, userNames) {
         }
 
         const label = field.label || humanizeKey(field.key);
+
+        if (field.type === "table") {
+            drawTableField(doc, field, value, userNames);
+            continue;
+        }
+
         const text = formatFieldValue(field, value, userNames);
 
         if (field.type === "memo") {
@@ -970,14 +1012,20 @@ function drawFormFields(doc, data, schema, userNames) {
 
     const leftovers = Object.entries(values).filter(
         ([key, value]) => !shown.has(key) && value !== null && value !== undefined && value !== ""
+            && !(Array.isArray(value) && value.length === 0)
     );
 
     if (leftovers.length > 0) {
         drawSectionHeading(doc, "Additional details");
         for (const [key, value] of leftovers) {
+            if (Array.isArray(value)) {
+                drawTableField(doc, { key, label: humanizeKey(key), columns: [] }, value, userNames);
+                continue;
+            }
+            const text = value && typeof value === "object" ? JSON.stringify(value) : String(value);
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
                 .text(humanizeKey(key) + ":  ", { continued: true })
-                .font("Helvetica").fillColor(INK).text(String(value));
+                .font("Helvetica").fillColor(INK).text(text);
         }
     }
 
