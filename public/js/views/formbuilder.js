@@ -27,6 +27,7 @@ const TYPE_LABEL = {
     number:    ["NUM", "Number"],
     date:      ["DAT", "Date"],
     select:    ["SEL", "Pick list"],
+    boolean:   ["Y/N", "Yes / No"],
     link:      ["LNK", "Record link"],
     file:      ["FIL", "Attachment"],
     signature: ["SIG", "E-signature"],
@@ -36,8 +37,9 @@ const TYPE_LABEL = {
 
 /* A table column can only be one of these scalar types - matches the
    server's TABLE_COLUMN_TYPES in masterdata.js. "computed" is a
-   read-only cell derived from other number columns in the same row. */
-const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "computed"];
+   read-only cell derived from other number columns in the same row;
+   "boolean" is a checkbox cell. */
+const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "boolean", "computed"];
 
 /* Where a "link" field's options come from. The server enforces this
    list for real (LINK_SOURCES in masterdata.js); this copy only has
@@ -324,9 +326,19 @@ export function buildFieldRow(field) {
             srcCols.forEach((c) => cols.append(columnRow(c)));
             const addCol = el("button", { type: "button", class: "btn", text: "+ Add column" });
             addCol.addEventListener("click", () => cols.append(columnRow()));
+
+            /* Lets each row of the grid carry its own files (a photo per
+               FAIR characteristic, a cert per 8D containment action).
+               The paperclip shows on a saved record's rows only. */
+            const rowAttach = el("input", {
+                type: "checkbox", class: "field-row-attach",
+                checked: field.rowAttachments ? "checked" : undefined
+            });
+
             extra.append(el("div", { class: "table-col-editor" }, [
                 el("span", { class: "field-hint", text: "Columns of the repeating grid:" }),
-                cols, addCol
+                cols, addCol,
+                el("label", { class: "field-row-required" }, [rowAttach, " Allow a file on each row"])
             ]));
         }
     }
@@ -378,6 +390,7 @@ export function readFieldRow(row, takenKeys) {
         const raw = row.querySelector(".field-min")?.value;
         if (raw !== "" && raw !== undefined) field.min = Number(raw);
     } else if (type === "table") {
+        if (row.querySelector(".field-row-attach")?.checked) field.rowAttachments = true;
         const colKeys = new Set();
         const cells = [...row.querySelectorAll(".table-col-row")]
             .map((cr) => ({

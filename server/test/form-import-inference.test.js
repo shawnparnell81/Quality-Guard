@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 
-import { readGrid, inferSchema, chooseSheet } from "../src/routes/form-import.js";
+import { readGrid, inferSchema, chooseSheet, inferWorkbook } from "../src/routes/form-import.js";
 
 /* exceljs in this version does not accept getCell(row, col) - go
    through the row. */
@@ -191,6 +191,71 @@ test("a wide table drops memo columns down to text (no room for a textarea)", ()
     const t = table(schema);
     assert.equal(t.columns.length, 7);
     assert.equal(t.columns.every((c) => c.type !== "memo"), true);
+});
+
+/* ---------- deeper column typing ---------- */
+
+test("a TRUE/FALSE column beneath a header types as boolean", () => {
+    const schema = infer((s) => {
+        put(s, 1, 1, "Item");
+        headerRow(s, 3, ["Characteristic", "Special", "Note", "Owner"]);
+        ["TRUE", "FALSE", "TRUE", "FALSE"].forEach((v, k) => put(s, 4 + k, 2, v));
+        for (let k = 0; k < 4; k++) put(s, 4 + k, 1, "C" + k);
+    });
+    const t = table(schema);
+    assert.equal(t.columns.find((c) => c.label === "Special").type, "boolean");
+});
+
+test("a small repeating set of words in the body becomes a select", () => {
+    const schema = infer((s) => {
+        put(s, 1, 1, "Item");
+        headerRow(s, 3, ["Step", "Status", "Detail"]);
+        ["Open", "Done", "Open", "Done", "Open"].forEach((v, k) => {
+            put(s, 4 + k, 1, "S" + k);
+            put(s, 4 + k, 2, v);
+        });
+    });
+    const status = table(schema).columns.find((c) => c.label === "Status");
+    assert.equal(status.type, "select");
+    assert.deepEqual(status.options.sort(), ["Done", "Open"]);
+});
+
+test("a column whose cells are =A*B*C becomes a computed column", () => {
+    const schema = infer((s) => {
+        put(s, 1, 1, "Item");
+        headerRow(s, 3, ["Failure Mode", "Severity", "Occurrence", "Detection", "RPN"]);
+        for (let k = 0; k < 3; k++) {
+            put(s, 4 + k, 1, "F" + k);
+            put(s, 4 + k, 2, 5);
+            put(s, 4 + k, 3, 4);
+            put(s, 4 + k, 4, 3);
+            s.getRow(4 + k).getCell(5).value = { formula: "B" + (4 + k) + "*C" + (4 + k) + "*D" + (4 + k) };
+        }
+    });
+    const rpn = table(schema).columns.find((c) => c.label === "RPN");
+    assert.equal(rpn.type, "computed");
+    assert.equal(rpn.compute, "product");
+    assert.equal(rpn.inputs.length, 3);
+});
+
+/* ---------- a whole workbook, sheet by sheet ---------- */
+
+test("inferWorkbook folds every real sheet in, each as its own section", () => {
+    const wb = new ExcelJS.Workbook();
+    const a = wb.addWorksheet("PFMEA");
+    put(a, 1, 1, "Customer:");
+    put(a, 3, 1, "Part Number:");
+    const b = wb.addWorksheet("Control Plan");
+    put(b, 1, 1, "Plant:");
+    put(b, 3, 1, "Line:");
+    wb.addWorksheet("Instructions");   // ignored
+
+    const schema = inferWorkbook(wb, "APQP pack");
+    assert.deepEqual(schema.sheets, ["PFMEA", "Control Plan"]);
+    assert.equal(field(schema, "Customer").section, "PFMEA");
+    assert.equal(field(schema, "Plant").section, "Control Plan");
+    assert.equal(new Set(schema.fields.map((f) => f.key)).size, schema.fields.length,
+        "keys stay unique across sheets");
 });
 
 /* ---------- chooseSheet ---------- */

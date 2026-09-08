@@ -231,6 +231,9 @@ function rpnCell(rpn) {
 /* A detail-view <dd>. A value that is just another record's number
    ("Work order", "Source", a receipt's NCR) becomes a link to it. */
 function fieldValueDd(field, value) {
+    if (field && field.type === "boolean") {
+        return el("dd", { text: (value === true || value === "true") ? "Yes" : "No" });
+    }
     const text = String(value).trim();
     if (looksLikeRecordNumber(text)) {
         return el("dd", {}, recordLink(text, { chip: false }));
@@ -1134,7 +1137,10 @@ export async function renderRecordDetail(type, number) {
                         el("tbody", {}, value.map((row) => el("tr", {},
                             columns.map((c) => {
                                 const raw = row[c.key];
-                                const td = el("td", { class: "sm", text: raw != null ? String(raw) : "-" });
+                                const shown = c.type === "boolean"
+                                    ? (raw === true || raw === "true" ? "Yes" : "No")
+                                    : (raw != null ? String(raw) : "-");
+                                const td = el("td", { class: "sm", text: shown });
                                 if (c.type === "computed" && c.thresholds && raw != null) {
                                     const n = Number(raw);
                                     if (c.thresholds.crit != null && n >= c.thresholds.crit) td.classList.add("rpn-crit");
@@ -1252,6 +1258,13 @@ export async function renderRecordDetail(type, number) {
         children.push(el("div", { class: "section-label", text: "Attachments" }));
 
         if (attachments.length > 0) {
+            /* A file tagged to one table row (row_ref = "<fieldKey>:<id>")
+               carries that field's name so it does not look loose. */
+            const rowTag = (a) => {
+                if (!a.row_ref) return "";
+                const key = String(a.row_ref).split(":")[0];
+                return "[" + humanize(key) + "]  ";
+            };
             children.push(el("div", { class: "chip-list" },
                 attachments.map((a) => {
                     const meta = "  " + formatDate(a.uploaded_at)
@@ -1262,11 +1275,11 @@ export async function renderRecordDetail(type, number) {
                             title: "Open " + a.filename,
                             onClick: () => openFileWindow(
                                 api.attachmentFileUrl(record.number, a.id), a.filename, a.mime_type)
-                        }, a.filename + meta);
+                        }, rowTag(a) + a.filename + meta);
                     }
                     return el("span", {
                         class: "chip", title: a.storage_key || "",
-                        text: a.filename + meta + "  (link)"
+                        text: rowTag(a) + a.filename + meta + "  (link)"
                     });
                 })
             ));

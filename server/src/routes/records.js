@@ -7,6 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
@@ -116,6 +117,52 @@ function applyComputedColumns(schema, data) {
         });
     }
     return out;
+}
+
+/* Every row of a table field carries a stable "_id" so a per-row
+   attachment (attachments.row_ref = "<fieldKey>:<_id>") stays pinned
+   to its row across edits, inserts and reorders. Assigned here, on
+   the server, and only where missing - a row that already has one
+   keeps it. A no-op unless the schema declares a table field and the
+   data actually carries rows. */
+function ensureRowIds(schema, data) {
+    const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
+    if (!data || typeof data !== "object" || fields.length === 0) return data;
+
+    let out = data;
+    for (const field of fields) {
+        if (field.type !== "table") continue;
+        const rows = Array.isArray(out[field.key]) ? out[field.key] : null;
+        if (!rows) continue;
+
+        let touched = false;
+        const next = rows.map((row) => {
+            if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+            if (typeof row._id === "string" && row._id) return row;
+            touched = true;
+            return { ...row, _id: randomUUID() };
+        });
+        if (touched) {
+            if (out === data) out = { ...data };
+            out[field.key] = next;
+        }
+    }
+    return out;
+}
+
+/* The mirror of ensureRowIds: drop every table row's "_id" so a
+   clone starts clean and never shares a row_ref with its source.
+   Mutates the object it is given (a fresh seed copy in every caller). */
+function stripRowIds(schema, data) {
+    const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
+    for (const field of fields) {
+        if (field.type !== "table" || !Array.isArray(data[field.key])) continue;
+        data[field.key] = data[field.key].map((row) => {
+            if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+            const { _id, ...rest } = row;
+            return rest;
+        });
+    }
 }
 
 /* First Article Inspection: a measured characteristic conforms when
@@ -426,7 +473,12 @@ records.get("/export", async (request, response, next) => {
    POST /api/records/import?type=ncr[&dry_run=true]  (multipart, file)
    GET  /api/records/import-template?type=ncr        (the blank sheet) */
 
-const FLAT_FIELD_TYPES = new Set(["text", "memo", "number", "date", "select", "link", "user"]);
+const FLAT_FIELD_TYPES = new Set(["text", "memo", "number", "date", "select", "link", "user", "boolean"]);
+
+/* Spreadsheet spellings of a ticked / unticked box. Everything else
+   in a boolean cell is an error the importer surfaces for review. */
+const BOOL_TRUE = new Set(["true", "yes", "y", "1", "x", "✓", "checked", "on"]);
+const BOOL_FALSE = new Set(["false", "no", "n", "0", "-", "unchecked", "off"]);
 
 async function loadPublishedForm(recordTypeId) {
     const row = await query(`
@@ -448,6 +500,13 @@ function coerceCell(field, raw) {
         else if (raw.text !== undefined) raw = raw.text;              // hyperlink / rich text
         else if (raw.result !== undefined) raw = raw.result;          // formula
         else raw = String(raw);
+    }
+    if (field.type === "boolean") {
+        if (typeof raw === "boolean") return raw;
+        const t = String(raw).trim().toLowerCase();
+        if (BOOL_TRUE.has(t)) return true;
+        if (BOOL_FALSE.has(t)) return false;
+        return { __error: "not yes/no" };
     }
     if (field.type === "number") {
         const n = Number(raw);
@@ -703,6 +762,13 @@ function buildFormWorkbook(schema, values) {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "QMS Guardian";
 
+    /* A boolean writes as "Yes" / "No" (readFormWorkbook reads those
+       back); an object dumps to JSON; everything else prints as-is. */
+    const cellOut = (v) => v == null ? ""
+        : typeof v === "boolean" ? (v ? "Yes" : "No")
+        : typeof v === "object" ? JSON.stringify(v)
+        : v;
+
     const form = workbook.addWorksheet(FORM_SHEET, { views: [{ state: "frozen", ySplit: 2 }] });
     form.columns = [
         { key: "k", width: 2 },
@@ -726,10 +792,7 @@ function buildFormWorkbook(schema, values) {
             }
         }
         let cell = "";
-        if (values) {
-            const v = data[f.key];
-            cell = v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v);
-        }
+        if (values) cell = cellOut(data[f.key]);
         form.addRow({ k: f.key, field: f.label || humanizeKey(f.key), value: cell });
     }
 
@@ -750,10 +813,7 @@ function buildFormWorkbook(schema, values) {
             for (const row of data[f.key]) {
                 if (!row || typeof row !== "object") continue;
                 const line = {};
-                for (const c of f.columns) {
-                    const v = row[c.key];
-                    line[c.key] = v == null ? "" : (typeof v === "object" ? JSON.stringify(v) : v);
-                }
+                for (const c of f.columns) line[c.key] = cellOut(row[c.key]);
                 sheet.addRow(line);
             }
         }
@@ -1188,7 +1248,9 @@ function drawTableField(doc, field, rows, userNames) {
 
         const cells = columns.length > 0
             ? columns.map((col) => [col.label || humanizeKey(col.key), row[col.key], col])
-            : Object.entries(row).map(([key, value]) => [humanizeKey(key), value, { type: "text" }]);
+            : Object.entries(row)
+                .filter(([key]) => !key.startsWith("_"))   // _id and friends are plumbing, not data
+                .map(([key, value]) => [humanizeKey(key), value, { type: "text" }]);
 
         for (const [label, value, col] of cells) {
             if (value === null || value === undefined || value === "") continue;
@@ -1209,6 +1271,9 @@ function drawTableField(doc, field, rows, userNames) {
    that back into a name when one is known, without pretending an
    initials code no longer resolves when it does not. */
 function formatFieldValue(field, value, userNames) {
+    if (field.type === "boolean") {
+        return (value === true || value === "true" || value === 1) ? "Yes" : "No";
+    }
     if (field.type === "date") {
         const parsed = new Date(value);
         return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString();
@@ -1533,6 +1598,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             formVersion = formRow.rows[0].version;
             data = applyComputedColumns(formRow.rows[0].schema, data);
             data = applyFairResults(type, data);
+            data = ensureRowIds(formRow.rows[0].schema, data);
             const missing = (formRow.rows[0].schema.fields || [])
                 .filter((field) => {
                     if (!field.required) return false;
@@ -1637,6 +1703,7 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             );
             merged = applyComputedColumns(schemaRow.rows[0]?.schema || null, merged);
             merged = applyFairResults(record.type, merged);
+            merged = ensureRowIds(schemaRow.rows[0]?.schema || null, merged);
 
             if (record.type === "audit"
                 && await auditorConflict((text, params) => client.query(text, params), request.user.org_id, merged)) {
@@ -1883,7 +1950,7 @@ records.get("/:number/attachments", async (request, response, next) => {
 
         const result = await query(`
             select a.id, a.filename, a.mime_type, a.size_bytes, a.storage_key,
-                   (a.storage_path is not null) as has_file,
+                   (a.storage_path is not null) as has_file, a.row_ref,
                    a.uploaded_at, u.full_name as uploaded_by
               from attachments a
          left join users u on u.id = a.uploaded_by
@@ -1902,11 +1969,26 @@ records.post("/:number/attachments", upload.single("file"), async (request, resp
         if (!request.user) return response.status(401).json({ error: "Not signed in" });
 
         const record = await query(
-            "select id from records where org_id = $1 and number = $2",
+            "select id, data from records where org_id = $1 and number = $2",
             [request.user.org_id, request.params.number]
         );
         if (record.rowCount === 0) {
             return response.status(404).json({ error: "Record not found" });
+        }
+
+        /* An optional row_ref = "<tableFieldKey>:<rowId>" pins this file
+           to one row of a table field. Validated against the record's
+           own data - the row must actually exist - so a stale or forged
+           ref cannot leave an orphan attachment behind. */
+        const rowRef = String((request.body && request.body.row_ref) || "").trim() || null;
+        if (rowRef) {
+            const m = /^([A-Za-z0-9_]+):(.+)$/.exec(rowRef);
+            const rows = m && Array.isArray(record.rows[0].data?.[m[1]])
+                ? record.rows[0].data[m[1]] : null;
+            const hit = rows && rows.some((r) => r && typeof r === "object" && r._id === m[2]);
+            if (!hit) {
+                return response.status(400).json({ error: "row_ref does not match any row on this record" });
+            }
         }
 
         let filename;
@@ -1937,12 +2019,12 @@ records.post("/:number/attachments", upload.single("file"), async (request, resp
 
         const inserted = await query(`
             insert into attachments
-                (record_id, filename, mime_type, size_bytes, storage_key, storage_path, uploaded_by)
-            values ($1, $2, $3, $4, $5, $6, $7)
+                (record_id, filename, mime_type, size_bytes, storage_key, storage_path, uploaded_by, row_ref)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
             returning id, filename, mime_type, size_bytes, storage_key,
-                      (storage_path is not null) as has_file, uploaded_at
+                      (storage_path is not null) as has_file, row_ref, uploaded_at
         `, [record.rows[0].id, filename, mimeType, sizeBytes,
-            storageKey, storagePath, request.user.id]);
+            storageKey, storagePath, request.user.id, rowRef]);
 
         await query(`
             insert into audit_log
@@ -2016,8 +2098,12 @@ records.post("/:number/clone", requirePermission(createPermissionFor), async (re
 
         const seed = { ...(source.data || {}) };
         delete seed.triggered_by;
+        /* Fresh row ids below - a clone must never share a row_ref (and
+           so an attachment) with the record it was copied from. */
+        stripRowIds(schema, seed);
         let data = applyComputedColumns(schema, withComputedRpn(source.type, seed));
         data = applyFairResults(source.type, data);
+        data = ensureRowIds(schema, data);
 
         const title = String(request.body?.title || "").trim()
             || ("Copy of " + (source.title || source.number));

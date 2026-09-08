@@ -16,9 +16,18 @@ import { api } from "../api.js";
 import { can } from "../session.js";
 import { openRecordEditor, ensureDialog } from "../forms.js";
 import { buildFieldRow, readFieldRow } from "./formbuilder.js";
+import { buildUploader } from "../attach-upload.js";
+import { openFileWindow } from "../doc-windows.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, statusKind, toast
 } from "../dom.js";
+
+/* One table cell for the read-only detail grid: a checkbox reads as
+   Yes / No, an empty cell as a dash, everything else as itself. */
+function cellText(column, raw) {
+    if (column.type === "boolean") return (raw === true || raw === "true") ? "Yes" : "No";
+    return raw != null && raw !== "" ? String(raw) : "-";
+}
 
 const BUILT_IN = new Set([
     "ncr", "capa", "eightd", "complaint", "scar", "audit", "ecn", "risk", "apqp", "di"
@@ -164,19 +173,62 @@ async function renderCustomDetail(typeKey, number) {
             children.push(el("div", { class: "table-wrap" }, el("table", { class: "sm" }, [
                 el("thead", {}, el("tr", {}, columns.map((c) => el("th", { text: c.label })))),
                 el("tbody", {}, value.map((r) => el("tr", {},
-                    columns.map((c) => el("td", { class: "sm", text: r[c.key] != null ? String(r[c.key]) : "-" })))))
+                    columns.map((c) => el("td", { class: "sm", text: cellText(c, r[c.key]) })))))
             ])));
         } else {
             if (!kv) kv = el("dl", { class: "kv" });
             kv.append(
                 el("dt", { text: field.label }),
-                el("dd", { text: field.type === "date" ? formatDate(value) : String(value) })
+                el("dd", { text: field.type === "boolean"
+                    ? (value === true || value === "true" ? "Yes" : "No")
+                    : field.type === "date" ? formatDate(value) : String(value) })
             );
         }
     }
     flushKv();
 
     if (!anyValue) children.push(el("p", { class: "sm dim", text: "No fields filled in yet." }));
+
+    /* ---------- attachments (record-level, plus any pinned to a row) ---------- */
+
+    children.push(el("div", { class: "section-label", text: "Attachments" }));
+
+    /* row_ref = "<fieldKey>:<rowId>" -> "Field label · row 3" */
+    const rowRefLabel = (rowRef) => {
+        const [key, rowId] = String(rowRef).split(":");
+        const field = fields.find((f) => f.key === key);
+        const rows = record.data && Array.isArray(record.data[key]) ? record.data[key] : [];
+        const idx = rows.findIndex((r) => r && r._id === rowId);
+        const name = field ? field.label : humanize(key || "row");
+        return idx >= 0 ? name + " · row " + (idx + 1) : name;
+    };
+
+    let attachments = [];
+    try {
+        attachments = (await api.attachments(number)).attachments || [];
+    } catch { /* a fresh record with none, or a transient error - show the uploader anyway */ }
+
+    if (attachments.length) {
+        children.push(el("div", { class: "chip-list" }, attachments.map((a) => {
+            const tag = a.row_ref ? "[" + rowRefLabel(a.row_ref) + "]  " : "";
+            const meta = "  " + formatDate(a.uploaded_at) + (a.uploaded_by ? "  " + a.uploaded_by : "");
+            if (a.has_file) {
+                return el("button", {
+                    class: "chip chip-link no-print", type: "button", title: "Open " + a.filename,
+                    onClick: () => openFileWindow(
+                        api.attachmentFileUrl(number, a.id), a.filename, a.mime_type)
+                }, tag + a.filename + meta);
+            }
+            return el("span", { class: "chip", title: a.storage_key || "", text: tag + a.filename + meta + "  (link)" });
+        })));
+    } else {
+        children.push(el("p", { class: "sm dim", text: "No attachments yet." }));
+    }
+
+    children.push(buildUploader({
+        url: api.recordAttachmentsUrl(number),
+        onComplete: () => renderCustomDetail(typeKey, number)
+    }));
 
     const edit = el("button", { class: "btn no-print", type: "button", text: "Edit" });
     edit.addEventListener("click", () => {

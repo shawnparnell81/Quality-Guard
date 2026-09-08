@@ -243,6 +243,8 @@ export const api = {
                 + "/links/" + encodeURIComponent(target)),
 
     attachments:      (number)  => get("/records/" + encodeURIComponent(number) + "/attachments"),
+    /* BASE-relative on purpose: buildUploader / xhrUpload prepend BASE. */
+    recordAttachmentsUrl: (number) => "/records/" + encodeURIComponent(number) + "/attachments",
     addAttachment: (number, payload) =>
         request("POST", "/records/" + encodeURIComponent(number) + "/attachments", payload),
     uploadAttachment: (number, formData) =>

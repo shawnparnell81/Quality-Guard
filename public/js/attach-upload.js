@@ -4,12 +4,13 @@
    section; written as a standalone widget so document control and
    anything else with an upload endpoint can reuse it.
 
-   buildUploader({ url, onComplete, accept }) -> HTMLElement
+   buildUploader({ url, onComplete, accept, fields }) -> HTMLElement
 
    `url` is the multipart POST endpoint (one file per request, field
    name "file"). `onComplete` fires once, after the last file in a
    batch settles, if at least one succeeded. `accept` is an optional
-   input accept string.
+   input accept string. `fields` is an optional plain object of extra
+   form fields sent alongside every file (e.g. { row_ref: "..." }).
    ============================================================ */
 
 import { el } from "./dom.js";
@@ -22,7 +23,7 @@ const prettySize = (bytes) => {
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 };
 
-export function buildUploader({ url, onComplete, accept }) {
+export function buildUploader({ url, onComplete, accept, fields }) {
     const input = el("input", {
         type: "file", multiple: true, class: "uploader-input",
         ...(accept ? { accept } : {})
@@ -52,6 +53,9 @@ export function buildUploader({ url, onComplete, accept }) {
 
         const form = new FormData();
         form.append("file", file);
+        for (const [key, value] of Object.entries(fields || {})) {
+            if (value !== undefined && value !== null) form.append(key, value);
+        }
 
         try {
             status.textContent = "uploading";
