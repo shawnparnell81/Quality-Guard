@@ -178,10 +178,10 @@ test("an internal formula in a mapped cell is never overwritten", async () => {
     assert.ok(rpnCell.formula, "the RPN cell is still a formula, not the literal 999");
 });
 
-test("a grid with merges under its header spills the overflow onto an extra sheet", async () => {
-    /* Process Flow Diagram: the "Description" column header sits over a
-       range that is merged F:G on every body row, so a table that maps
-       a column there cannot simply grow - it caps and spills. */
+test("a grid with a regular per-row merge grows in place, replicating the merge", async () => {
+    /* Process Flow Diagram: the "Description" column is merged F:G on
+       every body row - a regular pattern, so the grid grows past the
+       template's rows and the F:G merge is re-applied on each new one. */
     const schema = {
         fields: [{
             key: "steps", label: "Process Flow rows", type: "table",
@@ -195,13 +195,56 @@ test("a grid with merges under its header spills the overflow onto an extra shee
     const map = buildDefaultMap(await open("Process Flow Diagram.xlsx"), schema);
     const t = map.tables.steps;
     assert.ok(t);
+    const descCol = t.columns.description;                 // "F"
 
-    const many = Array.from({ length: t.capacity + 5 }, (_, i) => ({ op: "OP" + i, no: i, description: "Step " + i }));
+    const many = Array.from({ length: t.capacity + 8 }, (_, i) => ({ op: "OP" + i, no: i, description: "Step " + i }));
     const { buffer } = await fillTemplate(load("Process Flow Diagram.xlsx"), map, schema, { data: { steps: many } });
 
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer);
+    assert.equal(wb.worksheets.length, 1, "no spill sheet - the grid grew");
+
+    const ws = wb.getWorksheet("Process Flow Diagram");
+    const lastRow = t.first_data_row + many.length - 1;
+    assert.equal(String(ws.getCell(descCol + lastRow).value), "Step " + (many.length - 1), "last row written in place");
+    const gWasMerged = (wb2) => wb2.getWorksheet("Process Flow Diagram").model.merges
+        .some((r) => r === descCol + lastRow + ":G" + lastRow);
+    assert.ok(gWasMerged(wb), "the F:G merge was replicated on the grown row: "
+        + JSON.stringify(ws.model.merges.slice(-4)));
+});
+
+test("an irregular merge pattern still caps and spills", async () => {
+    /* multi-row merges in the grid -> the fill will not risk mangling
+       the layout, it caps at capacity and puts the rest on a sheet. */
+    const wb0 = new ExcelJS.Workbook();
+    const s = wb0.addWorksheet("Sheet1");
+    s.getCell("A1").value = "Item"; s.getCell("B1").value = "Detail"; s.getCell("C1").value = "Note";
+    for (let r = 2; r <= 6; r++) { s.getCell("A" + r).value = r - 1; }
+    s.mergeCells("B2:C4");                 // a multi-row merge inside the grid
+    s.mergeCells("B5:C6");
+    const buf0 = Buffer.from(await wb0.xlsx.writeBuffer());
+
+    const schema = {
+        fields: [{
+            key: "rows", label: "Rows", type: "table",
+            columns: [
+                { key: "item", label: "Item", type: "number" },
+                { key: "detail", label: "Detail", type: "text" },
+                { key: "note", label: "Note", type: "text" }
+            ]
+        }]
+    };
+    const map = {
+        template_path: "x", primary_sheet: "Sheet1", fields: {},
+        tables: { rows: { sheet: "Sheet1", first_data_row: 2, capacity: 4, row_number_col: "A",
+            columns: { item: "A", detail: "B", note: "C" } } }
+    };
+    const many = Array.from({ length: 10 }, (_, i) => ({ item: i, detail: "d" + i, note: "n" + i }));
+    const { buffer } = await fillTemplate(buf0, map, schema, { data: { rows: many } });
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
     const extra = wb.worksheets.find((w) => /\+extra/i.test(w.name));
-    assert.ok(extra, "the rows past capacity went to a spill sheet");
-    assert.equal(extra.rowCount, 6, "header + 5 overflow rows");
+    assert.ok(extra, "rows past capacity spilled");
+    assert.equal(extra.rowCount, 7, "header + 6 overflow rows");
 });
