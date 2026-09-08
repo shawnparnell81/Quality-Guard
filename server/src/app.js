@@ -8,8 +8,11 @@
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 
 import { pool } from "./db.js";
+import { log } from "./logger.js";
 import { identify, requireAuth, requirePasswordCurrent } from "./auth.js";
 import { auth } from "./routes/auth.js";
 import { records } from "./routes/records.js";
@@ -39,6 +42,24 @@ const PORT = Number(process.env.PORT || 3001);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(here, "..", "..", "public");
+const startedAt = Date.now();
+
+const VERSION = (() => {
+    try {
+        return JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")).version;
+    } catch { return "unknown"; }
+})();
+
+/* Can we actually talk to Postgres right now? Shared by /api/health
+   and /api/ready. */
+async function checkDatabase() {
+    try {
+        const result = await pool.query("select version() as version");
+        return { ok: true, postgres: result.rows[0].version.split(",")[0] };
+    } catch (error) {
+        return { ok: false, detail: error.message };
+    }
+}
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -71,37 +92,68 @@ app.get("/app", (request, response) => {
    own URL during development. */
 app.use(express.static(publicDir, { index: false }));
 
-/* One line per request. Enough to see what the front end is asking
-   for without pulling in a logging library. */
+/* Every request gets an id (an inbound X-Request-Id is honoured so a
+   proxy's trace carries through), echoed back on the response and
+   attached to its log line and any error it raises. One structured
+   line per request on finish - info, or warn/error for 4xx/5xx. */
 app.use((request, response, next) => {
     const started = Date.now();
+    const id = request.headers["x-request-id"] || randomUUID();
+    request.id = id;
+    response.setHeader("X-Request-Id", id);
+
     response.on("finish", () => {
-        console.log(
-            request.method + " " + request.originalUrl
-            + " " + response.statusCode
-            + " " + (Date.now() - started) + "ms"
-        );
+        const status = response.statusCode;
+        const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
+        log[level]("request", {
+            request_id: id,
+            method: request.method,
+            path: request.originalUrl,
+            status,
+            ms: Date.now() - started,
+            user_id: request.user?.id,
+            org_id: request.user?.org_id
+        });
     });
     next();
 });
 
+/* Health: process up, and a quick database ping. 200 when both are
+   fine, 503 when the database is unreachable. This is the endpoint a
+   person or a simple monitor hits to ask "is it okay?". */
 app.get("/api/health", async (request, response) => {
-    try {
-        const result = await pool.query("select now() as time, version() as version");
-        response.json({
-            status: "ok",
-            database: "connected",
-            time: result.rows[0].time,
-            postgres: result.rows[0].version.split(",")[0]
-        });
-    } catch (error) {
-        response.status(503).json({
-            status: "degraded",
-            database: "unreachable",
-            detail: error.message
-        });
-    }
+    const db = await checkDatabase();
+    response.status(db.ok ? 200 : 503).json({
+        status: db.ok ? "ok" : "degraded",
+        version: VERSION,
+        uptime_s: Math.round((Date.now() - startedAt) / 1000),
+        node: process.version,
+        database: db.ok ? "connected" : "unreachable",
+        postgres: db.postgres,
+        detail: db.ok ? undefined : db.detail
+    });
 });
+
+/* Readiness: the k8s-style probe. Same database check, minimal body,
+   200 ready / 503 not - so an orchestrator holds traffic off a node
+   until it can actually answer. */
+app.get("/api/ready", async (request, response) => {
+    const db = await checkDatabase();
+    response.status(db.ok ? 200 : 503).json({
+        ready: db.ok,
+        database: db.ok ? "connected" : "unreachable",
+        detail: db.ok ? undefined : db.detail
+    });
+});
+
+/* Non-production only: raise a known error so the single error
+   handler below can be exercised end to end. Unauthenticated on
+   purpose - it only exists to prove the error envelope. */
+if (process.env.NODE_ENV !== "production") {
+    app.get("/api/_diag/boom", () => {
+        throw Object.assign(new Error("intentional test error"), { status: 418 });
+    });
+}
 
 /* Identity is resolved for every API request before any route runs,
    so request.user and request.can() are always available. */
@@ -148,19 +200,41 @@ app.use("/api", notifications);
 app.use("/api", masterdata);
 
 app.use((request, response) => {
-    response.status(404).json({ error: "No route for " + request.method + " " + request.path });
+    response.status(404).json({
+        error: "No route for " + request.method + " " + request.path,
+        request_id: request.id
+    });
 });
 
-/* Errors return a useful message in development and a generic one in
-   production, because a database error string can leak schema detail. */
+/* One error handler for the whole app. The status comes from the
+   error (routes set 4xx deliberately - a bad file type, a missing
+   field); anything without one is a real 500. The stack is always
+   logged with the request id; the client sees the error's own
+   message for a 4xx, and a generic line for a 5xx unless this is a
+   development server (a database error string can leak schema
+   detail). */
 app.use((error, request, response, next) => {
-    console.error(error);
+    if (response.headersSent) return next(error);
+
+    const status = Number(error.status || error.statusCode) || 500;
+    const level = status >= 500 ? "error" : "warn";
+    log[level]("request_error", {
+        request_id: request.id,
+        method: request.method,
+        path: request.originalUrl,
+        status,
+        err: error
+    });
 
     const inDevelopment = process.env.NODE_ENV !== "production";
+    const clientMessage = status < 500
+        ? error.message
+        : (inDevelopment ? error.message : "Internal server error");
 
-    response.status(500).json({
-        error: "Internal server error",
-        detail: inDevelopment ? error.message : undefined
+    response.status(status).json({
+        error: clientMessage,
+        request_id: request.id,
+        ...(status >= 500 && inDevelopment ? { detail: error.message } : {})
     });
 });
 
@@ -169,6 +243,8 @@ const server = app.listen(PORT, () => {
     console.log("  Landing: http://localhost:" + PORT + "/");
     console.log("  App:     http://localhost:" + PORT + "/app");
     console.log("  Health:  http://localhost:" + PORT + "/api/health");
+    console.log("  Ready:   http://localhost:" + PORT + "/api/ready");
+    log.info("server_started", { port: PORT, version: VERSION, node: process.version });
     startDigestSchedule();
 });
 
