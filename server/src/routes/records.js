@@ -16,6 +16,7 @@ import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { ppapMissing } from "./ppap.js";
 import { publish } from "../stream.js";
+import { heartbeat, leaveEditing } from "../presence.js";
 
 export const records = Router();
 
@@ -1418,6 +1419,35 @@ async function findRecordInOrg(orgId, number) {
     );
     return found.rowCount > 0 ? found.rows[0] : null;
 }
+
+/* ---------- concurrent-edit presence (P3.3) ----------
+   PUT    /api/records/NCR-2026-0142/editing   heartbeat while the
+                                               editor is open
+   DELETE /api/records/NCR-2026-0142/editing   editor closed
+
+   The PUT answers with who else has it open right now, so the opener
+   sees a warning immediately without waiting for the next SSE frame. */
+records.put("/:number/editing", async (request, response, next) => {
+    try {
+        const record = await findRecordInOrg(request.user.org_id, request.params.number);
+        if (!record) return response.status(404).json({ error: "Record not found" });
+
+        const editors = heartbeat(request.user.org_id, record.number, request.user)
+            .filter((e) => e.id !== request.user.id);
+        response.json({ editors });
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.delete("/:number/editing", async (request, response, next) => {
+    try {
+        leaveEditing(request.user.org_id, request.params.number, request.user.id);
+        response.json({ ok: true });
+    } catch (error) {
+        next(error);
+    }
+});
 
 records.post("/:number/links", async (request, response, next) => {
     try {

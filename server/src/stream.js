@@ -30,6 +30,7 @@ bus.setMaxListeners(0);
 export function publish(orgId, event) {
     if (!orgId || !event || !event.entity) return;
     bus.emit("change", {
+        ...event,                       // carry through any extra payload (e.g. presence's `editors`)
         orgId: String(orgId),
         entity: event.entity,
         id: event.id ?? null,
