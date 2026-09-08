@@ -12,6 +12,7 @@ import { VENDOR_STATUS } from "./resources.js";
 import { show } from "../app.js";
 import { renderRecordDetail } from "./events.js";
 import { can } from "../session.js";
+import { onStreamEvent } from "../stream.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
     setText, formatDate, humanize, statusKind, drawSparkline, toast
@@ -233,6 +234,22 @@ export function wireDashboard() {
             toast(error.message, "error");
         }
     });
+
+    /* Live updates: a record or document changed somewhere. Rebuild
+       the dashboard if it is the screen on show and not being
+       rearranged. Debounced against bursts. */
+    let liveTimer = null;
+    const refreshIfLive = () => {
+        const view = document.getElementById("view-dashboard");
+        if (!view || view.hidden || dashEditing) return;
+        clearTimeout(liveTimer);
+        liveTimer = setTimeout(() => {
+            const still = document.getElementById("view-dashboard");
+            if (still && !still.hidden && !dashEditing) renderDashboard();
+        }, 500);
+    };
+    onStreamEvent("records", refreshIfLive);
+    onStreamEvent("documents", refreshIfLive);
 }
 
 /* A sparkline point's record numbers are oldest-first within the
