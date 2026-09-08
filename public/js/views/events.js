@@ -355,7 +355,8 @@ function registerChrome(type, config) {
         (panel.querySelector(":scope > .table-wrap") || panel).after(pager);
     }
 
-    /* Sort headers: match each <th> to a column's sortKey by position. */
+    /* Sort headers: match each <th> to a column's sortKey by position.
+       Operable by mouse and keyboard - a real button in all but tag. */
     const headRow = tbody.closest("table")?.tHead?.rows[0];
     if (headRow && !headRow.dataset.sortWired) {
         headRow.dataset.sortWired = "1";
@@ -363,13 +364,19 @@ function registerChrome(type, config) {
             const th = headRow.cells[index];
             if (!th || !col.sortKey) return;
             th.classList.add("th-sortable");
-            th.addEventListener("click", () => {
+            th.tabIndex = 0;
+            th.setAttribute("role", "button");
+            const sort = () => {
                 const v = loadView(type);
                 if (v.sort === col.sortKey) v.dir = v.dir === "asc" ? "desc" : "asc";
                 else { v.sort = col.sortKey; v.dir = "asc"; }
                 v.offset = 0;
                 saveView(type);
                 renderRegister(type);
+            };
+            th.addEventListener("click", sort);
+            th.addEventListener("keydown", (event) => {
+                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); sort(); }
             });
         });
     }
@@ -378,7 +385,10 @@ function registerChrome(type, config) {
         config.columns.forEach((col, index) => {
             const th = headRow.cells[index];
             if (!th || !col.sortKey) return;
-            th.dataset.sortDir = v.sort === col.sortKey ? v.dir : "";
+            const active = v.sort === col.sortKey;
+            th.dataset.sortDir = active ? v.dir : "";
+            th.setAttribute("aria-sort",
+                active ? (v.dir === "asc" ? "ascending" : "descending") : "none");
         });
     }
 
@@ -550,6 +560,9 @@ export async function renderRegister(type) {
             if (!records[index]) return;
             tr.dataset.number = records[index].number;
             tr.classList.add("row-clickable");
+            /* roving tabindex: the list is one tab stop, arrows move
+               within it (selectRow keeps the 0 on the current row) */
+            tr.tabIndex = -1;
         });
 
         /* Every register shows one record in full, not only NCR. */
@@ -677,7 +690,12 @@ function filterRiskMatrixCell(severity, occurrence) {
 
 function selectRow(tbody, number) {
     tbody.querySelectorAll("tr").forEach((tr) => {
-        tr.classList.toggle("row-selected", tr.dataset.number === number);
+        const on = tr.dataset.number === number;
+        tr.classList.toggle("row-selected", on);
+        if (tr.dataset.number) {
+            tr.tabIndex = on ? 0 : -1;
+            tr.setAttribute("aria-selected", on ? "true" : "false");
+        }
     });
 }
 
@@ -711,6 +729,36 @@ export function wireRegisterClicks() {
             renderRecordDetail(type, row.dataset.number);
         });
 
+        /* Arrow keys walk the register, Home/End jump to the ends,
+           Enter re-opens the selected row's detail. The list is a
+           single tab stop (roving tabindex, set in selectRow). */
+        tbody.addEventListener("keydown", (event) => {
+            const rows = [...tbody.querySelectorAll("tr[data-number]")];
+            if (rows.length === 0) return;
+            const current = event.target.closest("tr[data-number]")
+                || tbody.querySelector("tr.row-selected");
+            const at = current ? rows.indexOf(current) : -1;
+
+            let next = null;
+            if (event.key === "ArrowDown") next = rows[Math.min(at + 1, rows.length - 1)];
+            else if (event.key === "ArrowUp") next = rows[Math.max(at - 1, 0)];
+            else if (event.key === "Home") next = rows[0];
+            else if (event.key === "End") next = rows[rows.length - 1];
+            else if (event.key === "Enter" && current) {
+                event.preventDefault();
+                renderRecordDetail(type, current.dataset.number);
+                return;
+            } else {
+                return;
+            }
+
+            event.preventDefault();
+            if (!next) return;
+            selectRow(tbody, next.dataset.number);
+            next.focus();
+            renderRecordDetail(type, next.dataset.number);
+        });
+
         const printButton = document.getElementById(type + "-print");
         if (printButton) {
             printButton.addEventListener("click", () => {
@@ -730,6 +778,22 @@ export function wireRegisterClicks() {
             });
         }
     }
+
+    /* "/" from anywhere but a text field jumps to the search box of
+       whichever register is on screen. */
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+        const t = event.target;
+        if (t && (t.isContentEditable
+            || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+        const view = [...document.querySelectorAll(".view")].find((v) => !v.hidden);
+        const search = view && view.querySelector(".reg-search");
+        if (search) {
+            event.preventDefault();
+            search.focus();
+            search.select();
+        }
+    });
 
     /* One delegated listener for every severity dropdown and every
        "open only" checkbox, across every register - each element
