@@ -30,6 +30,7 @@ import { wireRecordEditor } from "./forms.js";
 import { renderFloorReport } from "./views/floorreport.js";
 import { renderTurtle, wireTurtle } from "./views/turtle.js";
 import { wireReviewCharts } from "./views/review-charts.js";
+import { wirePpap } from "./views/ppap.js";
 import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { renderEngDocuments } from "./views/eng-documents.js";
 import { renderFormRecord, wireFormRecord } from "./views/form-record.js";
@@ -60,6 +61,7 @@ const LOADERS = {
     audit:       () => renderRegister("audit"),
     scar:        () => renderRegister("scar"),
     fair:        () => renderRegister("fair"),
+    ppap:        () => renderRegister("ppap"),
     risk:        () => renderRegister("risk"),
     apqp:        () => renderRegister("apqp"),
     di:          () => renderRegister("di"),
@@ -403,6 +405,7 @@ async function start() {
     wireLogs();
     wireEvaluate();
     wireReviewCharts();
+    wirePpap();
     wireForms();
     wireFormRecord();
     wireFormImport();

@@ -1329,6 +1329,49 @@
         </div>
     </section>
 
+    <!-- ============ PPAP SUBMISSION PACKAGE ============ -->
+    <section class="view" id="view-ppap" hidden>
+        <div class="view-head">
+            <h1 class="view-title">PPAP Submission<span class="clause-ref">8.3.4.4</span></h1>
+            <p class="view-sub">The submission package for a part: its level, and the 18 AIAG elements as slots pointing at the record or document that satisfies each. It cannot be submitted until every element the level requires is on file.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">PPAP register</h2>
+                    <div class="row">
+                        <select class="filter-severity" data-type="ppap" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="ppap"> Open only</label>
+                        <button class="btn btn-primary" data-requires="ppap.manage" data-new-record="ppap">New PPAP</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>PPAP</th><th>Part / rev</th><th>Customer</th><th>Level</th><th>Reason</th><th>Status</th></tr></thead>
+                        <tbody id="ppap-register"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" id="ppap-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="ppap-detail-number">Select a PPAP</h2>
+                    <span id="ppap-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="ppap-edit" data-edit-record="ppap">Edit</button>
+                    <button type="button" class="btn no-print" id="ppap-print">Print</button>
+                    <button type="button" class="btn no-print" id="ppap-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="ppap-detail"></div>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ AUDIT -> CAPA WORKFLOW (reference) ============ -->
     <section class="view" id="view-audit-workflow" hidden>
         <div class="view-head">

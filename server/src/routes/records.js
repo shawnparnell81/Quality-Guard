@@ -13,6 +13,7 @@ import { requirePermission, createPermissionFor, closePermissionFor } from "../a
 import { upload } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
+import { ppapMissing } from "./ppap.js";
 
 export const records = Router();
 
@@ -407,6 +408,9 @@ records.get("/:number", async (request, response, next) => {
         const auditDiOpen = record.type === "audit"
             ? await openDiForAudit(query, record.id)
             : null;
+        const ppapNotReady = record.type === "ppap"
+            ? (await ppapMissing(query, record.id, record.data)).length
+            : 0;
 
         const transitions = moves.rows.map((move) => {
             const stepOk = !move.required_permission || request.can(move.required_permission);
@@ -421,7 +425,9 @@ records.get("/:number", async (request, response, next) => {
                             : (auditDiOpen
                                 ? "Discrepancy Investigation " + auditDiOpen + " is not closed"
                                 : null))))
-                : null;
+                : (move.to_state === "submitted" && ppapNotReady
+                    ? ppapNotReady + " required element" + (ppapNotReady === 1 ? "" : "s") + " still to fill"
+                    : null);
 
             return {
                 to: move.to_state,
@@ -1376,6 +1382,22 @@ records.post("/:number/transition", async (request, response, next) => {
                         body: {
                             error: "Attach all three forms before closing this DI",
                             missing
+                        }
+                    };
+                }
+            }
+
+            /* Clause 8.3.4.4: a PPAP cannot be submitted until every
+               element its level requires is on file. */
+            if (record.type === "ppap" && to === "submitted") {
+                const missing = await ppapMissing(
+                    (text, params) => client.query(text, params), record.id, record.data);
+                if (missing.length > 0) {
+                    return {
+                        code: 409,
+                        body: {
+                            error: "Fill every required element before submitting this PPAP",
+                            missing: missing.map((m) => m.name)
                         }
                     };
                 }

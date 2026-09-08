@@ -199,7 +199,8 @@ const CREATE_PERMISSION = {
     ecn:       "change.create",
     apqp:      "apqp.manage",
     di:        "di.manage",
-    fair:      "fair.manage"
+    fair:      "fair.manage",
+    ppap:      "ppap.manage"
 };
 
 export function createPermissionFor(request) {

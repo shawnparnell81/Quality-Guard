@@ -1601,6 +1601,17 @@ th.col-you { color: var(--brand); }
 .review-action .row-actions { flex-shrink: 0; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
 .review-action select { font-size: 12px; padding: 2px 4px; }
 
+/* PPAP: the 18-element checklist. */
+.ppap-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; }
+.ppap-el {
+    display: flex; gap: 10px; align-items: flex-start; justify-content: space-between;
+    padding: 8px 6px; border-bottom: 1px solid var(--hairline); border-left: 3px solid transparent;
+}
+.ppap-el:last-child { border-bottom: 0; }
+.ppap-el.is-filled { border-left-color: var(--ok); }
+.ppap-el.is-missing { border-left-color: var(--crit); background: var(--crit-tint); }
+.ppap-el .row-actions { flex-shrink: 0; display: flex; gap: 5px; flex-wrap: wrap; }
+
 /* A box of checkboxes (openEntityForm "checklist" field). */
 .checklist {
     max-height: 200px;
