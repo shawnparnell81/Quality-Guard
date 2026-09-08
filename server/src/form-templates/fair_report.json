@@ -1,0 +1,39 @@
+{
+  "key": "fair_report",
+  "name": "First Article Inspection Report",
+  "prefix": "FAIRR",
+  "clause": "8.5.1",
+  "description": "AS9102-style First Article Inspection Report - part accountability header plus the characteristic accountability / verification table. (The built-in FAIR record type carries a full workflow; this is the flat report form.)",
+  "fields": [
+    { "key": "fair_number", "label": "FAIR number", "type": "text", "required": true, "section": "Part accountability" },
+    { "key": "part_number", "label": "Part number", "type": "text", "required": true, "section": "Part accountability" },
+    { "key": "part_name", "label": "Part name", "type": "text", "section": "Part accountability" },
+    { "key": "serial_number", "label": "Serial number", "type": "text", "section": "Part accountability" },
+    { "key": "part_revision", "label": "Part revision level", "type": "text", "section": "Part accountability" },
+    { "key": "drawing_number", "label": "Drawing number", "type": "text", "section": "Part accountability" },
+    { "key": "drawing_revision", "label": "Drawing revision level", "type": "text", "section": "Part accountability" },
+    { "key": "organization", "label": "Organization name", "type": "text", "section": "Part accountability" },
+    { "key": "supplier_code", "label": "Supplier code", "type": "text", "section": "Part accountability" },
+    { "key": "po_number", "label": "Purchase order number", "type": "text", "section": "Part accountability" },
+    { "key": "baseline_part_number", "label": "Baseline part number incl. revision", "type": "text", "section": "Part accountability" },
+    { "key": "detail_or_assembly", "label": "Detail / assembly FAIR", "type": "select", "options": ["Detail", "Assembly"], "section": "Part accountability" },
+    { "key": "full_or_partial", "label": "Full / partial FAIR", "type": "select", "options": ["Full", "Partial"], "section": "Part accountability" },
+    { "key": "reason_for_partial", "label": "Reason for partial FAIR", "type": "memo", "section": "Part accountability" },
+    {
+      "key": "characteristics", "label": "Characteristic accountability", "type": "table", "section": "Characteristics",
+      "columns": [
+        { "key": "char_number", "label": "Char. no.", "type": "text" },
+        { "key": "reference_location", "label": "Reference location", "type": "text" },
+        { "key": "characteristic_designator", "label": "Designator", "type": "select", "options": ["", "Key", "Critical", "Major", "Minor"] },
+        { "key": "requirement", "label": "Requirement", "type": "text" },
+        { "key": "results", "label": "Results", "type": "text" },
+        { "key": "designed_tooling", "label": "Designed tooling", "type": "text" },
+        { "key": "nonconformance_number", "label": "Nonconformance no.", "type": "text" }
+      ]
+    },
+    { "key": "prepared_by", "label": "Prepared by", "type": "text", "section": "Sign-off" },
+    { "key": "prepared_date", "label": "Date", "type": "date", "section": "Sign-off" },
+    { "key": "reviewed_by", "label": "Reviewed / approved by", "type": "text", "section": "Sign-off" },
+    { "key": "reviewed_date", "label": "Date", "type": "date", "section": "Sign-off" }
+  ]
+}

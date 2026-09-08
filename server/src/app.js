@@ -34,6 +34,7 @@ import { logs } from "./routes/logs.js";
 import { layout } from "./routes/layout.js";
 import { formImport } from "./routes/form-import.js";
 import { notifications } from "./routes/notifications.js";
+import { formTemplates } from "./routes/form-templates.js";
 import { streamHandler } from "./stream.js";
 import { startDigestSchedule } from "./digest.js";
 
@@ -196,6 +197,7 @@ app.use("/api", lpa);
 app.use("/api", logs);
 app.use("/api", layout);
 app.use("/api", formImport);
+app.use("/api", formTemplates);
 app.use("/api", notifications);
 app.use("/api", masterdata);
 
