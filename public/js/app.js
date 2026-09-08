@@ -31,6 +31,7 @@ import { renderFloorReport } from "./views/floorreport.js";
 import { renderTurtle, wireTurtle } from "./views/turtle.js";
 import { wireReviewCharts } from "./views/review-charts.js";
 import { wirePpap } from "./views/ppap.js";
+import { renderLpa, wireLpa } from "./views/lpa.js";
 import { renderWorkflowHelp } from "./views/workflow-help.js";
 import { renderEngDocuments } from "./views/eng-documents.js";
 import { renderFormRecord, wireFormRecord } from "./views/form-record.js";
@@ -66,6 +67,7 @@ const LOADERS = {
     apqp:        () => renderRegister("apqp"),
     di:          () => renderRegister("di"),
     "audit-workflow": renderWorkflowHelp,
+    lpa:         renderLpa,
     calibration: renderCalibration,
     training:    renderTraining,
     documents:   renderDocuments,
@@ -406,6 +408,7 @@ async function start() {
     wireEvaluate();
     wireReviewCharts();
     wirePpap();
+    wireLpa();
     wireForms();
     wireFormRecord();
     wireFormImport();

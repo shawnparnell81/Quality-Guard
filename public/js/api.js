@@ -350,6 +350,27 @@ export const api = {
         request("DELETE", "/apqp/" + encodeURIComponent(number)
                 + "/deliverables/" + encodeURIComponent(slot)),
 
+    lpa:            ()      => get("/lpa"),
+    lpaTemplate:    (id)    => get("/lpa/templates/" + encodeURIComponent(id)),
+    createLpaTemplate: (payload) => request("POST", "/lpa/templates", payload),
+    updateLpaTemplate: (id, payload) =>
+        request("PUT", "/lpa/templates/" + encodeURIComponent(id), payload),
+    addLpaQuestion: (id, payload) =>
+        request("POST", "/lpa/templates/" + encodeURIComponent(id) + "/questions", payload),
+    deleteLpaQuestion: (id, qid) =>
+        request("DELETE", "/lpa/templates/" + encodeURIComponent(id) + "/questions/" + encodeURIComponent(qid)),
+    createLpaSchedule: (payload) => request("POST", "/lpa/schedules", payload),
+    updateLpaSchedule: (id, payload) =>
+        request("PUT", "/lpa/schedules/" + encodeURIComponent(id), payload),
+    deleteLpaSchedule: (id) => request("DELETE", "/lpa/schedules/" + encodeURIComponent(id)),
+    createLpaAudit: (payload) => request("POST", "/lpa/audits", payload),
+    lpaAudit:      (id)     => get("/lpa/audits/" + encodeURIComponent(id)),
+    answerLpa: (id, questionId, payload) =>
+        request("PUT", "/lpa/audits/" + encodeURIComponent(id)
+                + "/answers/" + encodeURIComponent(questionId), payload),
+    completeLpaAudit: (id, payload) =>
+        request("POST", "/lpa/audits/" + encodeURIComponent(id) + "/complete", payload || {}),
+
     ppapPackage:   (number) => get("/ppap/" + encodeURIComponent(number)),
     setPpapElement: (number, element, payload) =>
         request("PUT", "/ppap/" + encodeURIComponent(number)
