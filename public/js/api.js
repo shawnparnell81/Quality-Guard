@@ -153,6 +153,7 @@ export const api = {
     applyFormImport:  (id, payload) =>
         request("POST", "/forms/imports/" + encodeURIComponent(id) + "/apply", payload),
     records:      (params)  => get(withQuery("/records", params)),
+    recordsExportUrl: (params) => "/api" + withQuery("/records/export", params),
     searchRecords: (q)      => get(withQuery("/records/search", { q })),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),
     createRecord: (payload) => request("POST", "/records", payload),

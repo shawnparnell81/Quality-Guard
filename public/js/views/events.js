@@ -315,9 +315,22 @@ function registerChrome(type, config) {
                 renderRegister(type);
             }, 250);
         });
-        toolbar = el("div", { class: "reg-toolbar no-print" }, search);
+        const exportLink = el("a", {
+            class: "btn btn-xs reg-export", text: "Export", title: "Download this view as Excel"
+        });
+        toolbar = el("div", { class: "reg-toolbar no-print" }, [search, exportLink]);
         const head = panel.querySelector(":scope > .panel-head");
         if (head) head.after(toolbar); else panel.prepend(toolbar);
+    }
+
+    /* Keep the export link pointed at the currently filtered / sorted
+       set (never the page - the server export ignores limit/offset). */
+    const exportLink = toolbar.querySelector(".reg-export");
+    if (exportLink) {
+        const p = currentFilterParams(type);
+        delete p.limit;
+        delete p.offset;
+        exportLink.href = api.recordsExportUrl(p);
     }
 
     let pager = panel.querySelector(":scope > .reg-pager");
