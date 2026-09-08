@@ -59,6 +59,7 @@ const LOADERS = {
     "floor-report": renderFloorReport,
     audit:       () => renderRegister("audit"),
     scar:        () => renderRegister("scar"),
+    fair:        () => renderRegister("fair"),
     risk:        () => renderRegister("risk"),
     apqp:        () => renderRegister("apqp"),
     di:          () => renderRegister("di"),

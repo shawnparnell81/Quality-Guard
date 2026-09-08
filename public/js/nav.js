@@ -63,6 +63,7 @@ export const NAV = [
         { label: "Audit & Review", items: [
             { label: "Internal Audit", view: "audit", countKey: "audit", hot: true },
             { label: "Discrepancy Investigations", view: "di", countKey: "di" },
+            { label: "First Article (FAIR)", view: "fair" },
             { label: "Management Review", view: "review" },
             { label: "Risk Register", view: "risk" },
             { label: "Turtle Diagrams", view: "turtle" },

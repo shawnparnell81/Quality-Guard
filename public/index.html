@@ -1269,6 +1269,49 @@
         </div>
     </section>
 
+    <!-- ============ FIRST ARTICLE INSPECTION (FAIR) ============ -->
+    <section class="view" id="view-fair" hidden>
+        <div class="view-head">
+            <h1 class="view-title">First Article Inspection<span class="clause-ref">8.5.1</span></h1>
+            <p class="view-sub">A ballooned dimensional layout of the first production part: every characteristic measured against nominal and tolerance, pass/fail computed, an overall disposition, reviewed for approval.</p>
+        </div>
+
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">FAIR register</h2>
+                    <div class="row">
+                        <select class="filter-severity" data-type="fair" title="Filter by severity">
+                            <option value="">All severities</option>
+                            <option value="crit">Critical</option>
+                            <option value="warn">Warning</option>
+                            <option value="ok">OK</option>
+                        </select>
+                        <label class="filter-open"><input type="checkbox" data-type="fair"> Open only</label>
+                        <button class="btn btn-primary" data-requires="fair.manage" data-new-record="fair">New FAIR</button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>FAIR</th><th>Part / rev</th><th>Customer</th><th>Inspected</th><th class="num">Conforming</th><th>Status</th></tr></thead>
+                        <tbody id="fair-register"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel" id="fair-detail-panel">
+                <div class="panel-head">
+                    <h2 class="panel-title" id="fair-detail-number">Select a FAIR</h2>
+                    <span id="fair-detail-status"></span>
+                    <button type="button" class="btn btn-primary no-print" id="fair-edit" data-edit-record="fair">Edit</button>
+                    <button type="button" class="btn no-print" id="fair-print">Print</button>
+                    <button type="button" class="btn no-print" id="fair-pdf">PDF</button>
+                </div>
+                <div class="panel-body" id="fair-detail"></div>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ AUDIT -> CAPA WORKFLOW (reference) ============ -->
     <section class="view" id="view-audit-workflow" hidden>
         <div class="view-head">

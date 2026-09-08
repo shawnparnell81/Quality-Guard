@@ -114,6 +114,44 @@ function applyComputedColumns(schema, data) {
     return out;
 }
 
+/* First Article Inspection: a measured characteristic conforms when
+   its actual falls inside nominal + [tol_minus, tol_plus]. The
+   "result" column and the conforming counts are derived here so the
+   screen, the PDF and any report all read the same numbers - the
+   same guarantee applyComputedColumns / withComputedRpn give. A row
+   with no nominal (a visual / attribute check) keeps whatever result
+   the inspector typed. A no-op for every type but fair. */
+function applyFairResults(typeKey, data) {
+    if (typeKey !== "fair" || !data || typeof data !== "object") return data;
+    const rows = Array.isArray(data.characteristics) ? data.characteristics : null;
+    if (!rows) return data;
+
+    let conforming = 0;
+    let checked = 0;
+    const out = { ...data };
+    out.characteristics = rows.map((row) => {
+        if (!row || typeof row !== "object") return row;
+        const next = { ...row };
+        const nominal = Number(next.nominal);
+        const actual = Number(next.actual);
+        if (Number.isFinite(nominal) && Number.isFinite(actual)) {
+            const lo = nominal + (Number(next.tol_minus) || 0);
+            const hi = nominal + (Number(next.tol_plus) || 0);
+            const pass = actual >= Math.min(lo, hi) && actual <= Math.max(lo, hi);
+            next.result = pass ? "Pass" : "Fail";
+            checked += 1;
+            if (pass) conforming += 1;
+        } else if (next.result !== "Pass" && next.result !== "Fail") {
+            next.result = "";
+        }
+        return next;
+    });
+    out.checked_count = checked;
+    out.conforming_count = conforming;
+    out.nonconforming_count = checked - conforming;
+    return out;
+}
+
 /* Clause 9.2: an auditor must be independent of the area under
    review. "Area" is not an invented category here - it is the same
    discipline column every person record already carries, compared
@@ -714,6 +752,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
         if (formRow.rowCount > 0) {
             formVersion = formRow.rows[0].version;
             data = applyComputedColumns(formRow.rows[0].schema, data);
+            data = applyFairResults(type, data);
             const missing = (formRow.rows[0].schema.fields || [])
                 .filter((field) => {
                     if (!field.required) return false;
@@ -888,6 +927,7 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                 [record.record_type_id, record.form_version]
             );
             merged = applyComputedColumns(schemaRow.rows[0]?.schema || null, merged);
+            merged = applyFairResults(record.type, merged);
 
             if (record.type === "audit"
                 && await auditorConflict((text, params) => client.query(text, params), request.user.org_id, merged)) {

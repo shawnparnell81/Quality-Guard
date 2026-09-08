@@ -198,7 +198,8 @@ const CREATE_PERMISSION = {
     eightd:    "capa.create",
     ecn:       "change.create",
     apqp:      "apqp.manage",
-    di:        "di.manage"
+    di:        "di.manage",
+    fair:      "fair.manage"
 };
 
 export function createPermissionFor(request) {

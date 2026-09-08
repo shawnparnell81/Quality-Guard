@@ -1588,6 +1588,11 @@ th.col-you { color: var(--brand); }
 }
 .err-jump:hover { opacity: .8; }
 
+/* FAIR characteristic table: computed pass / fail per row. */
+.fair-pass { color: var(--ok); font-weight: 600; }
+.fair-fail { color: var(--crit); font-weight: 600; }
+.fair-fail-row td { background: var(--crit-tint); }
+
 /* A box of checkboxes (openEntityForm "checklist" field). */
 .checklist {
     max-height: 200px;
