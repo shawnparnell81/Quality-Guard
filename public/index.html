@@ -136,6 +136,27 @@
             </div>
         </div>
 
+        <div class="metrics-grid" id="dashboard-metrics">
+            <article class="metric-card" data-metric="open_ncs" data-state="loading"
+                     role="group" aria-label="Open NCs">
+                <span class="metric-card__label">Open NCs</span>
+                <span class="metric-card__value" id="metric-open-ncs" aria-live="polite">-</span>
+                <span class="metric-card__hint" id="metric-open-ncs-hint">loading</span>
+            </article>
+            <article class="metric-card" data-metric="pending_capas" data-state="loading"
+                     role="group" aria-label="Pending CAPAs">
+                <span class="metric-card__label">Pending CAPAs</span>
+                <span class="metric-card__value" id="metric-pending-capas" aria-live="polite">-</span>
+                <span class="metric-card__hint" id="metric-pending-capas-hint">loading</span>
+            </article>
+            <article class="metric-card" data-metric="overdue_doc_reviews" data-state="loading"
+                     role="group" aria-label="Overdue Document Reviews">
+                <span class="metric-card__label">Overdue Document Reviews</span>
+                <span class="metric-card__value" id="metric-overdue-docs" aria-live="polite">-</span>
+                <span class="metric-card__hint" id="metric-overdue-docs-hint">loading</span>
+            </article>
+        </div>
+
         <div class="grid-2" style="margin-top:16px" id="dash-grid">
             <div class="stack" id="dash-col-0" data-col="0">
                 <div class="panel" data-widget="events">
