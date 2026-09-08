@@ -13,6 +13,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool } from "../src/db.js";
@@ -21,13 +22,19 @@ import { backup } from "./backup.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, "..", "db", "migrations");
 
+const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
 try {
+    /* The runner owns this table. `checksum` was added later, so the
+       alter covers databases that still have the two-column shape. */
     await pool.query(`
         create table if not exists schema_migrations (
             filename    text primary key,
+            checksum    text,
             applied_at  timestamptz not null default now()
         )
     `);
+    await pool.query("alter table schema_migrations add column if not exists checksum text");
 
     if (!existsSync(migrationsDir)) {
         console.log("No migrations folder yet. Nothing to do.");
@@ -38,10 +45,38 @@ try {
         .filter((name) => name.endsWith(".sql"))
         .sort();
 
-    const applied = new Set(
-        (await pool.query("select filename from schema_migrations")).rows
-            .map((row) => row.filename)
-    );
+    const appliedRows = (await pool.query(
+        "select filename, checksum from schema_migrations")).rows;
+    const applied = new Set(appliedRows.map((row) => row.filename));
+
+    /* An applied migration is history. If its file changed on disk
+       since, the database and the tree disagree about what ran -
+       refuse to go further rather than paper over it with a new
+       migration. Rows with no checksum predate this check and are
+       backfilled, not flagged. */
+    const changed = [];
+    for (const row of appliedRows) {
+        const path = join(migrationsDir, row.filename);
+        if (!existsSync(path)) {
+            if (row.checksum) changed.push(row.filename + "  (file is gone)");
+            continue;
+        }
+        const digest = sha256(await readFile(path, "utf8"));
+        if (!row.checksum) {
+            await pool.query(
+                "update schema_migrations set checksum = $1 where filename = $2",
+                [digest, row.filename]);
+        } else if (digest !== row.checksum) {
+            changed.push(row.filename + "  (content changed since it was applied)");
+        }
+    }
+    if (changed.length > 0) {
+        console.error("Applied migrations no longer match their files:");
+        for (const line of changed) console.error("  " + line);
+        console.error("");
+        console.error("Migrations are append-only. Revert the edit and add a new one instead.");
+        process.exit(1);
+    }
 
     const pending = files.filter((name) => !applied.has(name));
 
@@ -69,8 +104,8 @@ try {
             await client.query("BEGIN");
             await client.query(sql);
             await client.query(
-                "insert into schema_migrations (filename) values ($1)",
-                [filename]
+                "insert into schema_migrations (filename, checksum) values ($1, $2)",
+                [filename, sha256(sql)]
             );
             await client.query("COMMIT");
 
