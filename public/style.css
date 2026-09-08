@@ -2106,6 +2106,14 @@ th.col-you { color: var(--brand); }
     font-size: 12px;
 }
 .xl-table-meta label { display: flex; align-items: center; gap: 5px; }
+.xl-body .xl-ow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--ink-2);
+    white-space: nowrap;
+}
 
 /* Field styling itself lives on the bare .field-group rules above,
    shared by the modal and the full-page record editor alike. */

@@ -73,6 +73,13 @@ export async function openExcelLayout(typeKey, typeName) {
             style: "width:80px"
         });
 
+        const overwriteBox = (checked) => {
+            const cb = el("input", { type: "checkbox", class: "xl-overwrite" });
+            cb.checked = Boolean(checked);
+            return el("label", { class: "xl-ow", title: "Write over a formula in this cell" },
+                [cb, " over formula"]);
+        };
+
         /* ---- header fields ---- */
         const fieldRows = flat.map((f) => {
             const spot = (map.fields && map.fields[f.key]) || {};
@@ -80,7 +87,8 @@ export async function openExcelLayout(typeKey, typeName) {
             row.append(
                 el("span", { class: "xl-label", text: f.label || f.key }),
                 sheetSelect(spot.sheet || map.primary_sheet),
-                cellInput(spot.cell)
+                cellInput(spot.cell),
+                overwriteBox(spot.overwrite_formula)
             );
             return row;
         });
@@ -103,12 +111,14 @@ export async function openExcelLayout(typeKey, typeName) {
                     el("label", {}, ["Rows before overflow ", capacity])
                 ])
             );
+            const overwriteCols = new Set(Array.isArray(t.overwrite_cols) ? t.overwrite_cols : []);
             for (const col of f.columns) {
                 const letter = (t.columns && t.columns[col.key]) || "";
                 const cr = el("div", { class: "xl-row", dataset: { col: col.key } });
                 cr.append(
                     el("span", { class: "xl-label", text: col.label || col.key }),
-                    el("input", { type: "text", class: "xl-colletter", value: letter, placeholder: "col, e.g. D", style: "width:80px" })
+                    el("input", { type: "text", class: "xl-colletter", value: letter, placeholder: "col, e.g. D", style: "width:80px" }),
+                    overwriteBox(overwriteCols.has(col.key))
                 );
                 block.append(cr);
             }
@@ -184,17 +194,19 @@ export async function openExcelLayout(typeKey, typeName) {
         body.querySelectorAll('.xl-row[data-kind="field"]').forEach((row) => {
             const cell = row.querySelector(".xl-cell").value.trim().toUpperCase();
             if (!cell) return;
-            map.fields[row.dataset.key] = {
-                sheet: row.querySelector(".xl-sheet").value,
-                cell
-            };
+            const spot = { sheet: row.querySelector(".xl-sheet").value, cell };
+            if (row.querySelector(".xl-overwrite").checked) spot.overwrite_formula = true;
+            map.fields[row.dataset.key] = spot;
         });
 
         body.querySelectorAll(".xl-table").forEach((block) => {
             const columns = {};
+            const overwriteCols = [];
             block.querySelectorAll(".xl-row[data-col]").forEach((cr) => {
                 const letter = cr.querySelector(".xl-colletter").value.trim().toUpperCase().replace(/[^A-Z]/g, "");
-                if (letter) columns[cr.dataset.col] = letter;
+                if (!letter) return;
+                columns[cr.dataset.col] = letter;
+                if (cr.querySelector(".xl-overwrite").checked) overwriteCols.push(cr.dataset.col);
             });
             const firstRow = Number(block.querySelector(".xl-firstrow").value);
             if (!firstRow || Object.keys(columns).length === 0) return;
@@ -205,7 +217,8 @@ export async function openExcelLayout(typeKey, typeName) {
                 first_data_row: firstRow,
                 columns,
                 ...(rnc ? { row_number_col: rnc } : {}),
-                ...(cap > 0 ? { capacity: cap } : {})
+                ...(cap > 0 ? { capacity: cap } : {}),
+                ...(overwriteCols.length ? { overwrite_cols: overwriteCols } : {})
             };
         });
 

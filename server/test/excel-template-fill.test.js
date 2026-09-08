@@ -157,8 +157,11 @@ test("the blank template download is the raw customer file", async () => {
     assert.equal(ws.getCell("A7").value, "Balloon #", "the grid header survived");
 });
 
+let tableKey;
+
 test("a record exports onto the customer's layout", async () => {
-    const table = Object.keys((await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/excel-map")).body.map.tables)[0];
+    tableKey = Object.keys((await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/excel-map")).body.map.tables)[0];
+    const table = tableKey;
     const made = await api(adminCookie, "POST", "/api/records", {
         type: typeKey, title: "Layout check RP-1",
         data: {
@@ -197,7 +200,7 @@ test("editing the map re-points a field and the next export follows it", async (
     assert.equal(after.template_path, before.template_path, "the stored file is kept across a map edit");
 });
 
-test("a filled template is read back in through the map", async () => {
+test("a filled template is read back in through the map, and can create a record", async () => {
     /* round-trip: export this record, then re-import the bytes */
     const r = await fetch(BASE + "/api/records/" + recordNumber + "/excel", { headers: { Cookie: adminCookie } });
     const filled = Buffer.from(await r.arrayBuffer());
@@ -205,8 +208,14 @@ test("a filled template is read back in through the map", async () => {
     const dry = await uploadXlsx(adminCookie,
         "/api/records/excel?type=" + typeKey + "&dry_run=true", filled, "filled.xlsx");
     assert.equal(dry.status, 200, dry.text);
-    const table = Object.keys(dry.body.tables)[0];
-    assert.equal(dry.body.tables[table], 2, "both grid rows read back");
+    assert.equal(Object.values(dry.body.tables)[0], 2, "both grid rows read back");
+
+    const real = await uploadXlsx(adminCookie,
+        "/api/records/excel?type=" + typeKey, filled, "filled.xlsx");
+    assert.equal(real.status, 201, real.text);
+    const made = await api(adminCookie, "GET", "/api/records/" + real.body.number);
+    assert.equal(made.body.record.data[tableKey].length, 2, "the new record carries the grid rows");
+    assert.equal(made.body.record.data[tableKey][0].characteristic, "Bore dia");
 });
 
 test("a Form Builder type with no template still exports the generated grid", async () => {

@@ -53,8 +53,11 @@ function master(ws, address) {
 /* Leave a cell alone when it already carries a formula, UNLESS that
    formula points at another workbook (the "[1]" marker in
    =IF('[1]List'!...) - the linked file is usually long gone) or it
-   evaluates to an error. Those we are glad to overwrite. */
-function isProtectedFormula(cell) {
+   evaluates to an error. Those we are glad to overwrite. `force`
+   (from the map's overwrite_formula / overwrite_cols) drops the
+   protection entirely for a cell the person chose to fill anyway. */
+function isProtectedFormula(cell, force) {
+    if (force) return false;
     const v = cell && cell.value;
     const formula = cell && (cell.formula
         || (v && typeof v === "object" && (v.formula || v.sharedFormula)));
@@ -84,6 +87,9 @@ function renderValue(field, value) {
     return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
+/* undefined for a blank cell; { __error } for a non-blank cell that
+   will not coerce to the field's type (readTemplate turns those into
+   the same per-cell messages the Form-sheet reader produces). */
 function readCellValue(field, raw) {
     if (raw === null || raw === undefined || raw === "") return undefined;
     let v = raw;
@@ -94,24 +100,25 @@ function readCellValue(field, raw) {
         else if (v.richText) v = v.richText.map((t) => t.text).join("");
         else return undefined;
     }
+    if (v === null || v === undefined || String(v).trim() === "") return undefined;
     const type = field && field.type;
     if (type === "boolean") {
         const t = String(v).trim().toLowerCase();
         if (["yes", "y", "true", "1", "x", "✓", "checked"].includes(t)) return true;
-        if (["no", "n", "false", "0", "-", ""].includes(t)) return false;
-        return undefined;
+        if (["no", "n", "false", "0", "-"].includes(t)) return false;
+        return { __error: "not yes/no" };
     }
     if (type === "number" || type === "computed") {
         const n = Number(v);
-        return Number.isFinite(n) ? n : undefined;
+        return Number.isFinite(n) ? n : { __error: "not a number" };
     }
     if (type === "date") {
         const d = new Date(v);
-        return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
+        return Number.isNaN(d.getTime()) ? { __error: "not a date" } : d.toISOString().slice(0, 10);
     }
     if (type === "select" && Array.isArray(field.options) && field.options.length) {
         const hit = field.options.find((o) => norm(o) === norm(v));
-        return hit !== undefined ? hit : String(v).trim();
+        return hit !== undefined ? hit : { __error: "not one of: " + field.options.join(", ") };
     }
     return String(v).trim();
 }
@@ -307,7 +314,7 @@ export async function fillTemplate(templateBuffer, map, schema, values) {
         const ws = workbook.getWorksheet(spot.sheet) || workbook.worksheets[0];
         if (!ws) continue;
         const cell = master(ws, spot.cell);
-        if (isProtectedFormula(cell)) continue;
+        if (isProtectedFormula(cell, spot.overwrite_formula)) continue;
         cell.value = rendered;
         written.push(key);
     }
@@ -320,6 +327,7 @@ export async function fillTemplate(templateBuffer, map, schema, values) {
         const ws = workbook.getWorksheet(t.sheet);
         if (!ws) continue;
         const cols = new Map(field.columns.map((c) => [c.key, c]));
+        const overwriteCols = new Set(Array.isArray(t.overwrite_cols) ? t.overwrite_cols : []);
         const letters = Object.values(t.columns || {}).map(letterToCol);
         const loCol = Math.min(...letters, 1);
         const hiCol = Math.max(...letters, 1);
@@ -348,7 +356,7 @@ export async function fillTemplate(templateBuffer, map, schema, values) {
                 const rendered = renderValue(col, row[colKey]);
                 if (rendered === null) continue;
                 const cell = master(ws, letter + excelRowNo);
-                if (isProtectedFormula(cell)) continue;
+                if (isProtectedFormula(cell, overwriteCols.has(colKey))) continue;
                 cell.value = rendered;
             }
         });
@@ -391,7 +399,11 @@ export async function readTemplate(templateBuffer, map, schema) {
         const ws = workbook.getWorksheet(spot.sheet);
         if (!ws) continue;
         const v = readCellValue(field, master(ws, spot.cell).value);
-        if (v !== undefined) data[key] = v;
+        if (v && typeof v === "object" && v.__error) {
+            errors.push((field.label || key) + ": " + v.__error);
+        } else if (v !== undefined) {
+            data[key] = v;
+        }
     }
 
     for (const [key, t] of Object.entries((map && map.tables) || {})) {
@@ -411,10 +423,17 @@ export async function readTemplate(templateBuffer, map, schema) {
                 const col = cols.get(colKey);
                 if (!col) continue;
                 const v = readCellValue(col, master(ws, letter + excelRowNo).value);
-                if (v !== undefined && v !== "") { obj[colKey] = v; any = true; }
+                if (v && typeof v === "object" && v.__error) {
+                    errors.push("\"" + (field.label || key) + "\" row " + (i + 1) + ", "
+                        + (col.label || colKey) + ": " + v.__error);
+                    any = true;
+                } else if (v !== undefined && v !== "") {
+                    obj[colKey] = v;
+                    any = true;
+                }
             }
             if (!any) break;
-            out.push(obj);
+            if (Object.keys(obj).length) out.push(obj);
         }
 
         /* plus any rows the fill had to spill onto a "<label> +extra"
@@ -432,12 +451,16 @@ export async function readTemplate(templateBuffer, map, schema) {
             for (let r = 2; r <= extra.rowCount; r++) {
                 const vals = extra.getRow(r).values || [];
                 const obj = {};
-                let any = false;
                 for (const [colKey, idx] of Object.entries(colAt)) {
                     const v = readCellValue(cols.get(colKey), vals[idx]);
-                    if (v !== undefined && v !== "") { obj[colKey] = v; any = true; }
+                    if (v && typeof v === "object" && v.__error) {
+                        errors.push("\"" + (field.label || key) + "\" (extra) row " + (r - 1) + ", "
+                            + (cols.get(colKey).label || colKey) + ": " + v.__error);
+                    } else if (v !== undefined && v !== "") {
+                        obj[colKey] = v;
+                    }
                 }
-                if (any) out.push(obj);
+                if (Object.keys(obj).length) out.push(obj);
             }
         }
 

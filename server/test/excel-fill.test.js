@@ -113,6 +113,44 @@ test("a fill round-trips back through readTemplate", async () => {
     assert.deepEqual(back.data.checks[39], { balloon: "40", characteristic: "C40", nominal: 39, actual: 39, result: "Pass" });
 });
 
+test("overwrite_cols forces a value over an internal formula", async () => {
+    const schema = {
+        fields: [{
+            key: "analysis", label: "Analysis", type: "table",
+            columns: [
+                { key: "sev", label: "Severity", type: "number" },
+                { key: "occ", label: "Occurrence", type: "number" },
+                { key: "det", label: "Detection", type: "number" },
+                { key: "rpn", label: "R. P. N.", type: "number" }
+            ]
+        }]
+    };
+    const map = buildDefaultMap(await open("FMEA.xlsx"), schema);
+    map.tables.analysis.overwrite_cols = ["rpn"];
+
+    const { buffer } = await fillTemplate(load("FMEA.xlsx"), map, schema, {
+        data: { analysis: [{ sev: 8, occ: 4, det: 3, rpn: 96 }] }
+    });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer);
+    const ws = wb.getWorksheet("PFMEA");
+    const t = map.tables.analysis;
+    const rpn = ws.getCell(t.columns.rpn + String(t.first_data_row));
+    assert.equal(rpn.value, 96, "the RPN cell now holds the literal, not the formula");
+    assert.equal(rpn.formula, undefined);
+});
+
+test("readTemplate reports a cell that will not coerce to its field type", async () => {
+    const map = buildDefaultMap(await open("Layout Inspection.xlsx"), LAYOUT_SCHEMA);
+    const { buffer } = await fillTemplate(load("Layout Inspection.xlsx"), map, LAYOUT_SCHEMA, {
+        data: { checks: [{ balloon: "1", characteristic: "Bore", nominal: "not-a-number", actual: 1 }] }
+    });
+
+    const back = await readTemplate(buffer, map, LAYOUT_SCHEMA);
+    assert.ok(back.errors.some((e) => /Nominal: not a number/.test(e)),
+        "the bad cell is flagged: " + JSON.stringify(back.errors));
+});
+
 test("an internal formula in a mapped cell is never overwritten", async () => {
     /* FMEA's RPN columns K and R hold =D*G*J style formulas. */
     const schema = {
