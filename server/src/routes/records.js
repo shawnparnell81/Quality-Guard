@@ -15,6 +15,7 @@ import { upload } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { ppapMissing } from "./ppap.js";
+import { publish } from "../stream.js";
 
 export const records = Router();
 
@@ -1248,6 +1249,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             return response.status(200).json(created.row);
         }
 
+        publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
         response.status(201).json(created);
     } catch (error) {
         next(error);
@@ -1390,6 +1392,9 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             });
         }
 
+        publish(request.user.org_id, {
+            entity: "records", id: request.params.number, action: "updated"
+        });
         response.json(updated);
     } catch (error) {
         next(error);
@@ -1817,6 +1822,11 @@ records.post("/:number/transition", async (request, response, next) => {
             return response.status(404).json({ error: "Record not found" });
         }
 
+        if (outcome.code === 200) {
+            publish(request.user.org_id, {
+                entity: "records", id: outcome.body.number, action: "transitioned"
+            });
+        }
         response.status(outcome.code).json(outcome.body);
     } catch (error) {
         next(error);

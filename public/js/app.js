@@ -46,6 +46,7 @@ import {
 } from "./views/resources.js";
 import { wirePalette } from "./palette.js";
 import { buildNav, markActiveDept, applyNavLayout } from "./nav.js";
+import { startStream } from "./stream.js";
 
 /* The department menu bar is data-driven (nav.js). Render it before
    anything queries .nav-item. */
@@ -418,6 +419,7 @@ async function start() {
     wireCalibration();
     wireTraining();
     wirePalette();
+    startStream();
     checkConnection();
     fillHeader();
     showReadinessBadge();
