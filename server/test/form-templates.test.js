@@ -161,12 +161,16 @@ test("installing one creates a record type with its fields", async () => {
     assert.equal(bogus.status, 404);
 });
 
-test("it all needs forms.manage", async () => {
+test("anyone can browse the catalogue, only forms.manage can install", async () => {
     const list = await api(operatorCookie, "GET", "/api/form-templates");
-    assert.equal(list.status, 403);
+    assert.equal(list.status, 200, "an operator can see what forms exist");
+    assert.ok(list.body.templates.length >= 8);
+
+    const one = await api(operatorCookie, "GET", "/api/form-templates/pfmea");
+    assert.equal(one.status, 200);
 
     const install = await api(operatorCookie, "POST", "/api/form-templates/msa_grr/install");
-    assert.equal(install.status, 403);
+    assert.equal(install.status, 403, "but installing needs the permission");
 });
 
 test("every template in the library is well-formed and installs", async () => {

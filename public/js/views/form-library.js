@@ -23,12 +23,24 @@ export async function renderFormLibrary() {
     try {
         data = await api.formTemplates();
     } catch (error) {
-        host.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
+        host.replaceChildren(el("div", { class: "table-empty" }, [
+            el("div", { class: "empty-title", text: "Couldn't load the form library" }),
+            el("div", { class: "empty-hint", text: error.message || "Try reloading the page." })
+        ]));
         return;
     }
 
-    const { templates, installed } = data;
+    const templates = (data && data.templates) || [];
+    const installed = (data && data.installed) || {};
     const manage = can("forms.manage");
+
+    if (templates.length === 0) {
+        host.replaceChildren(el("div", { class: "table-empty" }, [
+            el("div", { class: "empty-title", text: "No form templates found" }),
+            el("div", { class: "empty-hint", text: "The server returned an empty list - restart the API if you just updated it." })
+        ]));
+        return;
+    }
 
     /* group by category, categories in first-seen order */
     const groups = new Map();

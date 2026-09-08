@@ -20,7 +20,9 @@ import { listTemplates, getTemplate } from "../form-templates/index.js";
 
 export const formTemplates = Router();
 
-formTemplates.get("/form-templates", requirePermission("forms.manage"),
+/* Reading the catalogue is harmless - any signed-in user can browse
+   what forms are available. Only installing one needs forms.manage. */
+formTemplates.get("/form-templates",
     async (request, response, next) => {
         try {
             const templates = listTemplates();
@@ -39,7 +41,7 @@ formTemplates.get("/form-templates", requirePermission("forms.manage"),
         }
     });
 
-formTemplates.get("/form-templates/:key", requirePermission("forms.manage"),
+formTemplates.get("/form-templates/:key",
     async (request, response, next) => {
         try {
             const tpl = getTemplate(request.params.key);
