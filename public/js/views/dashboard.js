@@ -36,6 +36,53 @@ const DASH_WIDGETS = [
 ];
 const DASH_MOVABLE = DASH_WIDGETS;
 
+/* ---------- data-urgency metric cards ----------
+   The three cards under the KPI strip. Each turns green / amber / red
+   (data-urgency) once its number from GET /api/metrics crosses a
+   threshold. Thresholds are per metric: one overdue document review
+   is already a problem; ten open NCs is a bad week. */
+const METRIC_CARDS = [
+    { key: "open_ncs",            valueId: "metric-open-ncs",      hintId: "metric-open-ncs-hint",      medium: 5, high: 10, empty: "None open" },
+    { key: "pending_capas",       valueId: "metric-pending-capas", hintId: "metric-pending-capas-hint", medium: 3, high: 6,  empty: "None pending" },
+    { key: "overdue_doc_reviews", valueId: "metric-overdue-docs",  hintId: "metric-overdue-docs-hint",  medium: 1, high: 3,  empty: "All current" }
+];
+
+function urgencyFor(value, cfg) {
+    if (value >= cfg.high) return "high";
+    if (value >= cfg.medium) return "medium";
+    return "low";
+}
+
+function metricCard(key) {
+    return document.querySelector('#dashboard-metrics [data-metric="' + key + '"]');
+}
+
+function paintMetricCards(data) {
+    for (const cfg of METRIC_CARDS) {
+        const card = metricCard(cfg.key);
+        if (!card) continue;
+        const value = Number(data?.[cfg.key] ?? 0);
+        const urgency = urgencyFor(value, cfg);
+        card.dataset.state = "ready";
+        card.dataset.urgency = urgency;
+        setText(cfg.valueId, value.toLocaleString());
+        setText(cfg.hintId, value === 0 ? cfg.empty : urgency + " urgency");
+        const label = card.querySelector(".metric-card__label")?.textContent || cfg.key;
+        card.setAttribute("aria-label", label + ": " + value + ", " + urgency + " urgency");
+    }
+}
+
+function failMetricCards() {
+    for (const cfg of METRIC_CARDS) {
+        const card = metricCard(cfg.key);
+        if (!card) continue;
+        card.dataset.state = "error";
+        delete card.dataset.urgency;
+        setText(cfg.valueId, "!");
+        setText(cfg.hintId, "Couldn't load");
+    }
+}
+
 let defaultDashLayout = null;   // captured once from the markup
 let dashLayout = undefined;     // the org's stored layout, or null; undefined = not fetched
 let dashEditing = false;
@@ -280,6 +327,10 @@ export async function renderDashboard() {
     loadingRow(suppliers, 6);
     loadingRow(calibration, 3);
     loadingRow(training, 2);
+
+    /* The metric strip fetches on its own: a hiccup there should not
+       blank the panels below it, and vice versa. */
+    api.metrics().then(paintMetricCards).catch(failMetricCards);
 
     try {
         const [summary, feed, dueSoonRecords, vendors, gages, gaps] = await Promise.all([

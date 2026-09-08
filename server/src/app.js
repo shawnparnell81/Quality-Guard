@@ -17,7 +17,7 @@ import { identify, requireAuth, requirePasswordCurrent } from "./auth.js";
 import { auth } from "./routes/auth.js";
 import { records } from "./routes/records.js";
 import { masterdata } from "./routes/masterdata.js";
-import { dashboard } from "./routes/dashboard.js";
+import { dashboard, metrics } from "./routes/dashboard.js";
 import { access, meHandler } from "./routes/access.js";
 import { production } from "./routes/production.js";
 import { change } from "./routes/change.js";
@@ -206,6 +206,7 @@ app.get("/api/stream", streamHandler);
 
 app.use("/api/records", records);
 app.use("/api/dashboard", dashboard);
+app.use("/api", metrics);
 app.use("/api", access);
 app.use("/api", production);
 app.use("/api", change);

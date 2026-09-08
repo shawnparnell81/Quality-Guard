@@ -176,6 +176,7 @@ export const api = {
         request("POST", "/users/" + encodeURIComponent(initials) + "/reset-password", payload),
 
     dashboard:    ()        => get("/dashboard"),
+    metrics:      ()        => get("/metrics"),
     openEvents:   ()        => get("/dashboard/open-events"),
     escalations:  (days)    => get(withQuery("/dashboard/escalations", { days })),
     readiness:    ()        => get("/dashboard/readiness"),

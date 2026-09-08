@@ -637,6 +637,80 @@ td.rpn-warn, td.rpn-crit { font-weight: 600; }
 .kpi-value.is-warn { color: var(--warn); }
 .kpi-value.is-ok   { color: var(--ok); }
 
+/* ---------- data-urgency metric cards ----------
+   Layout is the grid, nothing else. Each card's colour is one
+   attribute - data-urgency="low|medium|high", set by dashboard.js
+   once its number crosses a per-metric threshold - which only swaps
+   two custom properties; every coloured part reads from those. The
+   --warn / --crit / --ok tokens are already theme-aware, so dark
+   mode needs no extra rules here. */
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--sp-3);
+    margin-top: var(--sp-4);
+}
+
+.metric-card {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: var(--sp-1);
+    min-height: 116px;
+    padding: 13px 16px;
+    background: var(--surface);
+    border: 1px solid var(--hairline-2);
+    border-radius: var(--radius);
+    overflow: hidden;
+
+    --accent: var(--ink-3);
+    --accent-tint: transparent;
+}
+
+.metric-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--accent);
+}
+
+.metric-card[data-urgency="low"]    { --accent: var(--ok);   --accent-tint: var(--ok-tint); }
+.metric-card[data-urgency="medium"] { --accent: var(--warn); --accent-tint: var(--warn-tint); }
+.metric-card[data-urgency="high"]   { --accent: var(--crit); --accent-tint: var(--crit-tint); }
+
+/* only the loudest state fills the card; low / medium stay quiet */
+.metric-card[data-urgency="high"] {
+    background: var(--accent-tint);
+    border-color: var(--accent);
+}
+
+.metric-card__label {
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.metric-card__value {
+    align-self: end;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+}
+
+.metric-card[data-urgency="high"] .metric-card__value { color: var(--accent); }
+
+.metric-card__hint { font-size: var(--fs-xs); color: var(--ink-3); }
+
+.metric-card[data-state="loading"] .metric-card__value { color: var(--ink-3); opacity: 0.5; }
+.metric-card[data-state="error"] { --accent: var(--crit); }
+.metric-card[data-state="error"] .metric-card__value { color: var(--crit); font-size: 22px; }
+
 /* ---------- panels & layout ---------- */
 
 .grid-2 {
