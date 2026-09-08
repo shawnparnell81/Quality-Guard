@@ -58,7 +58,7 @@ const GRANTS = {
         "ncr.read", "ncr.create", "ncr.contain", "capa.read", "complaint.read",
         "document.read", "drawing.read", "production.read", "shipping.read",
         "shipping.release", "gage.read", "training.read", "audit.read", "di.read",
-        "receiving.log"],
+        "receiving.log", "fair.read", "fair.manage"],
 
     quality_tech: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition",
@@ -66,7 +66,7 @@ const GRANTS = {
         "document.read", "drawing.read", "production.read", "production.hold",
         "shipping.read", "gage.read", "gage.calibrate", "training.read",
         "training.record", "audit.read", "di.read", "risk.read", "vendor.read",
-        "scar.issue", "receiving.log"],
+        "scar.issue", "receiving.log", "fair.read", "fair.manage"],
 
     quality_engineer: [
         "ncr.read", "ncr.create", "ncr.contain", "ncr.disposition", "mrb.signoff",
@@ -75,7 +75,7 @@ const GRANTS = {
         "production.read", "production.hold", "shipping.read",
         "gage.read", "gage.calibrate", "training.read", "training.record",
         "audit.read", "audit.schedule", "di.read", "di.manage", "risk.read", "risk.manage",
-        "vendor.read", "scar.issue", "apqp.manage", "receiving.log"],
+        "vendor.read", "scar.issue", "apqp.manage", "receiving.log", "fair.read", "fair.manage"],
 
     design_engineer: [
         "ncr.read", "ncr.create", "capa.read",
@@ -131,7 +131,7 @@ const GRANTS = {
         "audit.read", "audit.schedule", "audit.close",
         "di.read", "di.manage", "di.close",
         "risk.read", "risk.manage", "user.read", "forms.manage", "apqp.manage", "receiving.log",
-        "purchasing.log", "wo.log", "layout.manage"]
+        "purchasing.log", "wo.log", "layout.manage", "fair.read", "fair.manage"]
 
     /* general_manager and admin are not listed here: general_manager
        gets every permission that exists, and admin gets every "read"
@@ -155,7 +155,8 @@ const RECORD_TYPES = [
     { key: "ecn",       name: "Engineering Change",  prefix: "ECN",  clause: "8.5.6" },
     { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" },
     { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" },
-    { key: "di",        name: "Discrepancy Investigation", prefix: "DI", clause: "9.2" }
+    { key: "di",        name: "Discrepancy Investigation", prefix: "DI", clause: "9.2" },
+    { key: "fair",      name: "First Article Inspection",  prefix: "FAIR", clause: "8.5.1" }
 ];
 
 const WORKFLOWS = {
@@ -290,6 +291,23 @@ const WORKFLOWS = {
             ["linked_closure", "investigating", "di.manage"],
             ["linked_closure", "closed", "di.close"]
         ]
+    },
+
+    fair: {
+        states: [
+            ["draft", "Draft", 1, false],
+            ["in_progress", "In progress", 2, false],
+            ["complete", "Complete", 3, false],
+            ["approved", "Approved", 4, true],
+            ["rejected", "Rejected", 5, true]
+        ],
+        transitions: [
+            ["draft", "in_progress", "fair.manage"],
+            ["in_progress", "complete", "fair.manage"],
+            ["complete", "in_progress", "fair.manage"],
+            ["complete", "approved", "fair.manage"],
+            ["complete", "rejected", "fair.manage"]
+        ]
     }
 };
 
@@ -410,6 +428,51 @@ const FORMS = {
         { key: "root_cause",      label: "Root cause",                    type: "memo" },
         { key: "containment",     label: "Containment / interim action",  type: "memo" },
         { key: "corrective_plan", label: "Corrective plan",               type: "memo" }
+    ],
+
+    /* First Article Inspection - see migration 035. The "result"
+       column and the conforming counts are filled in server-side by
+       applyFairResults, not typed. */
+    fair: [
+        { key: "part_number", label: "Part number",           type: "text", required: true, section: "Part" },
+        { key: "part_name",   label: "Part name",             type: "text", section: "Part" },
+        { key: "revision",    label: "Revision",              type: "text", required: true, section: "Part" },
+        { key: "drawing",     label: "Drawing / spec no.",    type: "text", section: "Part" },
+        { key: "customer",    label: "Customer",              type: "text", section: "Part" },
+        { key: "po_number",   label: "Customer PO / contract", type: "text", section: "Part" },
+
+        { key: "process",          label: "Manufacturing process / cell", type: "text", section: "Manufacturing" },
+        { key: "serial_or_lot",    label: "Serial / lot no.",             type: "text", section: "Manufacturing" },
+        { key: "material_cert",    label: "Raw material cert no.",         type: "text", section: "Manufacturing" },
+        { key: "special_processes", label: "Special process certifications", type: "memo", section: "Manufacturing" },
+
+        { key: "fai_type",       label: "FAI type",   type: "select", section: "Inspection",
+          options: ["Full FAI", "Partial FAI", "Delta FAI"] },
+        { key: "inspection_date", label: "Inspection date", type: "date", section: "Inspection" },
+        { key: "inspected_by",   label: "Inspected by", type: "signature", section: "Inspection" },
+        { key: "equipment_used", label: "Gauges & equipment used", type: "memo", section: "Inspection" },
+
+        { key: "characteristics", label: "Characteristics", type: "table", section: "Characteristics",
+          columns: [
+              { key: "balloon",    label: "Balloon #",     type: "text" },
+              { key: "feature",    label: "Characteristic", type: "text" },
+              { key: "char_class", label: "Class",         type: "select",
+                options: ["Standard", "Key", "Critical", "Major", "Minor"] },
+              { key: "nominal",    label: "Nominal",       type: "number" },
+              { key: "tol_minus",  label: "Tol −",    type: "number" },
+              { key: "tol_plus",   label: "Tol +",         type: "number" },
+              { key: "method",     label: "Method",        type: "text" },
+              { key: "actual",     label: "Actual",        type: "number" },
+              { key: "result",     label: "Result",        type: "text" },
+              { key: "notes",      label: "Notes",         type: "text" }
+          ] },
+
+        { key: "disposition",        label: "Disposition", type: "select", required: true, section: "Disposition",
+          options: ["Accepted", "Accepted with deviation", "Rejected"] },
+        { key: "deviation_reference", label: "Deviation / concession no.", type: "text", section: "Disposition" },
+        { key: "nonconformances",    label: "Nonconformance detail", type: "memo", section: "Disposition" },
+        { key: "reviewed_by",        label: "Reviewed by", type: "signature", section: "Disposition" },
+        { key: "review_date",        label: "Review date", type: "date", section: "Disposition" }
     ]
 };
 

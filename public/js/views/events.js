@@ -15,6 +15,7 @@ import { openRecordEditor, confirmStep, editDueDate } from "../forms.js";
 import { renderEightD, renderChange } from "./change.js";
 import { renderApqpDetail } from "./apqp.js";
 import { renderDiDetail } from "./di.js";
+import { renderFairDetail } from "./fair.js";
 import { openEntityForm } from "../entity-form.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
@@ -33,7 +34,8 @@ const OWN_SCREEN_REFRESH = {
     eightd: renderEightD,
     ecn: renderChange,
     apqp: (number) => renderApqpDetail(number),
-    di: (number) => renderDiDetail(number)
+    di: (number) => renderDiDetail(number),
+    fair: (number) => renderFairDetail(number)
 };
 
 /* Which sidebar screen "New X" and "Edit X" should return to once the
@@ -42,7 +44,7 @@ const OWN_SCREEN_REFRESH = {
    "complaints" screen, eightd -> "d8", ecn -> "change"). */
 const TYPE_VIEW = {
     ncr: "ncr", capa: "capa", complaint: "complaints",
-    audit: "audit", risk: "risk", eightd: "d8", ecn: "change", scar: "scar"
+    audit: "audit", risk: "risk", eightd: "d8", ecn: "change", scar: "scar", fair: "fair"
 };
 
 /* Shared first column: severity stripe plus record number. */
@@ -152,6 +154,25 @@ const REGISTERS = {
             { className: "sm", render: (row) => row.title },
             { className: "mono sm nowrap", render: (row) => row.data.part_number || "-" },
             { className: "mono sm", render: (row) => scarDueCell(row) },
+            statusColumn
+        ]
+    },
+
+    fair: {
+        tbody: "fair-register",
+        columns: [
+            idColumn,
+            { className: "mono sm nowrap", render: (row) =>
+                (row.data.part_number || "-") + (row.data.revision ? " / " + row.data.revision : "") },
+            { className: "sm", render: (row) => row.data.customer || "-" },
+            { className: "mono sm", render: (row) => formatDate(row.data.inspection_date) },
+            { className: "num", render: (row) => {
+                const checked = Number(row.data.checked_count) || 0;
+                if (checked === 0) return "-";
+                const nc = checked - (Number(row.data.conforming_count) || 0);
+                const text = (checked - nc) + " / " + checked;
+                return nc > 0 ? el("span", { style: "color:var(--crit)", text }) : text;
+            } },
             statusColumn
         ]
     }
@@ -547,6 +568,16 @@ export async function renderRecordDetail(type, number) {
         const pdfButton = document.getElementById("di-pdf");
         if (pdfButton) pdfButton.dataset.number = number;
         return renderDiDetail(number);
+    }
+
+    /* A FAIR renders its characteristic table with computed pass/fail
+       (fair.js). */
+    if (type === "fair") {
+        const pdfButton = document.getElementById("fair-pdf");
+        if (pdfButton) pdfButton.dataset.number = number;
+        const editButton = document.getElementById("fair-edit");
+        if (editButton) editButton.dataset.number = number;
+        return renderFairDetail(number);
     }
 
     const panel = document.getElementById(type + "-detail");

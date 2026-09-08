@@ -21,7 +21,7 @@ import { el, toast } from "./dom.js";
 const TYPE_VIEW = {
     ncr: "ncr", capa: "capa", complaint: "complaints",
     audit: "audit", risk: "risk", eightd: "d8", ecn: "change",
-    di: "di", apqp: "apqp", scar: "scar"
+    di: "di", apqp: "apqp", scar: "scar", fair: "fair"
 };
 
 /* Built-in record types. Every one now has a TYPE_VIEW entry; a type
@@ -29,7 +29,7 @@ const TYPE_VIEW = {
    screen lists. */
 const BUILT_IN_TYPES = new Set([
     "ncr", "capa", "eightd", "complaint", "scar",
-    "audit", "ecn", "risk", "apqp", "di"
+    "audit", "ecn", "risk", "apqp", "di", "fair"
 ]);
 
 /* Records that are not in the `records` table - matched on their
