@@ -1,0 +1,7 @@
+# Files that must keep Unix line endings even when checked out on
+# Windows - a CRLF here breaks the container build or the shell.
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+Caddyfile     text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf

@@ -1,0 +1,13 @@
+# Keep the build context small and never ship secrets or local state.
+**/node_modules
+**/.env
+**/.env.*
+deploy.env.example
+server/backups
+server/storage
+server/test
+**/*.log
+.git
+.github
+.vscode
+docs
