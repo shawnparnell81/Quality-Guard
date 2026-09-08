@@ -785,6 +785,52 @@ tbody tr:hover { background: var(--surface-2); }
 
 td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
 
+/* ---------- register chrome: search, sortable headers, pager ---------- */
+
+.reg-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 15px;
+    border-bottom: 1px solid var(--hairline-2);
+}
+.reg-search {
+    flex: 1;
+    max-width: 320px;
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 9px;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--ink);
+}
+.reg-search:focus {
+    outline: none;
+    border-color: var(--brand);
+}
+
+th.th-sortable { cursor: pointer; user-select: none; }
+th.th-sortable:hover { color: var(--ink); }
+th.th-sortable::after {
+    content: "\2195";        /* up-down arrow, faint until this column is the sort */
+    margin-left: 5px;
+    opacity: .3;
+}
+th.th-sortable[data-sort-dir="asc"]::after  { content: "\2191"; opacity: 1; }
+th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
+
+.reg-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 15px;
+    border-top: 1px solid var(--hairline-2);
+}
+.reg-pager:empty { display: none; }
+.reg-pager .btn[disabled] { opacity: .4; cursor: default; }
+
 .rec-id {
     font-family: "IBM Plex Mono", monospace;
     font-size: 12px;
