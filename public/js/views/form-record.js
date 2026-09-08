@@ -188,12 +188,30 @@ async function renderCustomDetail(typeKey, number) {
         });
     });
 
+    const duplicate = el("button", { class: "btn no-print", type: "button", text: "Duplicate" });
+    duplicate.addEventListener("click", async () => {
+        duplicate.disabled = true;
+        try {
+            const r = await api.cloneRecord(record.number);
+            toast(r.number + " created from " + record.number);
+            selectedNumber = r.number;
+            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "record-editor" } }));
+            openRecordEditor(typeKey, {
+                number: r.number, returnView: "form-record",
+                onSaved: () => { selectedNumber = r.number; }
+            });
+        } catch (error) {
+            toast(error.message, "error");
+            duplicate.disabled = false;
+        }
+    });
+
     const pdf = el("a", { class: "btn no-print", text: "PDF",
         href: "/api/records/" + encodeURIComponent(record.number) + "/pdf" });
     const excel = el("a", { class: "btn no-print", text: "Excel",
         href: api.recordExcelUrl(record.number) });
 
-    const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, pdf, excel]);
+    const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, duplicate, pdf, excel]);
 
     if (transitions) {
         for (const step of transitions) {

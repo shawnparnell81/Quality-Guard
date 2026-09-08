@@ -214,6 +214,8 @@ export const api = {
     searchRecords: (q)      => get(withQuery("/records/search", { q })),
     record:       (number)  => get("/records/" + encodeURIComponent(number)),
     createRecord: (payload) => request("POST", "/records", payload),
+    cloneRecord: (number, payload) =>
+        request("POST", "/records/" + encodeURIComponent(number) + "/clone", payload || {}),
     updateRecord: (number, payload) =>
         request("PATCH", "/records/" + encodeURIComponent(number), payload),
     transition:   (number, payload) =>

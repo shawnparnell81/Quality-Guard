@@ -1989,6 +1989,54 @@ records.get("/:number/attachments/:id/file", async (request, response, next) => 
     }
 });
 
+/* ---------- clone ----------
+   POST /api/records/PFMEA-2026-0003/clone   { title? }
+
+   A new record of the same type, seeded with this one's data - the
+   part-family workflow: most of a PFMEA / Control Plan / 8D carries
+   over, you edit the deltas. Computed columns recompute; a SCAR's
+   triggered_by link is dropped so the copy does not re-wire itself
+   to the original's trigger. */
+records.post("/:number/clone", requirePermission(createPermissionFor), async (request, response, next) => {
+    try {
+        const src = await query(SELECT_RECORD + " and r.number = $2",
+            [request.user.org_id, request.params.number]);
+        if (src.rowCount === 0) return response.status(404).json({ error: "Record not found" });
+        const source = src.rows[0];
+
+        const typeRow = await query(
+            "select id, prefix from record_types where org_id = $1 and key = $2",
+            [request.user.org_id, source.type]);
+        if (typeRow.rowCount === 0) return response.status(400).json({ error: "Unknown record type" });
+        const recordType = typeRow.rows[0];
+
+        const form = await loadPublishedForm(recordType.id);
+        const schema = form ? form.schema : { fields: [] };
+        const formVersion = form ? form.version : source.form_version || 1;
+
+        const seed = { ...(source.data || {}) };
+        delete seed.triggered_by;
+        let data = applyComputedColumns(schema, withComputedRpn(source.type, seed));
+        data = applyFairResults(source.type, data);
+
+        const title = String(request.body?.title || "").trim()
+            || ("Copy of " + (source.title || source.number));
+
+        const me = await query("select initials from users where id = $1", [request.user.id]);
+
+        const created = await withTransaction((client) => insertRecordRow(client, {
+            orgId: request.user.org_id, userId: request.user.id,
+            recordType, type: source.type, title, severity: "ok",
+            ownerInitials: me.rows[0]?.initials, data, formVersion, dueAt: null
+        }));
+
+        publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
+        response.status(201).json({ number: created.number, cloned_from: source.number });
+    } catch (error) {
+        next(error);
+    }
+});
+
 /* ---------- workflow transition ----------
    POST /api/records/NCR-2026-0142/transition
    { "to": "mrb", "actor": "MO" }
