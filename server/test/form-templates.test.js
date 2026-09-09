@@ -107,14 +107,21 @@ after(async () => {
 test("the template list carries metadata and an installed map", async () => {
     const r = await api(adminCookie, "GET", "/api/form-templates");
     assert.equal(r.status, 200);
-    assert.ok(r.body.templates.length >= 11,
+    assert.ok(r.body.templates.length >= 12,
         "the library has the full core-tool set: " + r.body.templates.map((t) => t.key).join(", "));
 
     /* the AIAG / AS9102 core tools, plus the customer-format forms */
     for (const key of ["pfmea", "dfmea", "control_plan", "process_flow",
         "fair_report", "eight_d_report", "msa_grr", "ppap_checklist",
-        "calibration_log", "work_order_form", "automotive_ncr"]) {
+        "calibration_log", "work_order_form", "production_log_form", "automotive_ncr"]) {
         assert.ok(r.body.templates.some((t) => t.key === key), "library has " + key);
+    }
+
+    /* the forms derived from the customer's own spreadsheets bundle
+       that file + a cell map, flagged for the catalogue UI */
+    for (const key of ["work_order_form", "calibration_log", "control_plan", "production_log_form"]) {
+        assert.equal(r.body.templates.find((t) => t.key === key).has_excel_template, true,
+            key + " ships its Excel layout");
     }
 
     const ncr = r.body.templates.find((t) => t.key === "automotive_ncr");

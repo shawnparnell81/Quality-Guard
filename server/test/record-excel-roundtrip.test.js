@@ -214,6 +214,46 @@ test("a spreadsheet that is not a filled template is rejected, not made into an 
     assert.equal(await countPfmea(), before, "no record was created from the junk file");
 });
 
+test("a bundled template installs with its own spreadsheet as the layout, and fills from it", async () => {
+    /* work_order_form ships server/src/form-templates/excel/work_order_form.xlsx
+       + .map.json - installing it stamps that layout onto form v1. */
+    const install = await api(adminCookie, "POST", "/api/form-templates/work_order_form/install");
+    assert.equal(install.status, 201, JSON.stringify(install.body));
+    assert.equal(install.body.excel_template, true, "the bundled spreadsheet was attached on install");
+
+    /* the blank template download is the customer's own file - its own
+       sheet name, no generated "Form" sheet */
+    const { status, wb } = await downloadXlsx(adminCookie,
+        "/api/records/excel-template?type=work_order_form");
+    assert.equal(status, 200);
+    assert.ok(wb.getWorksheet("Work Order Template"), "download is the bundled layout");
+    assert.equal(wb.getWorksheet("Form"), undefined, "not the generated Field/Value grid");
+
+    /* fill the customer layout: header cells + two routing rows */
+    const ws = wb.getWorksheet("Work Order Template");
+    ws.getCell("B5").value = "WO-7788";
+    ws.getCell("F5").value = "PN-4471-C";
+    ws.getCell("B6").value = "Ridgeline Precision";
+    /* routing grid: header is row 15, data from row 16 */
+    ws.getCell("A16").value = "10"; ws.getCell("B16").value = "Receiving"; ws.getCell("C16").value = "WH-1";
+    ws.getCell("A17").value = "20"; ws.getCell("B17").value = "CNC Mill"; ws.getCell("C17").value = "CNC-3";
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const up = await uploadXlsx(adminCookie, "/api/records/excel?type=work_order_form", buffer);
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+    assert.match(up.body.number, /^WOF-\d{4}-\d{4}$/);
+    assert.equal(up.body.source_attached, true);
+
+    const rec = await api(adminCookie, "GET", "/api/records/" + up.body.number);
+    const d = rec.body.record.data;
+    assert.equal(d.work_order_number, "WO-7788");
+    assert.equal(d.part_number, "PN-4471-C");
+    assert.equal(d.customer, "Ridgeline Precision");
+    assert.equal(d.routing.length, 2, "both routing rows read from the customer layout");
+    assert.equal(d.routing[0].op_number, "10");
+    assert.equal(d.routing[1].operation_desc, "CNC Mill");
+});
+
 test("dry_run previews without creating", async () => {
     const { wb } = await downloadXlsx(adminCookie, "/api/records/excel-template?type=pfmea");
     const tableSheet = wb.worksheets.map((s) => s.name).find((n) => n !== "Form");

@@ -1,0 +1,36 @@
+{
+  "key": "production_log_form",
+  "name": "Master Production Log",
+  "prefix": "MPLOG",
+  "clause": "8.5.1",
+  "category": "Production",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "Your master production log - one line per work order from order confirmation through planning, shop-floor yield, and shipping status. Download the Excel template, fill the rows, and \"Fill from Excel\" reads them straight back onto a record. (Distinct from the Customer Service Production Log ledger, which is tied to individual work orders.)",
+  "fields": [
+    {
+      "key": "entries", "label": "Production Log", "type": "table", "required": true,
+      "columns": [
+        { "key": "work_order_number", "label": "Work Order #", "type": "text" },
+        { "key": "po_number", "label": "PO #", "type": "text" },
+        { "key": "customer_name", "label": "Customer Name", "type": "text" },
+        { "key": "product_description", "label": "Product Description", "type": "text" },
+        { "key": "part_sku", "label": "Part / SKU #", "type": "text" },
+        { "key": "revision", "label": "Revision", "type": "text" },
+        { "key": "order_confirm_date", "label": "Order Confirm Date", "type": "date" },
+        { "key": "plan_ship_date", "label": "Plan Ship Date", "type": "date" },
+        { "key": "target_qty", "label": "Target Qty", "type": "number" },
+        { "key": "scheduled_line", "label": "Scheduled Line/MC", "type": "text" },
+        { "key": "setup_time_hrs", "label": "Setup Time (Hrs)", "type": "number" },
+        { "key": "actual_qty_produced", "label": "Actual Qty Produced", "type": "number" },
+        { "key": "scrap_qty", "label": "Scrap Qty", "type": "number" },
+        { "key": "yield_pct", "label": "Yield %", "type": "number" },
+        { "key": "actual_start_date", "label": "Actual Start Date", "type": "date" },
+        { "key": "actual_end_date", "label": "Actual End Date", "type": "date" },
+        { "key": "quality_signoff", "label": "Quality Sign-off", "type": "text" },
+        { "key": "ncr_hold_ref", "label": "NCR / Hold Ref", "type": "text" },
+        { "key": "shipped_qty", "label": "Shipped Qty", "type": "number" },
+        { "key": "fulfillment_status", "label": "Fulfillment Status", "type": "text" }
+      ]
+    }
+  ]
+}
