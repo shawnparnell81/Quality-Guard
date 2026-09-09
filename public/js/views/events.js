@@ -993,11 +993,11 @@ const DETAIL_FIELDS = [
 ];
 
 /* `slot` is the id prefix the detail is written into. It defaults to
-   `type`, so a register's own side panel (#complaint-detail,
-   #complaint-pdf, ...) is unchanged. The full-page record view
-   (record-page.js) passes slot:"record-view" to render into
-   #view-record instead - the path NCR, CAPA and every custom type now
-   take. */
+   `type` (the old per-register side panel: #<type>-detail,
+   #<type>-pdf, ...); every record screen now passes slot:"record-view"
+   from record-page.js so the detail fills the full-page #view-record
+   instead. The `slot === type` branches below are the retired
+   side-panel path, kept only so a stray call no-ops cleanly. */
 export async function renderRecordDetail(type, number, { slot = type } = {}) {
     /* Re-render this same record in the same place - used by the
        in-panel mutators (link, unlink, attach, change due date). */
@@ -1010,14 +1010,14 @@ export async function renderRecordDetail(type, number, { slot = type } = {}) {
         if (pdfButton) pdfButton.dataset.number = number;
         const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = number;
-        return renderApqpDetail(number);
+        return renderApqpDetail(number, { slot });
     }
 
     /* A DI is built around its three investigation-form slots (di.js). */
     if (type === "di") {
         const pdfButton = document.getElementById(slot + "-pdf");
         if (pdfButton) pdfButton.dataset.number = number;
-        return renderDiDetail(number);
+        return renderDiDetail(number, { slot });
     }
 
     /* A FAIR renders its characteristic table with computed pass/fail

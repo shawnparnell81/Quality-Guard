@@ -26,7 +26,7 @@ const STATE_LABEL = {
     closed:         "Closed"
 };
 
-async function openAttachForm(number, slot) {
+async function openAttachForm(number, slot, viewSlot) {
     let documents = [];
     try { ({ documents } = await api.documents()); } catch { documents = []; }
 
@@ -55,11 +55,11 @@ async function openAttachForm(number, slot) {
             }
             return api.attachDiForm(number, slot.slot, form);
         },
-        onSaved: () => renderDiDetail(number)
+        onSaved: () => renderDiDetail(number, { slot: viewSlot })
     });
 }
 
-function confirmRemove(number, slot) {
+function confirmRemove(number, slot, viewSlot) {
     confirmStep({
         title: "Remove " + slot.label,
         body: "This takes the form off the DI slot. It stays in Document Control.",
@@ -67,12 +67,12 @@ function confirmRemove(number, slot) {
         onConfirm: async () => {
             await api.removeDiForm(number, slot.slot);
             toast(slot.label + " removed");
-            await renderDiDetail(number);
+            await renderDiDetail(number, { slot: viewSlot });
         }
     });
 }
 
-function formsPanel(number, packet) {
+function formsPanel(number, packet, viewSlot) {
     const canManage = can("di.manage");
 
     return el("div", { class: "di-forms" }, packet.forms.map((slot) => {
@@ -91,7 +91,7 @@ function formsPanel(number, packet) {
                 class: "btn btn-xs", type: "button",
                 dataset: { requires: "di.manage" }, text: doc ? "Replace" : "Attach"
             });
-            attach.addEventListener("click", () => openAttachForm(number, slot));
+            attach.addEventListener("click", () => openAttachForm(number, slot, viewSlot));
             actions.append(attach);
 
             if (doc) {
@@ -99,7 +99,7 @@ function formsPanel(number, packet) {
                     class: "btn btn-xs", type: "button",
                     dataset: { requires: "di.manage" }, text: "Remove"
                 });
-                remove.addEventListener("click", () => confirmRemove(number, slot));
+                remove.addEventListener("click", () => confirmRemove(number, slot, viewSlot));
                 actions.append(remove);
             }
         }
@@ -120,7 +120,7 @@ function formsPanel(number, packet) {
     }));
 }
 
-function transitionsRow(number, record, transitions) {
+function transitionsRow(number, record, transitions, viewSlot) {
     if (!transitions || transitions.length === 0) {
         return el("p", { class: "sm dim no-print", text: "This DI is closed." });
     }
@@ -147,7 +147,7 @@ function transitionsRow(number, record, transitions) {
                 confirmLabel: "Move to " + step.label,
                 onConfirm: async (reason) => {
                     await api.transition(number, { to: step.to, reason });
-                    await renderDiDetail(number);
+                    await renderDiDetail(number, { slot: viewSlot });
                 }
             });
         });
@@ -166,10 +166,14 @@ function transitionsRow(number, record, transitions) {
     ]);
 }
 
-export async function renderDiDetail(number) {
-    const numberEl = document.getElementById("di-detail-number");
-    const statusEl = document.getElementById("di-detail-status");
-    const body = document.getElementById("di-detail");
+/* `slot` is the id prefix the detail is written into - "di" for the
+   register side panel (unchanged), "record-view" for the full-page
+   record view (record-page.js). */
+export async function renderDiDetail(number, { slot = "di" } = {}) {
+    const full = slot !== "di";
+    const numberEl = document.getElementById(slot + "-detail-number");
+    const statusEl = document.getElementById(slot + "-detail-status");
+    const body = document.getElementById(slot + "-detail");
     if (!body) return;
 
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
@@ -218,12 +222,14 @@ export async function renderDiDetail(number) {
                 ? el("p", { class: "sm", style: "color:var(--ok);margin:0 0 8px", text: "All three forms on file." })
                 : el("p", { class: "sm", style: "color:var(--warn);margin:0 0 8px",
                     text: "Still to attach: " + packet.gate.missing.join(", ") + "." }),
-            formsPanel(number, packet),
-            transitionsRow(number, record, transitions)
+            formsPanel(number, packet, slot),
+            transitionsRow(number, record, transitions, slot),
+            full ? el("div", { class: "section-label", text: "Other investigation documents" }) : null,
+            full ? el("div", { class: "panel-body", id: slot + "-documents-panel" }) : null
         );
         applyPermissions(body);
 
-        renderDocumentsPanel(number, "di-documents-panel");
+        renderDocumentsPanel(number, full ? slot + "-documents-panel" : "di-documents-panel");
     } catch (error) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
     }
