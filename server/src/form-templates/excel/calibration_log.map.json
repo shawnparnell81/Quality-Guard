@@ -25,7 +25,7 @@
         "cert_report_number": "M",
         "record_status": "N"
       },
-      "capacity": 25,
+      "capacity": 28,
       "stop_on_blank_col": "A"
     }
   }
