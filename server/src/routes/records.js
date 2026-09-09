@@ -20,6 +20,7 @@ import { log } from "../logger.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { fillTemplate, readTemplate } from "../excel-fill.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
+import { formatValue, isEmpty } from "../../../public/js/format.js";
 import { ppapMissing } from "./ppap.js";
 import { publish } from "../stream.js";
 import { heartbeat, leaveEditing } from "../presence.js";
@@ -898,11 +899,10 @@ function buildFormWorkbook(schema, values) {
     workbook.creator = "QMS Guardian";
 
     /* A boolean writes as "Yes" / "No" (readFormWorkbook reads those
-       back); an object dumps to JSON; everything else prints as-is. */
-    const cellOut = (v) => v == null ? ""
-        : typeof v === "boolean" ? (v ? "Yes" : "No")
-        : typeof v === "object" ? JSON.stringify(v)
-        : v;
+       back); an object dumps to JSON; numbers and dates stay native
+       so the cell types right; everything else prints as-is. Same
+       formatter the detail screen and the PDF use. */
+    const cellOut = (field, v) => formatValue(field, v, { spreadsheet: true });
 
     const form = workbook.addWorksheet(FORM_SHEET, { views: [{ state: "frozen", ySplit: 2 }] });
     form.columns = [
@@ -927,7 +927,7 @@ function buildFormWorkbook(schema, values) {
             }
         }
         let cell = "";
-        if (values) cell = cellOut(data[f.key]);
+        if (values) cell = cellOut(f, data[f.key]);
         form.addRow({ k: f.key, field: f.label || humanizeKey(f.key), value: cell });
     }
 
@@ -948,7 +948,7 @@ function buildFormWorkbook(schema, values) {
             for (const row of data[f.key]) {
                 if (!row || typeof row !== "object") continue;
                 const line = {};
-                for (const c of f.columns) line[c.key] = cellOut(row[c.key]);
+                for (const c of f.columns) line[c.key] = cellOut(c, row[c.key]);
                 sheet.addRow(line);
             }
         }
@@ -1442,7 +1442,7 @@ function drawGenericFields(doc, data) {
         doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
             .text(humanizeKey(key) + ":  ", { continued: true })
             .font("Helvetica").fillColor(INK)
-            .text(String(value));
+            .text(formatValue(null, value));
     }
 
     doc.moveDown(1);
@@ -1486,8 +1486,8 @@ function drawTableField(doc, field, rows, userNames) {
                 .map(([key, value]) => [humanizeKey(key), value, { type: "text" }]);
 
         for (const [label, value, col] of cells) {
-            if (value === null || value === undefined || value === "") continue;
-            const text = formatFieldValue(col, value, userNames);
+            if (isEmpty(value)) continue;
+            const text = formatValue(col, value, { users: userNames });
             doc.fontSize(8.5).font("Helvetica-Bold").fillColor(INK_2)
                 .text("     " + label + ":  ", { continued: true, width })
                 .font("Helvetica").fillColor(INK).text(text, { width });
@@ -1495,28 +1495,6 @@ function drawTableField(doc, field, rows, userNames) {
         doc.moveDown(0.25);
     });
     doc.moveDown(0.4);
-}
-
-/* A date field's value is the plain "YYYY-MM-DD" string forms.js
-   stores it as - readable, but not what a person reads on a printed
-   form. A "user" field's value is initials, the same short code the
-   form's own dropdown carries as its option value; userNames turns
-   that back into a name when one is known, without pretending an
-   initials code no longer resolves when it does not. */
-function formatFieldValue(field, value, userNames) {
-    if (field.type === "boolean") {
-        return (value === true || value === "true" || value === 1) ? "Yes" : "No";
-    }
-    if (field.type === "date") {
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString();
-    }
-
-    if (field.type === "user" && userNames && userNames.has(value)) {
-        return userNames.get(value) + " (" + value + ")";
-    }
-
-    return String(value);
 }
 
 /* The whole point of this export: a PDF laid out like the form that
@@ -1570,7 +1548,7 @@ function drawFormFields(doc, data, schema, userNames) {
             continue;
         }
 
-        const text = formatFieldValue(field, value, userNames);
+        const text = formatValue(field, value, { users: userNames });
 
         if (field.type === "memo") {
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2).text(label + ":");
@@ -1597,7 +1575,7 @@ function drawFormFields(doc, data, schema, userNames) {
                 drawTableField(doc, { key, label: humanizeKey(key), columns: [] }, value, userNames);
                 continue;
             }
-            const text = value && typeof value === "object" ? JSON.stringify(value) : String(value);
+            const text = formatValue(null, value);
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
                 .text(humanizeKey(key) + ":  ", { continued: true })
                 .font("Helvetica").fillColor(INK).text(text);
