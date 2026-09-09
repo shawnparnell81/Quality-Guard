@@ -231,10 +231,17 @@ export const api = {
         request("POST", "/records/" + encodeURIComponent(number) + "/transition", payload),
 
     /* concurrent-edit presence (P3.3) */
-    editingHeartbeat: (number) =>
-        request("PUT", "/records/" + encodeURIComponent(number) + "/editing"),
+    editingHeartbeat: (number, dirty) =>
+        request("PUT", "/records/" + encodeURIComponent(number) + "/editing", { dirty: !!dirty }),
     stopEditing: (number) =>
         request("DELETE", "/records/" + encodeURIComponent(number) + "/editing"),
+
+    /* server-side drafts (P3 / M15) */
+    getDraft:   (key) => get("/records/drafts/" + encodeURIComponent(key)),
+    saveDraft:  (key, snapshot) =>
+        request("PUT", "/records/drafts/" + encodeURIComponent(key), { snapshot }),
+    clearDraft: (key) =>
+        request("DELETE", "/records/drafts/" + encodeURIComponent(key)),
 
     /* notification centre (P3.4) + email opt-in (P3.5) */
     notifications: () => get("/notifications"),

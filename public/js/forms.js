@@ -817,15 +817,19 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
 
     /* Filled by the presence heartbeat (P3.3) when someone else has
-       this same record open. */
+       this same record open - and now whether they have unsaved
+       changes (P3 / M15). */
     const presenceBanner = el("div", { class: "presence-banner", hidden: "hidden" });
-    function paintPresence(names) {
-        if (!names || names.length === 0) { presenceBanner.hidden = true; return; }
+    function paintPresence(editors) {
+        if (!editors || editors.length === 0) { presenceBanner.hidden = true; return; }
+        const names = editors.map((e) => e.name);
         const who = names.length === 1 ? names[0]
             : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+        const anyDirty = editors.some((e) => e.dirty);
         presenceBanner.textContent = who
             + (names.length === 1 ? " also has" : " also have")
-            + " this record open. Whoever saves last wins.";
+            + " this record open"
+            + (anyDirty ? ", with unsaved changes. Compare before you save." : ". Whoever saves last wins.");
         presenceBanner.hidden = false;
     }
 
@@ -925,13 +929,28 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
         if (titleGroup.querySelector(":scope > .field-error")) paintTitleError();
     });
 
-    /* ---------- autosave + unsaved-changes guard (P0.2) ---------- */
+    /* ---------- autosave + unsaved-changes guard (P0.2, M15) ----------
+       localStorage is the instant, offline-safe tier; the server draft
+       (P3 / M15) is the copy that survives a device change. Both hold
+       the same { at, snap } shape. */
 
     const draftKey = "qmsg:draft:v1:" + typeKey + ":" + (number || "new");
+    const serverKey = typeKey + ":" + (number || "new");
+    let serverPushTimer = null;
     const store = {
         read() { try { return JSON.parse(localStorage.getItem(draftKey) || "null"); } catch { return null; } },
-        write(value) { try { localStorage.setItem(draftKey, JSON.stringify(value)); } catch { /* full or blocked */ } },
-        clear() { try { localStorage.removeItem(draftKey); } catch { /* blocked */ } }
+        write(value) {
+            try { localStorage.setItem(draftKey, JSON.stringify(value)); } catch { /* full or blocked */ }
+            if (serverPushTimer) clearTimeout(serverPushTimer);
+            serverPushTimer = setTimeout(() => {
+                api.saveDraft(serverKey, value).catch(() => { /* offline - localStorage still has it */ });
+            }, 2000);
+        },
+        clear() {
+            try { localStorage.removeItem(draftKey); } catch { /* blocked */ }
+            if (serverPushTimer) clearTimeout(serverPushTimer);
+            api.clearDraft(serverKey).catch(() => { /* best effort */ });
+        }
     };
 
     function snapshot() {
@@ -954,7 +973,7 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     /* Announce that this record is open for editing, and show a banner
        if anyone else already has it. Only for an existing record - a
        new one has no number to key on yet. */
-    const stopPresence = existing ? beginEditing(existing.number, paintPresence) : null;
+    const stopPresence = existing ? beginEditing(existing.number, paintPresence, isDirty) : null;
 
     function applyDraft(snap) {
         titleInput.value = snap.title || "";
@@ -1027,12 +1046,15 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
         leave();
     });
 
-    /* Offer an unsent draft from a previous visit. */
-    const draft = store.read();
-    if (draft && draft.snap && JSON.stringify(draft.snap) !== cleanJSON) {
+    /* Offer an unsent draft from a previous visit - this browser's
+       localStorage first, else the server copy (a draft started on
+       another device). */
+    function offerDraft(draft, source) {
+        if (!draft || !draft.snap || JSON.stringify(draft.snap) === cleanJSON) return;
         const mins = Math.max(0, Math.round((Date.now() - (draft.at || Date.now())) / 60000));
         const banner = el("div", { class: "draft-banner" }, [
-            el("span", {}, "Unsaved draft from " + (mins < 1 ? "moments ago" : mins + " min ago") + "."),
+            el("span", {}, "Unsaved draft from " + (mins < 1 ? "moments ago" : mins + " min ago")
+                + (source === "server" ? " (another device)." : ".")),
             el("button", {
                 type: "button", class: "btn sm",
                 onClick: () => { applyDraft(draft.snap); banner.remove(); autosave(); }
@@ -1043,6 +1065,16 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
             }, "Discard")
         ]);
         form.prepend(banner);
+    }
+
+    const localDraft = store.read();
+    if (localDraft) {
+        offerDraft(localDraft, "local");
+    } else {
+        /* the server stores the same { at, snap } value store.write sends */
+        api.getDraft(serverKey)
+            .then((d) => offerDraft(d.snapshot, "server"))
+            .catch(() => { /* 404 - no server draft, nothing to offer */ });
     }
 
     form.addEventListener("submit", async (event) => {

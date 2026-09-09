@@ -31,7 +31,7 @@ function liveEditors(room) {
     const now = Date.now();
     const out = [];
     for (const entry of room.values()) {
-        if (now - entry.at < TTL_MS) out.push({ id: entry.id, name: entry.name });
+        if (now - entry.at < TTL_MS) out.push({ id: entry.id, name: entry.name, dirty: !!entry.dirty });
     }
     return out;
 }
@@ -47,17 +47,20 @@ function broadcast(orgId, number, room) {
 
 /* Called on open and then on a timer. Returns the current editor list
    (including the caller - the client filters itself out by id). */
-export function heartbeat(orgId, number, user) {
+export function heartbeat(orgId, number, user, dirty = false) {
     const key = keyFor(orgId, number);
     let room = rooms.get(key);
     if (!room) { room = new Map(); rooms.set(key, room); }
 
-    const known = room.has(user.id);
-    room.set(user.id, { id: user.id, name: user.full_name || user.initials || "Someone", at: Date.now() });
+    const prev = room.get(user.id);
+    room.set(user.id, {
+        id: user.id, name: user.full_name || user.initials || "Someone",
+        at: Date.now(), dirty: !!dirty
+    });
 
-    /* Only tell everyone else when the set actually changed - a plain
-       heartbeat from someone already in the room is not news. */
-    if (!known) broadcast(orgId, number, room);
+    /* Tell everyone else when the set changed OR when this editor's
+       unsaved-changes state flipped - both are news to the others. */
+    if (!prev || !!prev.dirty !== !!dirty) broadcast(orgId, number, room);
     return liveEditors(room);
 }
 
