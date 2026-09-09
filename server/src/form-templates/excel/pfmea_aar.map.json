@@ -1,0 +1,68 @@
+{
+  "primary_sheet": "PFMEA",
+  "sheets": [
+    "PFMEA"
+  ],
+  "fields": {
+    "item": {
+      "sheet": "PFMEA",
+      "cell": "B4"
+    },
+    "model_years": {
+      "sheet": "PFMEA",
+      "cell": "B5"
+    },
+    "core_team": {
+      "sheet": "PFMEA",
+      "cell": "B6"
+    },
+    "responsibility": {
+      "sheet": "PFMEA",
+      "cell": "F4"
+    },
+    "key_date": {
+      "sheet": "PFMEA",
+      "cell": "F5"
+    },
+    "prepared_by": {
+      "sheet": "PFMEA",
+      "cell": "N4"
+    },
+    "fmea_date": {
+      "sheet": "PFMEA",
+      "cell": "N5"
+    },
+    "fmea_number": {
+      "sheet": "PFMEA",
+      "cell": "N2"
+    }
+  },
+  "tables": {
+    "analysis": {
+      "sheet": "PFMEA",
+      "first_data_row": 9,
+      "columns": {
+        "requirements": "A",
+        "failure_mode": "B",
+        "effects": "C",
+        "severity": "D",
+        "class": "E",
+        "causes": "F",
+        "occurrence": "G",
+        "controls_prevention": "H",
+        "controls_detection": "I",
+        "detection": "J",
+        "rpn": "K",
+        "recommended_actions": "L",
+        "responsibility_target": "M",
+        "actions_taken": "N",
+        "severity_2": "O",
+        "occurrence_2": "P",
+        "detection_2": "Q",
+        "rpn_2": "K"
+      },
+      "capacity": 32,
+      "stop_on_blank_col": "B"
+    }
+  }
+}

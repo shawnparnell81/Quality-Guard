@@ -1,0 +1,23 @@
+{
+  "key": "fair_inspection_aar",
+  "name": "First Article Inspection Report (AAR set)",
+  "prefix": "FIAR",
+  "clause": "8.6",
+  "category": "Inspection",
+  "standard": "AIAG",
+  "description": "The First Article Inspection sheet from your Appearance Report workbook - part number and date, then one line per characteristic with its tolerance range, three sample measurements and a comment. Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record.",
+  "fields": [
+    { "key": "part_number", "label": "Part Number", "type": "text", "required": true, "section": "Header" },
+    { "key": "report_date", "label": "Date", "type": "date", "section": "Header" },
+    {
+      "key": "characteristics", "label": "Measurement Results", "type": "table", "required": true,
+      "columns": [
+        { "key": "range_of_tolerance", "label": "RANGE OF TOLERANCE", "type": "text" },
+        { "key": "sample_1", "label": "Sample 1", "type": "text" },
+        { "key": "sample_2", "label": "Sample 2", "type": "text" },
+        { "key": "sample_3", "label": "Sample 3", "type": "text" },
+        { "key": "comment", "label": "Comment", "type": "text" }
+      ]
+    }
+  ]
+}

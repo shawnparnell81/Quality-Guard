@@ -285,6 +285,34 @@ test("the bundled 8D form fills from the user's own Blank 8D sheet", async () =>
     assert.match(d.root_cause, /Mould vent blocked/);
 });
 
+test("a sheet split out of the Appearance Report workbook fills from its own layout", async () => {
+    const install = await api(adminCookie, "POST", "/api/form-templates/fair_inspection_aar/install");
+    assert.equal(install.status, 201, JSON.stringify(install.body));
+    assert.equal(install.body.excel_template, true);
+
+    const { status, wb } = await downloadXlsx(adminCookie,
+        "/api/records/excel-template?type=fair_inspection_aar");
+    assert.equal(status, 200);
+    assert.ok(wb.getWorksheet("Inspection Report"), "download is the single extracted sheet");
+
+    const ws = wb.getWorksheet("Inspection Report");
+    ws.getCell("B3").value = "PN-9931";
+    ws.getCell("B6").value = "10.00 - 10.05"; ws.getCell("C6").value = "10.02";
+    ws.getCell("D6").value = "10.03"; ws.getCell("F6").value = "OK";
+    ws.getCell("B7").value = "5.0 +/- 0.1"; ws.getCell("C7").value = "5.04";
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const up = await uploadXlsx(adminCookie, "/api/records/excel?type=fair_inspection_aar", buffer);
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+
+    const rec = await api(adminCookie, "GET", "/api/records/" + up.body.number);
+    const d = rec.body.record.data;
+    assert.equal(d.part_number, "PN-9931");
+    assert.equal(d.characteristics.length, 2);
+    assert.equal(d.characteristics[0].range_of_tolerance, "10.00 - 10.05");
+    assert.equal(d.characteristics[1].sample_1, "5.04");
+});
+
 test("dry_run previews without creating", async () => {
     const { wb } = await downloadXlsx(adminCookie, "/api/records/excel-template?type=pfmea");
     const tableSheet = wb.worksheets.map((s) => s.name).find((n) => n !== "Form");
