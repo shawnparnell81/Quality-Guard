@@ -25,7 +25,12 @@ export const pool = new Pool({
     database: process.env.PGDATABASE,
     user: process.env.PGUSER,
     password: process.env.PGPASSWORD,
-    max: 10,
+    /* PGPOOL_MAX overrides; production gets 10, and dev / the test
+       suite (which runs dozens of app processes at once, each also
+       holding one LISTEN connection) get a smaller pool so Postgres'
+       connection limit is not the thing that breaks. */
+    max: Number(process.env.PGPOOL_MAX)
+        || (process.env.NODE_ENV === "production" ? 10 : 5),
     idleTimeoutMillis: 30000
 });
 

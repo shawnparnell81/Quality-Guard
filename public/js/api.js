@@ -133,6 +133,51 @@ function withQuery(path, params) {
     return search ? path + "?" + search : path;
 }
 
+/* Download an export (PDF / Excel). A small record streams straight
+   back; a big one returns 202 { job_id } because the server builds it
+   on a worker (audit M9), so we poll the job and then fetch the file.
+   Saves it via a temporary <a download>. `onWait` fires once if we
+   had to wait for a job. */
+async function downloadFile(url, { fallbackName = "download", onWait } = {}) {
+    let response = await fetch(BASE + url.replace(/^\/api/, ""), { credentials: "same-origin" });
+
+    if (response.status === 401) { window.location.href = "/login.html"; throw new Error("Session ended"); }
+
+    if (response.status === 202) {
+        const { job_id } = await response.json();
+        if (onWait) onWait();
+        const deadline = Date.now() + 120000;
+        for (;;) {
+            await new Promise((r) => setTimeout(r, 1500));
+            if (Date.now() > deadline) throw new Error("The export is taking too long - try again later.");
+            const job = await request("GET", "/jobs/" + encodeURIComponent(job_id));
+            if (job.status === "error") throw new Error(job.error || "The export failed");
+            if (job.ready) break;
+        }
+        response = await fetch(BASE + "/jobs/" + encodeURIComponent(job_id) + "/download",
+            { credentials: "same-origin" });
+    }
+
+    if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "Could not download the file");
+    }
+
+    const disposition = response.headers.get("content-disposition") || "";
+    const match = /filename="?([^"]+)"?/.exec(disposition);
+    const name = match ? match[1] : fallbackName;
+
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 10000);
+}
+
 /* A multipart POST that reports upload progress - fetch() cannot, so
    this is the one place XMLHttpRequest earns its keep. onProgress
    gets a 0..1 fraction (null when the total is unknown). Resolves
@@ -231,6 +276,13 @@ export const api = {
     recordExcelTemplateUrl: (type) =>
         "/api/records/excel-template?type=" + encodeURIComponent(type),
     recordExcelUrl: (number) => "/api/records/" + encodeURIComponent(number) + "/excel",
+    /* PDF / Excel download that transparently handles a 202 async job */
+    downloadRecordPdf:   (number, opts) =>
+        downloadFile("/api/records/" + encodeURIComponent(number) + "/pdf",
+            { fallbackName: number + ".pdf", ...opts }),
+    downloadRecordExcel: (number, opts) =>
+        downloadFile("/api/records/" + encodeURIComponent(number) + "/excel",
+            { fallbackName: number + ".xlsx", ...opts }),
     /* "fill my Excel template" - the field -> cell map for a form type */
     excelMap:        (typeKey) => get("/record-types/" + encodeURIComponent(typeKey) + "/excel-map"),
     saveExcelMap:    (typeKey, map) =>

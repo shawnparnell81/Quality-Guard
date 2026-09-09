@@ -289,10 +289,12 @@ export async function renderCustomDetail(typeKey, number, { slot = "record-view"
         title: "Open the full-page form to print",
         onClick: () => window.open(
             "/api/records/" + encodeURIComponent(record.number) + "/pdf?inline=1", "_blank") });
-    const pdf = el("a", { class: "btn no-print", text: "PDF",
-        href: "/api/records/" + encodeURIComponent(record.number) + "/pdf" });
-    const excel = el("a", { class: "btn no-print", text: "Excel",
-        href: api.recordExcelUrl(record.number) });
+    const pdf = el("button", { class: "btn no-print", type: "button", text: "PDF",
+        onClick: () => api.downloadRecordPdf(record.number, { onWait: () => toast("Preparing the PDF…") })
+            .catch((error) => toast(error.message, "error")) });
+    const excel = el("button", { class: "btn no-print", type: "button", text: "Excel",
+        onClick: () => api.downloadRecordExcel(record.number, { onWait: () => toast("Preparing the workbook…") })
+            .catch((error) => toast(error.message, "error")) });
 
     const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, duplicate, print, pdf, excel]);
 

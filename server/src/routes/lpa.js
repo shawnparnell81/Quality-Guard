@@ -17,6 +17,7 @@
 import { Router } from "express";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
+import { runOnce, JOB_LOCKS } from "../job-lock.js";
 
 export const lpa = Router();
 
@@ -83,14 +84,14 @@ export async function rollForwardAll() {
 
 /* Self-arming hourly roll. Schedules turn over on date boundaries, so
    hourly is plenty; the explicit POST /api/lpa/roll keeps a freshly
-   opened screen current between ticks. Single-node, like the digest;
-   a multi-node deploy guards this with a lock. */
+   opened screen current between ticks. The run is behind an advisory
+   lock (audit H8) so only one instance rolls per tick. */
 let rollTimer = null;
 
 export function startLpaRollSchedule() {
     const tick = async () => {
         try {
-            await rollForwardAll();
+            await runOnce(JOB_LOCKS.lpaRoll, () => rollForwardAll());
         } catch (error) {
             console.error("[lpa] roll failed: " + error.message);
         }
