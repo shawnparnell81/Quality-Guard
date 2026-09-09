@@ -178,6 +178,34 @@ test("a PATCH that sends the rows back with their _id keeps them; a new row gets
     assert.equal(checks[1]._id, rowIds[1], "row 2 keeps its id");
     assert.equal(typeof checks[2]._id, "string");
     assert.ok(![rowIds[0], rowIds[1]].includes(checks[2]._id), "the new row gets a fresh id");
+    rowIds = checks.map((r) => r._id);
+});
+
+test("the server re-mints a made-up or duplicated _id on write (audit M5)", async () => {
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const patched = await api(adminCookie, "PATCH", "/api/records/" + number, {
+        reason: "hostile client sends bad ids",
+        data: {
+            checks: [
+                { _id: rowIds[0], item: "Torque" },                 // real -> kept
+                { _id: "totally-made-up", item: "Gap" },            // not a uuid -> re-minted
+                { _id: rowIds[0], item: "Flush" },                  // dup of row 1 -> re-minted
+                { _id: "00000000-0000-0000-0000-000000000000", item: "Extra" }  // uuid but not on this record -> re-minted
+            ]
+        }
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+
+    const checks = (await api(adminCookie, "GET", "/api/records/" + number)).body.record.data.checks;
+    assert.equal(checks.length, 4);
+    assert.equal(checks[0]._id, rowIds[0], "the one real id is honoured");
+    assert.match(checks[1]._id, UUID);
+    assert.notEqual(checks[1]._id, "totally-made-up");
+    assert.notEqual(checks[2]._id, rowIds[0], "the duplicate got its own id");
+    assert.notEqual(checks[3]._id, "00000000-0000-0000-0000-000000000000");
+    /* all four ids are distinct */
+    assert.equal(new Set(checks.map((r) => r._id)).size, 4);
+    rowIds = checks.map((r) => r._id);
 });
 
 test("a file attaches to one row via row_ref, and a bad row_ref is a 400", async () => {

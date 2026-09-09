@@ -1017,6 +1017,7 @@ ALTER TABLE ONLY public.workflow_transitions
 ALTER TABLE ONLY public.workflow_transitions
     ADD CONSTRAINT workflow_transitions_record_type_id_from_state_to_state_key UNIQUE (record_type_id, from_state, to_state);
 CREATE INDEX idx_apqp_deliverables ON public.apqp_deliverables USING btree (record_id);
+CREATE INDEX idx_attachments_row_ref ON public.attachments USING btree (record_id, row_ref) WHERE (row_ref IS NOT NULL);
 CREATE INDEX idx_audit_entity ON public.audit_log USING btree (entity, entity_id);
 CREATE INDEX idx_audit_record ON public.audit_log USING btree (record_id, changed_at DESC);
 CREATE INDEX idx_cert_next_audit ON public.certifications USING btree (org_id, next_audit_on);

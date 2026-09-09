@@ -136,13 +136,21 @@ function applyComputedColumns(schema, data) {
     return out;
 }
 
+const ROW_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /* Every row of a table field carries a stable "_id" so a per-row
    attachment (attachments.row_ref = "<fieldKey>:<_id>") stays pinned
-   to its row across edits, inserts and reorders. Assigned here, on
-   the server, and only where missing - a row that already has one
-   keeps it. A no-op unless the schema declares a table field and the
-   data actually carries rows. */
-function ensureRowIds(schema, data) {
+   to its row across edits, inserts and reorders.
+
+   The id is SERVER-OWNED (audit M5). The client's "_id" is advisory:
+   on a write it is honoured only when it is a real uuid that this
+   record already carries for that table AND has not been sent twice
+   in the same array. Anything else - a made-up id, a collision, an
+   id lifted from another record - is replaced with a fresh one, and
+   uniqueness within the array is guaranteed. On create (`prior`
+   omitted) every row gets a fresh id regardless of what was sent. A
+   no-op unless the schema declares a table field carrying rows. */
+function ensureRowIds(schema, data, prior) {
     const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
     if (!data || typeof data !== "object" || fields.length === 0) return data;
 
@@ -152,12 +160,23 @@ function ensureRowIds(schema, data) {
         const rows = Array.isArray(out[field.key]) ? out[field.key] : null;
         if (!rows) continue;
 
+        const known = new Set(
+            (prior && Array.isArray(prior[field.key]) ? prior[field.key] : [])
+                .filter((r) => r && typeof r._id === "string" && ROW_ID_RE.test(r._id))
+                .map((r) => r._id)
+        );
+        const taken = new Set();
+
         let touched = false;
         const next = rows.map((row) => {
             if (!row || typeof row !== "object" || Array.isArray(row)) return row;
-            if (typeof row._id === "string" && row._id) return row;
+            const claimed = typeof row._id === "string" ? row._id : "";
+            const keep = claimed && known.has(claimed) && !taken.has(claimed);
+            const id = keep ? claimed : randomUUID();
+            taken.add(id);
+            if (id === row._id) return row;
             touched = true;
-            return { ...row, _id: randomUUID() };
+            return { ...row, _id: id };
         });
         if (touched) {
             if (out === data) out = { ...data };
@@ -2291,7 +2310,10 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             );
             merged = applyComputedColumns(schemaRow.rows[0]?.schema || null, merged);
             merged = applyFairResults(record.type, merged);
-            merged = ensureRowIds(schemaRow.rows[0]?.schema || null, merged);
+            /* server-owned row ids: prior = what the record already
+               holds, so a real existing id is kept and anything else
+               is re-minted (audit M5) */
+            merged = ensureRowIds(schemaRow.rows[0]?.schema || null, merged, record.data);
             merged = stampSignatures(schemaRow.rows[0]?.schema || null, merged,
                 record.data, request.user, record.form_version);
 
