@@ -260,12 +260,16 @@ async function renderCustomDetail(typeKey, number) {
         }
     });
 
+    const print = el("button", { class: "btn no-print", type: "button", text: "Print",
+        title: "Open the full-page form to print",
+        onClick: () => window.open(
+            "/api/records/" + encodeURIComponent(record.number) + "/pdf?inline=1", "_blank") });
     const pdf = el("a", { class: "btn no-print", text: "PDF",
         href: "/api/records/" + encodeURIComponent(record.number) + "/pdf" });
     const excel = el("a", { class: "btn no-print", text: "Excel",
         href: api.recordExcelUrl(record.number) });
 
-    const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, duplicate, pdf, excel]);
+    const row = el("div", { class: "row no-print", style: "margin-top:12px" }, [edit, duplicate, print, pdf, excel]);
 
     if (can("forms.manage")) {
         const layout = el("button", { class: "btn no-print", type: "button", text: "Excel layout" });

@@ -25,7 +25,7 @@ import { recordLink, looksLikeRecordNumber } from "../record-nav.js";
 import { onStreamEvent } from "../stream.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize, statusKind, printElement, toast
+    formatDate, humanize, statusKind, toast
 } from "../dom.js";
 
 /* 8D and ECN keep their own register + detail rendering (change.js) -
@@ -782,17 +782,23 @@ export function wireRegisterClicks() {
             renderRecordDetail(type, next.dataset.number);
         });
 
+        /* Both buttons act on whatever record the detail panel is
+           showing - renderRecordDetail stamps its number onto the PDF
+           button's dataset each time. Print opens the branded, full-
+           page PDF form inline in a new tab (the on-screen panel is a
+           summary, not a form); PDF downloads the same file. */
+        const currentNumber = () => document.getElementById(type + "-pdf")?.dataset.number;
+
         const printButton = document.getElementById(type + "-print");
         if (printButton) {
             printButton.addEventListener("click", () => {
-                printElement(document.getElementById(type + "-detail-panel"));
+                const number = currentNumber();
+                if (number) {
+                    window.open("/api/records/" + encodeURIComponent(number) + "/pdf?inline=1", "_blank");
+                }
             });
         }
 
-        /* The PDF button has no href of its own - renderRecordDetail
-           stamps the currently-shown record's number onto it via
-           dataset each time the detail panel changes, so this always
-           downloads whatever is actually on screen. */
         const pdfButton = document.getElementById(type + "-pdf");
         if (pdfButton) {
             pdfButton.addEventListener("click", () => {
