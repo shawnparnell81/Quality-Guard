@@ -2921,6 +2921,7 @@ th.col-you { color: var(--brand); }
     :root:not([data-theme="light"]) .toast-error { color: #0E0F12; }
 }
 .toast-info  { background: var(--ink);  color: var(--ground); }
+.toast-warn  { background: var(--warn); color: #0E0F12; }
 
 /* ---------- forms sub-tab strip ---------- */
 

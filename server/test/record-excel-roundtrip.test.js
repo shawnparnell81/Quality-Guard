@@ -204,6 +204,27 @@ test("dry_run previews without creating", async () => {
     assert.equal(after, before, "nothing was created");
 });
 
+test("a required field the sheet did not fill is a warning, and the record is still created", async () => {
+    const { wb } = await downloadXlsx(adminCookie, "/api/records/excel-template?type=pfmea");
+    const tableSheet = wb.worksheets.map((s) => s.name).find((n) => n !== "Form");
+    /* title only - process_name (required) left blank */
+    fillTemplate(wb, { title: "Started in Excel", header: {}, tableSheet, tableRows: [] });
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const dry = await uploadXlsx(adminCookie, "/api/records/excel?type=pfmea&dry_run=true", buffer);
+    assert.equal(dry.status, 200);
+    assert.deepEqual(dry.body.errors, [], "no hard errors");
+    assert.ok(dry.body.warnings.some((w) => /process name/i.test(w)), JSON.stringify(dry.body.warnings));
+
+    const up = await uploadXlsx(adminCookie, "/api/records/excel?type=pfmea", buffer);
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+    assert.ok(up.body.warnings.some((w) => /process name/i.test(w)), JSON.stringify(up.body.warnings));
+
+    const rec = await api(adminCookie, "GET", "/api/records/" + up.body.number);
+    assert.equal(rec.body.record.title, "Started in Excel");
+    assert.equal(rec.body.record.data.process_name, undefined, "the blank required field stayed blank");
+});
+
 test("a bad cell is a reported error, not a crash", async () => {
     const { wb } = await downloadXlsx(adminCookie, "/api/records/excel-template?type=pfmea");
     const tableSheet = wb.worksheets.map((s) => s.name).find((n) => n !== "Form");

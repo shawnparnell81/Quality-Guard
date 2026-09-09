@@ -446,14 +446,22 @@ export function wireFormRecord() {
             fromExcel.textContent = "Reading...";
             try {
                 const r = await api.importRecordExcel(currentType, fd);
-                toast(r.number + " created from Excel");
                 selectedNumber = r.number;
-                await renderFormRecord();
+                const warnings = r.warnings || [];
+                if (warnings.length) {
+                    toast(r.number + " imported - " + warnings.length
+                        + (warnings.length === 1 ? " required field still to fill" : " required fields still to fill"), "warn");
+                    /* Land in the record so the flagged fields are right there. */
+                    await openRecordPage(r.number, { type: currentType });
+                } else {
+                    toast(r.number + " created from Excel");
+                    await renderFormRecord();
+                }
             } catch (error) {
                 const errs = error.payload && error.payload.errors;
                 toast(errs && errs.length ? errs[0] : error.message, "error");
                 if (errs && errs.length > 1) {
-                    window.alert("The sheet has problems:\n\n" + errs.join("\n"));
+                    window.alert("The sheet could not be read:\n\n" + errs.join("\n"));
                 }
             } finally {
                 fromExcel.disabled = false;
