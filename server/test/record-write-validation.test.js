@@ -1,18 +1,18 @@
 /* ============================================================
-   Server-side write validation (P0 audit fix C1) - report-only.
+   Server-side write validation (audit fix C1) - ENFORCED.
 
-   coerceCell is now also a whole-payload validator: on every record
-   POST and PATCH the server walks the caller's data against the
-   published form version and logs any value the schema cannot accept
-   - a select that is not one of its options, a number that is not a
+   coerceCell is also a whole-payload validator: on every record POST
+   and PATCH the server walks the caller's data against the published
+   form version and rejects any value the schema cannot accept - a
+   select that is not one of its options, a number that is not a
    number, a value outside field.min / field.max, a string that fails
-   field.pattern, a bad table cell.
+   field.pattern, a bad table cell. The response is 422 with a
+   schema_violations list; the mismatch is also logged.
 
-   This phase does NOT reject. A bad write still succeeds; it just
-   leaves a "record_write_schema_mismatch" line in the server log so
-   the real violation rate is visible before enforcement is turned on.
-   These tests pin that contract: the machinery observes and reports,
-   and never blocks a save.
+   On PATCH the check is narrowed to the values the write introduces
+   (differs from what the record already holds), so a schema that
+   changed under an existing record cannot lock its owner out of
+   editing the parts they never touched.
    ============================================================ */
 
 import { test, before, after } from "node:test";
@@ -139,10 +139,10 @@ after(async () => {
 
 let cleanNumber;
 
-test("a create with several bad values is still accepted, and every one is logged", async () => {
+test("a create with bad values is rejected 422, and every one is listed and logged", async () => {
     const mark = serverOut.length;
     const made = await api(adminCookie, "POST", "/api/records", {
-        type: "validated_form", title: "Bad values but should still save",
+        type: "validated_form", title: "Bad values",
         data: {
             part_no: "nope",          // fails the pattern
             qty: 999,                 // above max
@@ -150,23 +150,27 @@ test("a create with several bad values is still accepted, and every one is logge
             rows: [{ note: "ok", count: "abc" }]   // not a number
         }
     });
-    assert.equal(made.status, 201, "report-only: the write is NOT rejected");
+    assert.equal(made.status, 422, "the write is rejected");
 
-    const logged = await waitForLog(mark, /record_write_schema_mismatch/);
-    assert.ok(logged, "the mismatch was logged");
-
-    const line = logged.split("\n").find((l) => l.includes("record_write_schema_mismatch"));
-    const entry = JSON.parse(line);
-    assert.equal(entry.level, "warn");
-    assert.equal(entry.phase, "create");
-    assert.equal(entry.type, "validated_form");
-
-    const byField = Object.fromEntries(entry.problems.map((p) => [p.column || p.field, p]));
+    const byField = Object.fromEntries(
+        made.body.schema_violations.map((p) => [p.column || p.field, p]));
     assert.ok(byField.part_no, "pattern miss reported");
     assert.ok(byField.qty && /maximum/.test(byField.qty.error), "over-max reported");
     assert.ok(byField.grade && /not one of/.test(byField.grade.error), "bad select reported");
     assert.ok(byField.count, "bad table cell reported with its column key");
     assert.equal(byField.count.row, 0, "the offending row index is carried");
+
+    const logged = await waitForLog(mark, /record_write_schema_mismatch/);
+    assert.ok(logged, "the mismatch was also logged");
+    const line = logged.split("\n").find((l) => l.includes("record_write_schema_mismatch"));
+    assert.equal(JSON.parse(line).phase, "create");
+});
+
+test("a record with no bad values in it is never created", async () => {
+    const rows = await query(
+        "select count(*)::int as n from records r join record_types rt on rt.id = r.record_type_id"
+        + " where r.org_id = $1 and rt.key = 'validated_form'", [tenant.orgId]);
+    assert.equal(rows.rows[0].n, 0, "the rejected create left nothing behind");
 });
 
 test("a clean create is accepted and logs nothing", async () => {
@@ -183,24 +187,20 @@ test("a clean create is accepted and logs nothing", async () => {
         "a valid payload produces no mismatch log");
 });
 
-test("a PATCH with a bad value is accepted and logged against the change set", async () => {
-    const mark = serverOut.length;
+test("a PATCH that introduces a bad value is rejected 422", async () => {
     const patched = await api(adminCookie, "PATCH", "/api/records/" + cleanNumber, {
-        reason: "typo", data: { qty: 0 }   // below min
+        reason: "typo", data: { qty: 0 }   // below min - a new bad value
     });
-    assert.equal(patched.status, 200, "report-only: the update is NOT rejected");
+    assert.equal(patched.status, 422, "the update is rejected");
+    assert.ok(patched.body.schema_violations.some(
+        (p) => p.field === "qty" && /minimum/.test(p.error)));
 
-    const logged = await waitForLog(mark, /record_write_schema_mismatch/);
-    assert.ok(logged, "the mismatch was logged");
-
-    const line = logged.split("\n").find((l) => l.includes("record_write_schema_mismatch"));
-    const entry = JSON.parse(line);
-    assert.equal(entry.phase, "update");
-    assert.equal(entry.number, cleanNumber);
-    assert.ok(entry.problems.some((p) => p.field === "qty" && /minimum/.test(p.error)));
+    /* and the record was not touched */
+    const got = await api(adminCookie, "GET", "/api/records/" + cleanNumber);
+    assert.equal(got.body.record.data.qty, 10);
 });
 
-test("a PATCH that only touches good fields logs nothing", async () => {
+test("a PATCH that only touches good fields is accepted", async () => {
     const before = serverOut.length;
     const patched = await api(adminCookie, "PATCH", "/api/records/" + cleanNumber, {
         reason: "fix it", data: { qty: 5 }
@@ -209,4 +209,28 @@ test("a PATCH that only touches good fields logs nothing", async () => {
 
     await sleep(300);
     assert.ok(!serverOut.slice(before).includes("record_write_schema_mismatch"));
+});
+
+test("a PATCH re-sending an unchanged value the schema no longer accepts still saves", async () => {
+    /* The client sends the whole data object on every save. Simulate a
+       record that already holds a value gone stale (its option was
+       removed after it was entered) and prove that editing an
+       untouched-by-this-write field is not blocked by it. */
+    await query(
+        "update records set data = data || '{\"grade\":\"Z\"}'::jsonb"
+        + " where org_id = $1 and number = $2", [tenant.orgId, cleanNumber]);
+
+    const patched = await api(adminCookie, "PATCH", "/api/records/" + cleanNumber, {
+        reason: "bump qty, grade unchanged", data: { grade: "Z", qty: 8 }
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+
+    const got = await api(adminCookie, "GET", "/api/records/" + cleanNumber);
+    assert.equal(got.body.record.data.qty, 8);
+
+    /* but the moment the write itself sets grade to something bad, it is caught */
+    const bad = await api(adminCookie, "PATCH", "/api/records/" + cleanNumber, {
+        reason: "now change grade", data: { grade: "still-bad" }
+    });
+    assert.equal(bad.status, 422);
 });

@@ -1,10 +1,12 @@
 /* ============================================================
-   Security headers (P0 audit fix C2).
+   Security headers (audit fix C2).
 
    Every response - the API, the app shell, the static assets, the
    landing page - carries nosniff, DENY framing, a same-origin
-   referrer policy, and a Content-Security-Policy in Report-Only mode.
-   HSTS is only sent when NODE_ENV=production.
+   referrer policy, and an ENFORCED Content-Security-Policy. Every
+   inline <script> was extracted to its own file, so script-src
+   'self' holds with no 'unsafe-inline'. HSTS is only sent when
+   NODE_ENV=production.
    ============================================================ */
 
 import { test, before, after } from "node:test";
@@ -50,15 +52,17 @@ for (const path of paths) {
         assert.equal(r.headers.get("referrer-policy"), "same-origin", path);
         assert.equal(r.headers.get("cross-origin-opener-policy"), "same-origin", path);
 
-        const csp = r.headers.get("content-security-policy-report-only");
-        assert.ok(csp, path + " has a report-only CSP");
+        const csp = r.headers.get("content-security-policy");
+        assert.ok(csp, path + " has an enforced CSP");
         assert.match(csp, /frame-ancestors 'none'/);
         assert.match(csp, /object-src 'none'/);
         assert.match(csp, /script-src 'self'/);
+        /* script-src carries nothing that loosens it */
+        assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
+        assert.doesNotMatch(csp, /script-src[^;]*'unsafe-eval'/);
 
-        /* not enforced yet - that flag is deliberately absent until
-           the inline <script> blocks are extracted */
-        assert.equal(r.headers.get("content-security-policy"), null, path);
+        /* fully enforced now - no Report-Only variant */
+        assert.equal(r.headers.get("content-security-policy-report-only"), null, path);
     });
 }
 
@@ -67,3 +71,6 @@ test("HSTS is not sent outside production", async () => {
     const r = await fetch(BASE + "/api/health");
     assert.equal(r.headers.get("strict-transport-security"), null);
 });
+
+/* The CSRF gate (audit fix C3) runs after requireAuth, so it only
+   applies to signed-in sessions - see csrf.test.js for its coverage. */

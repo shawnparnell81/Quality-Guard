@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 
 import { pool, requestContext } from "./db.js";
 import { log } from "./logger.js";
-import { identify, requireAuth, requirePasswordCurrent } from "./auth.js";
+import { identify, requireAuth, requirePasswordCurrent, requireCsrf } from "./auth.js";
 import { auth } from "./routes/auth.js";
 import { records } from "./routes/records.js";
 import { masterdata } from "./routes/masterdata.js";
@@ -37,6 +37,7 @@ import { notifications } from "./routes/notifications.js";
 import { formTemplates } from "./routes/form-templates.js";
 import { streamHandler } from "./stream.js";
 import { startDigestSchedule } from "./digest.js";
+import { startLpaRollSchedule } from "./routes/lpa.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -69,14 +70,15 @@ app.use(express.json({ limit: "1mb" }));
    dependency for a handful of setHeader calls, the same posture the
    cookie parser in auth.js takes.
 
-   The CSP ships Report-Only: it blocks nothing, but a browser reports
-   any resource the policy would have refused, so the inline <script>
-   blocks still in login.html / change-password.html / landing.html
-   show up as the work to do before it can be enforced. style-src
-   keeps 'unsafe-inline' on purpose - the front end leans on style=""
-   attributes and dynamically built inline styles, and style injection
-   is a far smaller risk than script. HSTS is only sent in production,
-   never over plain http in development. */
+   The CSP is now ENFORCED (audit fix C2). Every inline <script> has
+   been extracted to its own file under /js, so script-src 'self'
+   holds with nothing loosening it - no 'unsafe-inline', no hashes,
+   no nonces. style-src keeps 'unsafe-inline' on purpose: the front
+   end leans on style="" attributes and dynamically built inline
+   styles, and style injection is a far smaller risk than script.
+   The only third parties are Google Fonts (style + font) and the
+   pexels images on the landing page. HSTS is only sent in
+   production, never over plain http in development. */
 const CONTENT_SECURITY_POLICY = [
     "default-src 'self'",
     "base-uri 'self'",
@@ -96,7 +98,7 @@ app.use((request, response, next) => {
     response.setHeader("Referrer-Policy", "same-origin");
     response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
     response.setHeader("X-Permitted-Cross-Domain-Policies", "none");
-    response.setHeader("Content-Security-Policy-Report-Only", CONTENT_SECURITY_POLICY);
+    response.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
     if (process.env.NODE_ENV === "production") {
         response.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
     }
@@ -238,6 +240,14 @@ app.get("/api/me", meHandler);
 /* And past this line, an outstanding password change blocks the lot. */
 app.use("/api", requirePasswordCurrent);
 
+/* CSRF (audit fix C3). Runs on authenticated requests only - a
+   forged cross-site write never gets past requireAuth anyway, since
+   the SameSite=Lax session cookie is not sent on a cross-site POST.
+   Every state-changing call must look same-origin (Origin / Referer)
+   and echo the qg_csrf token in X-CSRF-Token; read-only verbs and
+   non-browser callers pass straight through. */
+app.use("/api", requireCsrf);
+
 /* Live change feed (SSE). A single handler, not a router - it holds
    the connection open and streams { entity, id, action } for the
    caller's org until the tab closes. */
@@ -327,6 +337,7 @@ const server = app.listen(PORT, () => {
 
     log.info("server_started", { port: PORT, version: VERSION, node: process.version });
     startDigestSchedule();
+    startLpaRollSchedule();
 });
 
 /* A dev server that fails to bind looks identical to one that is
