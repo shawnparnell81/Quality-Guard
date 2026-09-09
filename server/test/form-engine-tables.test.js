@@ -449,3 +449,97 @@ test("a broken expr computed column is refused at publish", async () => {
     ]));
     assert.equal(nonNumberRef.status, 422);
 });
+
+/* ---------- row-keyed table edits (audit P1 / H4) ---------- */
+
+test("PATCH /:number/table/:field upserts one row, leaves the rest, recomputes", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "row-patch target",
+        data: { checks: [
+            { nominal: 10, actual: 10.1, tol: 0.5 },
+            { nominal: 20, actual: 19.7, tol: 0.5 },
+            { nominal: 30, actual: 30.0, tol: 0.5 }
+        ] }
+    });
+    const start = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+    const ids = start.map((r) => r._id);
+
+    const patched = await api(adminCookie, "PATCH",
+        "/api/records/" + rec.body.number + "/table/checks",
+        { upsert: [{ _id: ids[1], actual: 20.2 }], reason: "re-measured mid" });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal(patched.body.row_count, 3);
+
+    const after = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+    assert.deepEqual(after.map((r) => r._id), ids, "order and ids unchanged");
+    assert.equal(after[0].actual, 10.1, "row 0 untouched");
+    assert.equal(after[2].actual, 30.0, "row 2 untouched");
+    assert.equal(after[1].actual, 20.2, "row 1 took the new value");
+    assert.ok(Math.abs(after[1].deviation - 0.2) < 1e-9, "row 1's computed cell recomputed");
+});
+
+test("an upsert with no _id appends; a remove drops the row", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "append + remove",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }, { nominal: 2, actual: 2, tol: 0.1 }] }
+    });
+    const ids = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks.map((r) => r._id);
+
+    const added = await api(adminCookie, "PATCH",
+        "/api/records/" + rec.body.number + "/table/checks",
+        { upsert: [{ nominal: 3, actual: 3.4, tol: 0.1 }], remove: [ids[0]] });
+    assert.equal(added.status, 200, JSON.stringify(added.body));
+
+    const rows = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+    assert.equal(rows.length, 2);
+    assert.ok(!rows.some((r) => r._id === ids[0]), "removed row is gone");
+    assert.ok(rows.some((r) => r._id === ids[1]), "kept row stays");
+    const fresh = rows.find((r) => r._id !== ids[1]);
+    assert.equal(typeof fresh._id, "string");
+    assert.ok(Math.abs(fresh.deviation - 0.4) < 1e-9, "the appended row got its computed cell");
+});
+
+test("a row edit leaves a per-row audit line, not one stringified blob", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "audit shape",
+        data: { checks: [{ nominal: 5, actual: 5, tol: 0.2 }] }
+    });
+    const id = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks[0]._id;
+
+    await api(adminCookie, "PATCH", "/api/records/" + rec.body.number + "/table/checks",
+        { upsert: [{ _id: id, actual: 5.15 }], reason: "corrected" });
+
+    const history = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.history;
+    const line = history.find((h) => h.field && h.field.startsWith("checks (row "));
+    assert.ok(line, "an audit line keyed to the row");
+    assert.doesNotMatch(String(line.old_value) + String(line.new_value), /\[object Object\]/);
+    assert.match(String(line.new_value), /5\.15/);
+    assert.equal(line.reason, "corrected");
+});
+
+test("the whole-record PATCH also audits a table change row by row", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "full patch audit",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }, { nominal: 2, actual: 2, tol: 0.1 }] }
+    });
+    const rows = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+
+    rows[0].actual = 1.3;                       // edit row 0
+    await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { checks: rows }, reason: "bulk save" });
+
+    const history = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.history;
+    const rowLine = history.find((h) => h.field && h.field.startsWith("checks (row "));
+    assert.ok(rowLine, "the table change is audited per row, not as checks -> [object Object]");
+    assert.doesNotMatch(String(rowLine.old_value) + String(rowLine.new_value), /\[object Object\]/);
+});
+
+test("a table PATCH to an unknown field is a 400", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "bad field",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }] }
+    });
+    const bad = await api(adminCookie, "PATCH",
+        "/api/records/" + rec.body.number + "/table/not_a_field", { upsert: [{ x: 1 }] });
+    assert.equal(bad.status, 400);
+});

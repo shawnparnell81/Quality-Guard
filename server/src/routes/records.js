@@ -180,6 +180,42 @@ function stripRowIds(schema, data) {
     }
 }
 
+/* The audit_log lines for a table field that changed: one per row
+   added, removed or edited, matched by the row's stable _id, instead
+   of a single useless "[object Object] -> [object Object]" for the
+   whole array. `after` should be the post-compute rows (so computed
+   cells and assigned ids are the ones actually stored). */
+function tableRowAudits(fieldKey, beforeRows, afterRows) {
+    const strip = (row) => { const { _id, ...rest } = row || {}; return rest; };
+    const asMap = (rows) => new Map(
+        (Array.isArray(rows) ? rows : [])
+            .filter((r) => r && typeof r === "object" && !Array.isArray(r))
+            .map((r) => [r._id, r])
+    );
+    const before = asMap(beforeRows);
+    const after = asMap(afterRows);
+    const lines = [];
+
+    for (const [id, row] of after) {
+        const prev = before.get(id);
+        if (!prev) {
+            lines.push({ field: fieldKey + " (row added)", old_value: null, new_value: JSON.stringify(strip(row)) });
+        } else if (JSON.stringify(strip(prev)) !== JSON.stringify(strip(row))) {
+            lines.push({
+                field: fieldKey + " (row " + String(id || "").slice(0, 8) + ")",
+                old_value: JSON.stringify(strip(prev)),
+                new_value: JSON.stringify(strip(row))
+            });
+        }
+    }
+    for (const [id, row] of before) {
+        if (!after.has(id)) {
+            lines.push({ field: fieldKey + " (row removed)", old_value: JSON.stringify(strip(row)), new_value: null });
+        }
+    }
+    return lines;
+}
+
 /* First Article Inspection: a measured characteristic conforms when
    its actual falls inside nominal + [tol_minus, tol_plus]. The
    "result" column and the conforming counts are derived here so the
@@ -1964,6 +2000,22 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
             for (const [key, value] of Object.entries(auditAgainst)) {
                 const before = record.data[key];
+
+                /* A table field: audit it row by row against the stored
+                   (post-compute) rows, not as one stringified blob. */
+                if (Array.isArray(value) || Array.isArray(before)) {
+                    for (const line of tableRowAudits(key, before, merged[key])) {
+                        await client.query(`
+                            insert into audit_log
+                                (org_id, record_id, entity, entity_id, field,
+                                 old_value, new_value, reason, changed_by)
+                            values ($1, $2, 'records', $2, $3, $4, $5, $6, $7)
+                        `, [request.user.org_id, record.id, line.field,
+                            line.old_value, line.new_value, reason || null, actorId]);
+                    }
+                    continue;
+                }
+
                 if (String(before) === String(value)) continue;
 
                 await client.query(`
@@ -2033,6 +2085,113 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             entity: "records", id: request.params.number, action: "updated"
         });
         response.json(updated);
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- fast table edits ----------
+   PATCH /api/records/NCR-2026-0142/table/characteristics
+   { "upsert": [ { "_id": "…", "actual": 12.71 }, { "feature": "New" } ],
+     "remove": [ "…rowId…" ],
+     "reason": "re-measured after rework" }
+
+   Editing three cells of a 400-row FAIR grid should not mean sending -
+   and auditing, and re-storing - the whole array. This touches only
+   the named rows: an upsert with a known _id merges into that row, one
+   without _id (or with an unknown _id) is appended with a fresh id, a
+   remove drops the row. Computed columns are recomputed for the whole
+   field (cheap CPU, and it keeps every derived cell correct), the
+   write is a jsonb_set of just this one key, and each touched row
+   leaves its own audit_log line.
+
+   Same authority as PATCH /:number. The whole-record PATCH still works
+   and is what the in-app editor uses today; this is the endpoint a
+   big-grid editor calls per change. The record_audit trigger still
+   snapshots the full row - shrinking that is a separate change. */
+records.patch("/:number/table/:field", requirePermission(editPermissionFor),
+    async (request, response, next) => {
+    try {
+        const body = request.body || {};
+        const upsert = Array.isArray(body.upsert) ? body.upsert : [];
+        const remove = Array.isArray(body.remove) ? body.remove.map(String) : [];
+        const reason = body.reason || null;
+
+        if (upsert.length === 0 && remove.length === 0) {
+            return response.status(400).json({ error: "Send at least one row in upsert or remove" });
+        }
+
+        const outcome = await withTransaction(async (client) => {
+            const current = await client.query(`
+                select r.id, r.data, r.record_type_id, r.form_version, rt.key as type
+                  from records r join record_types rt on rt.id = r.record_type_id
+                 where r.org_id = $1 and r.number = $2
+                   for update of r
+            `, [request.user.org_id, request.params.number]);
+            if (current.rowCount === 0) return null;
+            const record = current.rows[0];
+
+            const schemaRow = await client.query(
+                "select schema from form_versions where record_type_id = $1 and version = $2",
+                [record.record_type_id, record.form_version]
+            );
+            const schema = schemaRow.rows[0]?.schema || { fields: [] };
+            const field = (schema.fields || [])
+                .find((f) => f.key === request.params.field && f.type === "table");
+            if (!field) return { badField: true };
+
+            const beforeRows = Array.isArray(record.data[field.key]) ? record.data[field.key] : [];
+            const byId = new Map(beforeRows.filter((r) => r && r._id).map((r) => [r._id, r]));
+
+            for (const id of remove) byId.delete(id);
+
+            /* surviving rows keep their original order */
+            let rows = beforeRows.filter((r) => r && r._id && byId.has(r._id));
+
+            for (const patch of upsert) {
+                if (!patch || typeof patch !== "object" || Array.isArray(patch)) continue;
+                const id = typeof patch._id === "string" ? patch._id : null;
+                const idx = id ? rows.findIndex((r) => r._id === id) : -1;
+                if (idx >= 0) rows[idx] = { ...rows[idx], ...patch, _id: id };
+                else rows = [...rows, { ...patch, _id: randomUUID() }];
+            }
+
+            /* recompute this field's derived cells, then write only it */
+            const recomputed = applyComputedColumns(schema, { ...record.data, [field.key]: rows });
+            const finalRows = recomputed[field.key];
+
+            const upd = await client.query(`
+                update records
+                   set data = jsonb_set(data, $2::text[], $3::jsonb, true)
+                 where id = $1
+                returning number
+            `, [record.id, [field.key], JSON.stringify(finalRows)]);
+
+            for (const line of tableRowAudits(field.key, beforeRows, finalRows)) {
+                await client.query(`
+                    insert into audit_log
+                        (org_id, record_id, entity, entity_id, field,
+                         old_value, new_value, reason, changed_by)
+                    values ($1, $2, 'records', $2, $3, $4, $5, $6, $7)
+                `, [request.user.org_id, record.id, line.field,
+                    line.old_value, line.new_value, reason, request.user.id]);
+            }
+
+            return { number: upd.rows[0].number, field: field.key, rows: finalRows };
+        });
+
+        if (outcome === null) return response.status(404).json({ error: "Record not found" });
+        if (outcome.badField) {
+            return response.status(400).json({ error: "No table field \"" + request.params.field + "\" on this record's form" });
+        }
+
+        publish(request.user.org_id, {
+            entity: "records", id: request.params.number, action: "updated"
+        });
+        response.json({
+            number: outcome.number, field: outcome.field,
+            row_count: outcome.rows.length, rows: outcome.rows
+        });
     } catch (error) {
         next(error);
     }
