@@ -2331,11 +2331,16 @@ records.post("/:number/transition", async (request, response, next) => {
                 };
             }
 
-            /* Clause 10.2: closing a CAPA without evidence the
+            /* Clause 10.2: closing a CAPA effective without evidence the
                corrective action was actually validated is exactly the
                gap between "we planned a fix" and "we proved the fix
-               worked" that this clause exists to close. */
-            if (isTerminal && record.type === "capa"
+               worked" that this clause exists to close. Applies to a
+               real closure only: an "escalated" terminal is by
+               definition not validated, and an early close straight
+               from initiation is the necessity determination "no CAPA
+               needed" - neither has a corrective action to evidence. */
+            if (isTerminal && record.type === "capa" && to === "closed"
+                && record.status !== "initiation"
                 && !await hasAttachment((text, params) => client.query(text, params), record.id)) {
                 return {
                     code: 409,
