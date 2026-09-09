@@ -773,3 +773,57 @@ test("thresholds are accepted on a plain number field/column, rejected elsewhere
     });
     assert.equal(badShape.status, 422);
 });
+
+/* ---------- conditional form rules, enforced on save (audit P3 / L4) ---------- */
+
+test("rules block a bad save, warn on a file gap, and flag an approval", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Ruled Form", prefix: "RUL",
+        fields: [
+            { key: "disposition", label: "Disposition", type: "select", options: ["Rework", "Scrap", "Use-as-is"] },
+            { key: "reason", label: "Reason", type: "memo" },
+            { key: "evidence", label: "Evidence", type: "file" }
+        ]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    /* rules can only enter via a migration/seed, not the API - publish
+       a v2 form version with the same fields plus rules directly */
+    const rt = await query("select id from record_types where org_id = $1 and key = 'ruled_form'", [tenant.orgId]);
+    const form = await api(adminCookie, "GET", "/api/record-types/ruled_form/form");
+    await query(`
+        insert into form_versions (record_type_id, version, schema, published_at)
+        values ($1, 2, $2::jsonb, now())
+    `, [rt.rows[0].id, JSON.stringify({
+        fields: form.body.fields,
+        rules: [
+            { when: "disposition == 'Scrap'", then: "require_field", field: "reason" },
+            { when: "disposition == 'Scrap'", then: "require_field", field: "evidence" },
+            { when: "disposition == 'Use-as-is'", then: "require_approval", role: "quality_manager" }
+        ]
+    })]);
+
+    /* Scrap with no reason -> blocked */
+    const blocked = await api(adminCookie, "POST", "/api/records", {
+        type: "ruled_form", title: "scrap no reason", data: { disposition: "Scrap" }
+    });
+    assert.equal(blocked.status, 422);
+    assert.ok(blocked.body.rule_violations.some((m) => /"Reason" is required/.test(m)));
+
+    /* Scrap with a reason -> saves, but warns about the file field */
+    const ok = await api(adminCookie, "POST", "/api/records", {
+        type: "ruled_form", title: "scrap ok", data: { disposition: "Scrap", reason: "MRB" }
+    });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+    assert.ok((ok.body.warnings || []).some((m) => /"Evidence" is required/.test(m)));
+
+    /* Use-as-is -> flagged as needing approval, on create and on GET */
+    const uai = await api(adminCookie, "POST", "/api/records", {
+        type: "ruled_form", title: "use as is", data: { disposition: "Use-as-is" }
+    });
+    assert.equal(uai.status, 201);
+    assert.equal((uai.body.approvals_needed || [])[0]?.role, "quality_manager");
+
+    const got = await api(adminCookie, "GET", "/api/records/" + uai.body.number);
+    assert.equal((got.body.approvals_needed || [])[0]?.role, "quality_manager");
+});
