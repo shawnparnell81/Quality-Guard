@@ -2894,13 +2894,46 @@ th.col-you { color: var(--brand); }
    .no-print hides controls that make no sense on paper - a Print
    button included - even though they sit inside the printed node. */
 @media print {
+    @page { margin: 14mm; }
+
     body * { visibility: hidden; }
     .print-area, .print-area * { visibility: visible; }
     .print-area {
         position: absolute; top: 0; left: 0; right: 0;
         padding: 0; margin: 0; border: none; box-shadow: none;
+        font-size: 11pt;
     }
     .print-area .no-print { display: none !important; }
+
+    /* The app has a dark theme; on paper that means a full-bleed black
+       rectangle. Flatten every surface to white / black for the
+       print, whatever theme the screen is in. */
+    .print-area, .print-area * {
+        background: #fff !important;
+        color: #000 !important;
+        box-shadow: none !important;
+        text-shadow: none !important;
+    }
+    .print-area .pill,
+    .print-area .chip { border: 1px solid #000 !important; }
+
+    /* A record detail panel is a summary on screen; when it is the
+       print target, let it use the whole page and never clip inside a
+       scroll box. The branded, full-page PDF (the Print button) is
+       still the better paper copy - this just keeps a plain browser
+       Ctrl+P legible. */
+    .print-area,
+    .print-area .table-wrap { overflow: visible !important; max-width: none !important; }
+    .print-area table { width: 100% !important; border-collapse: collapse; }
+    .print-area th,
+    .print-area td { border: 1px solid #999; padding: 4px 6px; }
+    .print-area .kv { grid-template-columns: 30% 1fr; gap: 4px 12px; }
+    .print-area .section-label {
+        margin: 14px 0 6px; color: #000; font-size: 9pt;
+        border-bottom: 1px solid #000;
+    }
+    .print-area h1, .print-area h2, .print-area h3 { break-after: avoid; }
+    .print-area tr, .print-area .kv > div { break-inside: avoid; }
 }
 
 /* ============================================================

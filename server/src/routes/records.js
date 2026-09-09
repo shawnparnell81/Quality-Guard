@@ -1924,8 +1924,12 @@ records.get("/:number/pdf", async (request, response, next) => {
         const schema = formVersion.rows[0]?.schema || null;
         const userNames = new Map(users.rows.map((row) => [row.initials, row.full_name]));
 
+        /* ?inline=1 previews the PDF in a browser tab (what the Print
+           button uses); the default downloads it as a file. */
+        const inline = request.query.inline === "1" || request.query.inline === "true";
         response.setHeader("Content-Type", "application/pdf");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + record.number + ".pdf\"");
+        response.setHeader("Content-Disposition",
+            (inline ? "inline" : "attachment") + "; filename=\"" + record.number + ".pdf\"");
 
         /* bufferPages holds every page until doc.end() instead of
            flushing each as it fills, so the footer can be stamped onto

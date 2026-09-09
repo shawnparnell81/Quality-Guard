@@ -179,3 +179,19 @@ test("an unknown record number is a 404", async () => {
     const r = await pdf(adminCookie, "NCR-1999-0001");
     assert.equal(r.status, 404);
 });
+
+test("?inline=1 previews in the browser; the default downloads", async () => {
+    const made = await api(adminCookie, "POST", "/api/records", {
+        type: "ncr", title: "print target", data: { disposition: "Rework" }
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    const dl = await fetch(BASE + "/api/records/" + made.body.number + "/pdf",
+        { headers: { Cookie: adminCookie } });
+    assert.match(dl.headers.get("content-disposition") || "", /^attachment;/);
+
+    const prev = await fetch(BASE + "/api/records/" + made.body.number + "/pdf?inline=1",
+        { headers: { Cookie: adminCookie } });
+    assert.match(prev.headers.get("content-disposition") || "", /^inline;/);
+    assert.match(prev.headers.get("content-type") || "", /application\/pdf/);
+});
