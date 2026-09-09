@@ -453,12 +453,13 @@ export function wireFormRecord() {
                 if (warnings.length) {
                     toast(r.number + " imported - " + warnings.length
                         + (warnings.length === 1 ? " required field still to fill" : " required fields still to fill"), "warn");
-                    /* Land in the record so the flagged fields are right there. */
-                    await openRecordPage(r.number, { type: currentType });
                 } else {
-                    toast(r.number + " created from Excel");
-                    await renderFormRecord();
+                    toast(r.number + " created from Excel"
+                        + (r.source_attached ? " (the spreadsheet is attached)" : ""));
                 }
+                /* Always land in the record so the carried-over values -
+                   and any flagged gaps - are right there. */
+                await openRecordPage(r.number, { type: currentType });
             } catch (error) {
                 const errs = error.payload && error.payload.errors;
                 toast(errs && errs.length ? errs[0] : error.message, "error");
