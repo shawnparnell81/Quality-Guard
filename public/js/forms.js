@@ -17,27 +17,14 @@ import { el, toast, pill, humanize, statusKind } from "./dom.js";
 import { beginEditing } from "./presence.js";
 import { buildUploader } from "./attach-upload.js";
 import { openFileWindow } from "./doc-windows.js";
-import { evaluate as evalExpr, identifiers as exprIdentifiers } from "./expr.js";
 import { checkRules } from "./rules.js";
+import { ensureDialog, paintThreshold } from "./field-kit.js";
+import { createTableEditor } from "./table-editor.js";
 
-/* ---------- one dialog, reused ---------- */
-
-let dialog = null;
-
-export function ensureDialog() {
-    if (dialog) return dialog;
-
-    dialog = el("dialog", { class: "modal" });
-    document.body.append(dialog);
-
-    /* Clicking the backdrop closes. The dialog element reports clicks
-       on the backdrop as clicks on itself, so compare the target. */
-    dialog.addEventListener("click", (event) => {
-        if (event.target === dialog) dialog.close();
-    });
-
-    return dialog;
-}
+/* Re-exported so the many modules that import ensureDialog from here
+   keep working - the implementation lives in field-kit.js now, next
+   to the other field helpers the table editor also needs. */
+export { ensureDialog };
 
 /* ---------- field rendering ---------- */
 
@@ -195,365 +182,24 @@ export function buildField(field, options, currentValue, context = {}) {
         }
 
         case "table": {
-            /* A repeating grid: one field, an array of row objects. The
-               columns come from the schema; each cell is a small input
-               typed by its column. */
-            const columns = Array.isArray(field.columns) ? field.columns : [];
-            const body = el("tbody");
-
-            const cellInput = (column, value) => {
-                if (column.type === "memo") {
-                    const t = el("textarea", { rows: 1 });
-                    if (value != null) t.value = String(value);
-                    return t;
-                }
-                if (column.type === "select") {
-                    const s = el("select", {}, [
-                        el("option", { value: "", text: "—" }),
-                        ...(column.options || []).map((o) => el("option", { value: o, text: o }))
-                    ]);
-                    s.value = value != null ? String(value) : "";
-                    return s;
-                }
-                if (column.type === "boolean") {
-                    const c = el("input", { type: "checkbox" });
-                    c.checked = value === true || value === "true";
-                    return c;
-                }
-                if (column.type === "user") {
-                    const s = el("select", {}, [
-                        el("option", { value: "", text: "—" }),
-                        ...(((options && options.users) || []).map((o) =>
-                            el("option", { value: o.value, text: o.label })))
-                    ]);
-                    s.value = value != null ? String(value) : "";
-                    return s;
-                }
-                if (column.type === "number" && column.thresholds) {
-                    const i = el("input", { type: "number", step: "any" });
-                    if (value != null && value !== "") i.value = String(value);
-                    const repaint = () => paintThreshold(i, column, i.value);
-                    i.addEventListener("input", repaint);
-                    repaint();
-                    return i;
-                }
-                if (column.type === "computed") {
-                    /* Filled in by recompute(), never typed into. */
-                    const i = el("input", {
-                        type: "number", class: "computed-cell", readonly: "readonly", tabindex: "-1",
-                        title: describeComputed(column, columns)
-                    });
-                    if (value != null && value !== "") i.value = String(value);
-                    return i;
-                }
-                const i = el("input", {
-                    type: column.type === "number" ? "number"
-                        : column.type === "date" ? "date" : "text"
-                });
-                if (value != null && value !== "") {
-                    i.value = column.type === "date" ? String(value).slice(0, 10) : String(value);
-                }
-                return i;
-            };
-
-            const hasComputed = columns.some((c) => c.type === "computed");
-            /* A form with many columns is miserable to fill in a
-               horizontal-scrolling grid, so those rows also get a
-               "open as a form" drawer. */
-            const wide = columns.length > 6;
-
-            const rowIsEmpty = (tr) => columns.every((c) => {
-                if (c.type === "computed") return true;
-                const cell = tr._cells[c.key];
-                if (c.type === "boolean") return !cell?.checked;
-                return !(cell?.value || "").trim();
+            /* The repeating grid is its own module (table-editor.js,
+               audit H3): an explicit JS row model with a render step,
+               not per-row state stashed on DOM nodes. */
+            const editor = createTableEditor({
+                field, options,
+                value: Array.isArray(currentValue) ? currentValue : [],
+                recordNumber: context.recordNumber,
+                onRowAttach: (rowRef, title) =>
+                    openRowAttachments(context.recordNumber, rowRef, title)
             });
-
-            const canRowAttach = Boolean(field.rowAttachments && context.recordNumber);
-
-            const addRow = (seed = {}) => {
-                const tr = el("tr");
-                /* Stable per-row id, assigned by the server on save. A row
-                   built here without one gets its id on the next save;
-                   readTable passes an existing id straight back through. */
-                tr._rowId = (seed && typeof seed._id === "string" && seed._id) ? seed._id : null;
-                const cellByKey = {};
-                const tdByKey = {};
-                for (const column of columns) {
-                    const input = cellInput(column, seed[column.key]);
-                    cellByKey[column.key] = input;
-                    /* data-label drives the card-per-row layout on a
-                       narrow screen (style.css @media) - the header is
-                       hidden there so each cell needs to name itself. */
-                    const td = el("td", { "data-label": column.label || column.key }, input);
-                    tdByKey[column.key] = td;
-                    tr.append(td);
-                }
-                tr._cells = cellByKey;
-                tr._tds = tdByKey;
-
-                let recompute = null;
-                if (hasComputed) {
-                    recompute = () => {
-                        /* the numbers this row currently holds, by column key */
-                        const scope = {};
-                        for (const c of columns) {
-                            const v = Number(cellByKey[c.key]?.value);
-                            if (Number.isFinite(v)) scope[c.key] = v;
-                        }
-                        for (const column of columns) {
-                            if (column.type !== "computed") continue;
-                            const cell = cellByKey[column.key];
-                            let out;
-                            if (typeof column.expr === "string" && column.expr.trim()) {
-                                out = evalExpr(column.expr, scope);
-                            } else {
-                                const nums = (column.inputs || []).map((k) => scope[k]);
-                                out = nums.length > 0 && nums.every((n) => Number.isFinite(n))
-                                    ? (column.compute === "sum"
-                                        ? nums.reduce((a, b) => a + b, 0)
-                                        : nums.reduce((a, b) => a * b, 1))
-                                    : undefined;
-                            }
-                            cell.value = out === undefined ? "" : String(out);
-                            paintThreshold(cell, column, out === undefined ? "" : out);
-                        }
-                    };
-                    tr.addEventListener("input", recompute);
-                    tr.addEventListener("change", recompute);
-                    recompute();
-                }
-                tr._recompute = recompute;
-
-                const attachBtn = canRowAttach ? el("button", {
-                    class: "btn sm no-print", type: "button", text: "📎",
-                    title: tr._rowId ? "Files on this row" : "Save the record first, then attach",
-                    "aria-label": "Row files",
-                    disabled: tr._rowId ? undefined : "disabled",
-                    onClick: () => openRowAttachments(
-                        context.recordNumber, field.key + ":" + tr._rowId,
-                        (field.label || "Row") + " row " + ([...body.children].indexOf(tr) + 1))
-                }) : null;
-
-                const actions = el("td", { class: "row-tools" }, [
-                    attachBtn,
-                    wide ? el("button", {
-                        class: "btn sm no-print", type: "button", text: "⤡",
-                        title: "Open this row as a form", "aria-label": "Expand row",
-                        onClick: () => openRowDrawer(tr)
-                    }) : null,
-                    el("button", {
-                        class: "btn sm no-print", type: "button", text: "×",
-                        "aria-label": "Remove row", onClick: () => tr.remove()
-                    })
-                ]);
-                tr.append(actions);
-
-                body.append(tr);
-                return tr;
+            wrapper.append(editor.el);
+            return {
+                wrapper, input: null, field,
+                readTable: () => editor.getRows(),
+                writeTable: (rows) => editor.setRows(rows)
             };
-
-            /* One shared dialog: pull this row's real cell inputs into a
-               stacked form, put them back on close (single source of
-               truth - no mirroring). */
-            function openRowDrawer(tr) {
-                const node = ensureDialog();
-                const idx = [...body.children].indexOf(tr) + 1;
-
-                const groups = columns.map((column) => {
-                    const input = tr._cells[column.key];
-                    const g = el("div", { class: "field-group" }, [
-                        el("label", { text: column.label || column.key }),
-                        input
-                    ]);
-                    if (column.type === "computed") input.readOnly = true;
-                    return g;
-                });
-
-                const form = el("form", {}, groups);
-                form.addEventListener("input", () => tr._recompute && tr._recompute());
-                form.addEventListener("change", () => tr._recompute && tr._recompute());
-
-                /* Put the real inputs back where they came from - runs
-                   once, however the dialog closes (button or Escape). */
-                const restore = () => {
-                    for (const column of columns) tr._tds[column.key].append(tr._cells[column.key]);
-                    tr._recompute && tr._recompute();
-                };
-
-                node.replaceChildren(
-                    el("div", { class: "modal-head" },
-                        el("h2", { class: "modal-title", text: (field.label || "Row") + " - row " + idx })),
-                    el("div", { class: "modal-body" }, form),
-                    el("div", { class: "modal-foot" },
-                        el("button", { class: "btn btn-primary", type: "button", text: "Done",
-                            onClick: () => node.close() }))
-                );
-                node.addEventListener("close", restore, { once: true });
-                node.showModal();
-            }
-
-            /* Replace every row - used when a saved draft is restored
-               into an already-built form. */
-            const writeTable = (rows) => {
-                body.replaceChildren();
-                (Array.isArray(rows) && rows.length ? rows : [{}]).forEach(addRow);
-            };
-
-            const seedRows = Array.isArray(currentValue) ? currentValue : [];
-            (seedRows.length ? seedRows : [{}]).forEach(addRow);
-
-            const table = el("table", { class: "dim-repeater" }, [
-                el("thead", {}, el("tr", {}, [
-                    ...columns.map((c) => el("th", { text: c.label })),
-                    el("th", {})
-                ])),
-                body
-            ]);
-            const addBtn = el("button", {
-                class: "btn sm no-print", type: "button", text: "+ Add row",
-                onClick: () => addRow({})
-            });
-
-            /* ---------- paste from Excel + keyboard nav (P0.4) ---------- */
-
-            const cellsInRow = (tr) => [...tr.querySelectorAll("input, select, textarea")];
-            /* Cells a person can actually type in - excludes the computed
-               cells, which carry tabindex="-1". */
-            const typeableCells = (tr) => cellsInRow(tr).filter((c) => c.tabIndex !== -1);
-
-            /* Pasting a block copied from a spreadsheet fills rows and
-               columns from the cell it lands in, adding rows as needed.
-               A plain single value is left to the browser. Computed
-               columns keep their spot in the alignment but are never
-               written to - they recompute from the numbers around them. */
-            body.addEventListener("paste", (event) => {
-                const cell = event.target.closest("input, select, textarea");
-                if (!cell || !body.contains(cell)) return;
-
-                const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
-                if (!/[\t\n\r]/.test(text)) return;
-                event.preventDefault();
-
-                const grid = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "")
-                    .split("\n").map((line) => line.split("\t"));
-
-                const startTr = cell.closest("tr");
-                const startRow = [...body.children].indexOf(startTr);
-                const startCol = cellsInRow(startTr).indexOf(cell);
-                if (startRow < 0 || startCol < 0) return;
-
-                grid.forEach((values, r) => {
-                    let tr = body.children[startRow + r];
-                    if (!tr) { addRow({}); tr = body.lastElementChild; }
-                    const cells = cellsInRow(tr);
-                    values.forEach((value, c) => {
-                        const target = cells[startCol + c];
-                        const column = columns[startCol + c];
-                        if (!target || !column || column.type === "computed") return;
-                        if (column.type === "boolean") {
-                            target.checked = /^(1|x|y|yes|true|✓)$/i.test(String(value).trim());
-                        } else {
-                            target.value = String(value).trim();
-                        }
-                        target.dispatchEvent(new Event("input", { bubbles: true }));
-                        target.dispatchEvent(new Event("change", { bubbles: true }));
-                    });
-                });
-
-                const anchor = cellsInRow(body.children[startRow])[startCol];
-                if (anchor) anchor.focus();
-            });
-
-            body.addEventListener("keydown", (event) => {
-                const cell = event.target.closest("input, select, textarea");
-                if (!cell) return;
-                const tr = cell.closest("tr");
-                if (!tr || tr.parentElement !== body) return;
-
-                const rows = [...body.children];
-                const rowIndex = rows.indexOf(tr);
-                const typeable = typeableCells(tr);
-                const colIndex = typeable.indexOf(cell);
-                if (colIndex < 0) return;
-
-                /* Enter moves down the column (Shift+Enter up); on the
-                   last row it makes a new one. Left alone in a textarea,
-                   where Enter is a newline. */
-                if (event.key === "Enter" && cell.tagName !== "TEXTAREA") {
-                    event.preventDefault();
-                    const step = event.shiftKey ? -1 : 1;
-                    let nextTr = rows[rowIndex + step];
-                    if (step === 1 && !nextTr) { addRow({}); nextTr = body.lastElementChild; }
-                    if (nextTr) {
-                        const nextCells = typeableCells(nextTr);
-                        (nextCells[colIndex] || nextCells[0]).focus();
-                    }
-                    return;
-                }
-
-                /* Tab off the last cell of the last row adds a row and
-                   lands in it, so a table fills top to bottom without
-                   reaching for the mouse. */
-                if (event.key === "Tab" && !event.shiftKey
-                    && colIndex === typeable.length - 1 && rowIndex === rows.length - 1) {
-                    event.preventDefault();
-                    addRow({});
-                    const newCells = typeableCells(body.lastElementChild);
-                    (newCells[0] || cell).focus();
-                }
-            });
-
-            /* There is always one blank row waiting: the moment the
-               last row gets any content, another appears - so a table
-               fills continuously without stopping to click "add". */
-            const ensureTrailingBlank = () => {
-                const last = body.lastElementChild;
-                if (last && !rowIsEmpty(last)) addRow({});
-            };
-            body.addEventListener("input", ensureTrailingBlank);
-            body.addEventListener("change", ensureTrailingBlank);
-            if (body.children.length === 0 || !rowIsEmpty(body.lastElementChild)) addRow({});
-
-            /* A wide table (a PFMEA can carry a dozen columns) scrolls
-               inside its own box rather than pushing the whole form
-               sideways with no way back. */
-            wrapper.append(
-                el("div", { class: "table-wrap" }, table),
-                el("div", { class: "row no-print", style: "gap:6px;margin-top:4px" }, [
-                    addBtn,
-                    el("button", { class: "btn sm no-print", type: "button", text: "+ 5 rows",
-                        onClick: () => { for (let i = 0; i < 5; i++) addRow({}); } })
-                ]),
-                el("span", { class: "field-hint", text:
-                    "Paste a block straight from Excel. Tab / Enter move between cells"
-                    + (wide ? "; ⤡ opens a row as a form." : ".") })
-            );
-
-            const readTable = () => [...body.children].map((tr) => {
-                const row = {};
-                let any = false;
-                for (const column of columns) {
-                    const cell = tr._cells[column.key];
-                    if (column.type === "boolean") {
-                        if (cell?.checked) { row[column.key] = true; any = true; }
-                        continue;
-                    }
-                    const raw = (cell?.value ?? "").trim();
-                    if (raw === "") continue;
-                    if (column.type !== "computed") any = true;
-                    row[column.key] = (column.type === "number" || column.type === "computed")
-                        ? Number(raw) : raw;
-                }
-                if (!any) return null;
-                /* Carry the server-assigned row id straight back through
-                   so a per-row attachment stays pinned across a save. */
-                if (tr._rowId) row._id = tr._rowId;
-                return row;
-            }).filter(Boolean);
-
-            return { wrapper, input: null, field, readTable, writeTable };
         }
+
 
         default:
             input = el("input", { type: "text", id, name: field.key, value: currentValue ?? "" });
@@ -580,26 +226,6 @@ export function buildField(field, options, currentValue, context = {}) {
 function describePattern(pattern) {
     if (pattern === "^L-[0-9]{5}$") return "L- followed by five digits, for example L-88213";
     return pattern;
-}
-
-/* "RPN = Severity x Occurrence x Detection" - the tooltip on a
-   computed cell so a reader knows where its number comes from. Works
-   for both an expr column and a compute/inputs column. */
-function describeComputed(column, columns) {
-    const labelOf = (k) => (columns.find((c) => c.key === k) || {}).label || k;
-
-    if (typeof column.expr === "string" && column.expr.trim()) {
-        let text = column.expr;
-        try {
-            for (const id of exprIdentifiers(column.expr)) {
-                text = text.replace(new RegExp("\\b" + id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"), labelOf(id));
-            }
-        } catch { /* unparseable - show it verbatim */ }
-        return column.label + " = " + text.replace(/\*/g, " × ").replace(/\//g, " ÷ ");
-    }
-
-    const join = column.compute === "sum" ? " + " : " × ";
-    return column.label + " = " + (column.inputs || []).map(labelOf).join(join);
 }
 
 /* Files pinned to one row of a table field. The file itself is an
@@ -648,17 +274,6 @@ async function openRowAttachments(recordNumber, rowRef, title) {
     );
     node.showModal();
     load();
-}
-
-/* A computed cell wears an amber / red class once it crosses the
-   thresholds the column defines (RPN >= 100, >= 150). */
-function paintThreshold(cell, column, value) {
-    cell.classList.remove("rpn-warn", "rpn-crit");
-    const t = column.thresholds;
-    const n = Number(value);
-    if (!t || value === "" || !Number.isFinite(n)) return;
-    if (t.crit != null && n >= t.crit) cell.classList.add("rpn-crit");
-    else if (t.warn != null && n >= t.warn) cell.classList.add("rpn-warn");
 }
 
 export function readValue(entry) {
