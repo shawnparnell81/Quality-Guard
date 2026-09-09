@@ -334,6 +334,26 @@ function editPermissionFor(request) {
     return null;
 }
 
+/* An opaque per-record version token for optimistic concurrency. The
+   records_touch trigger bumps updated_at on every write, so its epoch
+   millis is a monotonic stamp the client can hand back as If-Match /
+   expected_version to be told "someone else changed this" (409)
+   instead of silently overwriting them. */
+function recordVersion(updatedAt) {
+    return updatedAt ? String(new Date(updatedAt).getTime()) : null;
+}
+
+/* The version the client says it last saw, from an If-Match header
+   (weak-validator prefix and quotes tolerated) or an expected_version
+   field in the body. null means it sent neither - the write proceeds
+   without the concurrency check, so old clients are unaffected. */
+function requestedVersion(request) {
+    const header = request.headers["if-match"];
+    if (header && header !== "*") return header.replace(/^W\//, "").replace(/"/g, "").trim();
+    const body = request.body && request.body.expected_version;
+    return body === undefined || body === null ? null : String(body);
+}
+
 const SELECT_RECORD = `
     select r.id,
            r.record_type_id,
@@ -343,6 +363,7 @@ const SELECT_RECORD = `
            r.severity,
            r.data,
            r.form_version,
+           r.updated_at,
            r.opened_at,
            r.due_at,
            r.closed_at,
@@ -1428,8 +1449,12 @@ records.get("/:number", async (request, response, next) => {
             };
         });
 
+        const version = recordVersion(record.updated_at);
+        if (version) response.setHeader("ETag", '"' + version + '"');
+
         response.json({
             record,
+            version,
             links: links.rows,
             history: history.rows,
             transitions
@@ -1945,7 +1970,7 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
         const updated = await withTransaction(async (client) => {
             const current = await client.query(`
                 select r.id, r.title, r.data, r.severity, r.due_at, r.record_type_id,
-                       r.form_version, rt.key as type
+                       r.form_version, r.updated_at, rt.key as type
                   from records r join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
                    for update of r
@@ -1954,6 +1979,11 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             if (current.rowCount === 0) return null;
 
             const record = current.rows[0];
+
+            const want = requestedVersion(request);
+            if (want && recordVersion(record.updated_at) !== want) {
+                return { stale: true, currentVersion: recordVersion(record.updated_at) };
+            }
 
             /* Who made this change is who is signed in, never a value the
                client sends. The audit log is only worth anything if the
@@ -2064,7 +2094,7 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                        due_at = $4,
                        title = $5
                  where id = $1
-                returning id, number, title, status, severity, data, due_at
+                returning id, number, title, status, severity, data, due_at, updated_at
             `, [record.id, merged, severity || null, nextDueAt, nextTitle]);
 
             return result.rows[0];
@@ -2072,6 +2102,14 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
         if (!updated) {
             return response.status(404).json({ error: "Record not found" });
+        }
+
+        if (updated.stale) {
+            return response.status(409).json({
+                error: "This record changed since you opened it. Reload before saving so you do not overwrite the other change.",
+                code: "stale",
+                version: updated.currentVersion
+            });
         }
 
         if (updated.conflict) {
@@ -2084,7 +2122,9 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
         publish(request.user.org_id, {
             entity: "records", id: request.params.number, action: "updated"
         });
-        response.json(updated);
+        const version = recordVersion(updated.updated_at);
+        if (version) response.setHeader("ETag", '"' + version + '"');
+        response.json({ ...updated, version });
     } catch (error) {
         next(error);
     }
@@ -2123,13 +2163,18 @@ records.patch("/:number/table/:field", requirePermission(editPermissionFor),
 
         const outcome = await withTransaction(async (client) => {
             const current = await client.query(`
-                select r.id, r.data, r.record_type_id, r.form_version, rt.key as type
+                select r.id, r.data, r.record_type_id, r.form_version, r.updated_at, rt.key as type
                   from records r join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
                    for update of r
             `, [request.user.org_id, request.params.number]);
             if (current.rowCount === 0) return null;
             const record = current.rows[0];
+
+            const want = requestedVersion(request);
+            if (want && recordVersion(record.updated_at) !== want) {
+                return { stale: true, currentVersion: recordVersion(record.updated_at) };
+            }
 
             const schemaRow = await client.query(
                 "select schema from form_versions where record_type_id = $1 and version = $2",
@@ -2164,7 +2209,7 @@ records.patch("/:number/table/:field", requirePermission(editPermissionFor),
                 update records
                    set data = jsonb_set(data, $2::text[], $3::jsonb, true)
                  where id = $1
-                returning number
+                returning number, updated_at
             `, [record.id, [field.key], JSON.stringify(finalRows)]);
 
             for (const line of tableRowAudits(field.key, beforeRows, finalRows)) {
@@ -2177,10 +2222,17 @@ records.patch("/:number/table/:field", requirePermission(editPermissionFor),
                     line.old_value, line.new_value, reason, request.user.id]);
             }
 
-            return { number: upd.rows[0].number, field: field.key, rows: finalRows };
+            return { number: upd.rows[0].number, updated_at: upd.rows[0].updated_at, field: field.key, rows: finalRows };
         });
 
         if (outcome === null) return response.status(404).json({ error: "Record not found" });
+        if (outcome.stale) {
+            return response.status(409).json({
+                error: "This record changed since you opened it. Reload before saving so you do not overwrite the other change.",
+                code: "stale",
+                version: outcome.currentVersion
+            });
+        }
         if (outcome.badField) {
             return response.status(400).json({ error: "No table field \"" + request.params.field + "\" on this record's form" });
         }
@@ -2188,8 +2240,10 @@ records.patch("/:number/table/:field", requirePermission(editPermissionFor),
         publish(request.user.org_id, {
             entity: "records", id: request.params.number, action: "updated"
         });
+        const version = recordVersion(outcome.updated_at);
+        if (version) response.setHeader("ETag", '"' + version + '"');
         response.json({
-            number: outcome.number, field: outcome.field,
+            number: outcome.number, field: outcome.field, version,
             row_count: outcome.rows.length, rows: outcome.rows
         });
     } catch (error) {
@@ -2547,7 +2601,7 @@ records.post("/:number/transition", async (request, response, next) => {
 
         const outcome = await withTransaction(async (client) => {
             const current = await client.query(`
-                select r.id, r.status, r.record_type_id, r.data, rt.key as type
+                select r.id, r.status, r.record_type_id, r.data, r.updated_at, rt.key as type
                   from records r
                   join record_types rt on rt.id = r.record_type_id
                  where r.org_id = $1 and r.number = $2
@@ -2557,6 +2611,11 @@ records.post("/:number/transition", async (request, response, next) => {
             if (current.rowCount === 0) return { code: 404 };
 
             const record = current.rows[0];
+
+            const want = requestedVersion(request);
+            if (want && recordVersion(record.updated_at) !== want) {
+                return { code: 409, body: { error: "This record changed since you opened it. Reload before acting.", code: "stale", version: recordVersion(record.updated_at) } };
+            }
 
             const allowed = await client.query(`
                 select required_permission from workflow_transitions
