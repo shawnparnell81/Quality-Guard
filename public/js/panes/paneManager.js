@@ -18,7 +18,10 @@ import { mountPane, bodyFor, dropPane, dropAll } from "./paneRenderer.js";
 const STORE = "qmsg:panes:v1";
 const MIN_WEIGHT = 0.16;
 
-let ws = { version: 1, layout: "row", panes: [], active: null };
+/* editing = the id of the pane currently in edit mode (M2), or null.
+   Only one at a time; not persisted (a reload comes back read-only and
+   the editor's own draft-restore offers any unsaved work). */
+let ws = { version: 1, layout: "row", panes: [], active: null, editing: null };
 
 const uid = () => "p_" + Math.random().toString(36).slice(2, 8);
 const root = () => document.getElementById("view-multi");
@@ -111,9 +114,11 @@ export async function openPane({ type, number, title }) {
     focusPane(ws.active);
 }
 
-export function closePane(id) {
+export async function closePane(id) {
     const index = ws.panes.findIndex((p) => p.id === id);
     if (index === -1) return;
+
+    if (ws.editing === id && !(await tearDownEdit(ws.panes[index].number))) return;
 
     dropPane(id);
     ws.panes.splice(index, 1);
@@ -171,10 +176,12 @@ export function setLayout(layout) {
     render();
 }
 
-export function collapseToSingle() {
+export async function collapseToSingle() {
+    if (ws.editing && !(await tearDownEdit())) return;
     const keep = ws.panes.find((p) => p.id === ws.active) || ws.panes[0];
     ws.panes = [];
     ws.active = null;
+    ws.editing = null;
     dropAll();
     persist();
     closeTab("multi");
@@ -185,6 +192,19 @@ export function collapseToSingle() {
     }
 }
 
+/* Confirm + tear down the live in-pane editor. Returns false if the
+   user cancels out of discarding unsaved changes. */
+async function tearDownEdit(number) {
+    const forms = await import("../forms.js");
+    if (forms.activeEditorIsDirty && forms.activeEditorIsDirty()
+        && !window.confirm("Discard unsaved changes" + (number ? " to " + number : "") + "?")) {
+        return false;
+    }
+    if (forms.teardownActiveEditor) forms.teardownActiveEditor();
+    ws.editing = null;
+    return true;
+}
+
 /* ---------- render (also the LOADERS.multi entry) ---------- */
 
 export async function render() {
@@ -192,10 +212,29 @@ export async function render() {
     if (!node) return;
     paintAll(node, ws, {
         onClose: closePane, onMove: movePane, onActivate: setActive,
-        onResize: resize, onResizeEnd: resizeEnd,
+        onResize: resize, onResizeEnd: resizeEnd, onEdit: editPane,
         onCollapse: collapseToSingle, onLayout: setLayout
     }, bodyFor);
-    await Promise.all(ws.panes.map((p) => mountPane(p)));
+    await Promise.all(ws.panes.map((p) => mountPane(p, () => finishEdit(p.id))));
+}
+
+/* ---------- edit one pane in place (M2) ---------- */
+
+export function editPane(id) {
+    if (ws.editing) return;                       // one at a time
+    const p = ws.panes.find((x) => x.id === id);
+    if (!p || !p.number) return;
+    p.mode = "edit";
+    ws.editing = id;
+    ws.active = id;
+    render();
+}
+
+export function finishEdit(id) {
+    const p = ws.panes.find((x) => x.id === id);
+    if (p) p.mode = "view";
+    if (ws.editing === id) ws.editing = null;
+    render();
 }
 
 function focusPane(id) {

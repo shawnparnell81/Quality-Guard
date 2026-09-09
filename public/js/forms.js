@@ -748,6 +748,11 @@ let returnView = null;
 let editorTeardown = null;
 let editorIsDirty = () => false;
 
+/* The multi-pane workspace needs to check / tear down whatever editor
+   is live before it closes the pane hosting it. */
+export function activeEditorIsDirty() { return editorIsDirty(); }
+export function teardownActiveEditor() { if (editorTeardown) editorTeardown(); }
+
 /* The record the editor currently has open, so the shared Print / PDF
    buttons in its header can act on it. Null while creating a new one. */
 let editorRecordNumber = null;
@@ -806,14 +811,22 @@ function appendFieldsGrouped(container, entries) {
     }
 }
 
-export async function openRecordEditor(typeKey, { number, onSaved, returnView: fromView, stayOnSave = false, custom = false } = {}) {
+/* host / headerless / onDone: render the editor into an arbitrary
+   container (a pane body) instead of #record-editor-body, skip the
+   shared page header, and hand control back to the caller on save or
+   cancel rather than navigating. Used by the multi-pane workspace
+   (M2) so one pane can be edited in place. */
+export async function openRecordEditor(typeKey, {
+    number, onSaved, returnView: fromView, stayOnSave = false, custom = false,
+    host = null, headerless = false, onDone = null
+} = {}) {
     if (fromView) returnView = fromView;
 
-    const body = document.getElementById("record-editor-body");
-    const titleEl = document.getElementById("record-editor-title");
-    const subEl = document.getElementById("record-editor-sub");
-    const statusEl = document.getElementById("record-editor-status");
-    const actionsEl = document.getElementById("record-editor-actions");
+    const body = host || document.getElementById("record-editor-body");
+    const titleEl = headerless ? null : document.getElementById("record-editor-title");
+    const subEl = headerless ? null : document.getElementById("record-editor-sub");
+    const statusEl = headerless ? null : document.getElementById("record-editor-status");
+    const actionsEl = headerless ? null : document.getElementById("record-editor-actions");
     if (!body) return;
 
     editorRecordNumber = number || null;
@@ -829,7 +842,7 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
                 try {
                     const r = await api.cloneRecord(number);
                     toast(r.number + " created from " + number);
-                    openRecordEditor(typeKey, { number: r.number, returnView, stayOnSave, custom });
+                    openRecordEditor(typeKey, { number: r.number, returnView, stayOnSave, custom, host, headerless, onDone });
                 } catch (error) { toast(error.message, "error"); dup.disabled = false; }
             });
             const excel = el("a", {
@@ -953,7 +966,8 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
                 if (editorRecordNumber !== existing.number) return;   // a newer editor opened
                 body.append(buildRecordContext(typeKey, existing.number, {
                     onWorkflow: () => openRecordEditor(typeKey, {
-                        number: existing.number, onSaved, returnView, stayOnSave
+                        number: existing.number, onSaved, returnView, stayOnSave,
+                        custom, host, headerless, onDone
                     })
                 }));
             })
@@ -1108,6 +1122,7 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
 
     function leave() {
         teardown();
+        if (onDone) { onDone(null); return; }
         if (returnView) document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
     }
     cancel.addEventListener("click", () => {
@@ -1231,6 +1246,10 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
             teardown();
 
             if (onSaved) await onSaved(result);
+
+            /* A pane editor (M2): hand control back so the pane can go
+               read-only with the saved values. No navigation. */
+            if (onDone) { onDone(result); return; }
 
             /* stayOnSave (the merged record surface): a saved edit keeps
                you on the record - re-open it so the form rebinds to the
