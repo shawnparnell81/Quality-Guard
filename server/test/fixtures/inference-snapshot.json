@@ -1,0 +1,426 @@
+{
+  "8D.xlsx": {
+    "sheets": 7,
+    "flat_fields": 46,
+    "flat_types": {
+      "date": 10,
+      "text": 32,
+      "number": 3,
+      "memo": 1
+    },
+    "sections": 14,
+    "tables": [
+      {
+        "cols": 8,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 4,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 9,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 10,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  },
+  "APQP Summary.xlsx": {
+    "sheets": 1,
+    "flat_fields": 5,
+    "flat_types": {
+      "date": 1,
+      "text": 3,
+      "number": 1
+    },
+    "sections": 3,
+    "tables": [
+      {
+        "cols": 3,
+        "types": [
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 4,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  },
+  "Appearance Report.xlsx": {
+    "sheets": 8,
+    "flat_fields": 58,
+    "flat_types": {
+      "text": 49,
+      "date": 6,
+      "memo": 3
+    },
+    "sections": 14,
+    "tables": [
+      {
+        "cols": 3,
+        "types": [
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 7,
+        "types": [
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 7,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 18,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "number",
+          "number",
+          "text",
+          "date",
+          "text",
+          "number",
+          "number",
+          "number",
+          "number"
+        ]
+      },
+      {
+        "cols": 13,
+        "types": [
+          "number",
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "number",
+          "number",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 13,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 4,
+        "types": [
+          "text",
+          "date",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 3,
+        "types": [
+          "text",
+          "memo",
+          "memo"
+        ]
+      },
+      {
+        "cols": 6,
+        "types": [
+          "number",
+          "memo",
+          "text",
+          "text",
+          "text",
+          "memo"
+        ]
+      },
+      {
+        "cols": 5,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "date"
+        ]
+      },
+      {
+        "cols": 5,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "date"
+        ]
+      },
+      {
+        "cols": 3,
+        "types": [
+          "text",
+          "text",
+          "date"
+        ]
+      },
+      {
+        "cols": 4,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 3,
+        "types": [
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 8,
+        "types": [
+          "number",
+          "text",
+          "text",
+          "date",
+          "number",
+          "text",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  },
+  "Control Plan.xlsx": {
+    "sheets": 1,
+    "flat_fields": 4,
+    "flat_types": {
+      "text": 4
+    },
+    "sections": 1,
+    "tables": [
+      {
+        "cols": 13,
+        "types": [
+          "number",
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "number",
+          "number",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  },
+  "Dimensional Report.xlsx": {
+    "sheets": 1,
+    "flat_fields": 4,
+    "flat_types": {
+      "text": 4
+    },
+    "sections": 0,
+    "tables": [
+      {
+        "cols": 8,
+        "types": [
+          "number",
+          "text",
+          "text",
+          "date",
+          "number",
+          "text",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  },
+  "FMEA.xlsx": {
+    "sheets": 1,
+    "flat_fields": 8,
+    "flat_types": {
+      "text": 6,
+      "date": 2
+    },
+    "sections": 0,
+    "tables": [
+      {
+        "cols": 18,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "number",
+          "number",
+          "text",
+          "date",
+          "text",
+          "number",
+          "number",
+          "number",
+          "number"
+        ]
+      }
+    ]
+  },
+  "Layout Inspection.xlsx": {
+    "sheets": 1,
+    "flat_fields": 5,
+    "flat_types": {
+      "text": 4,
+      "date": 1
+    },
+    "sections": 0,
+    "tables": [
+      {
+        "cols": 7,
+        "types": [
+          "number",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  },
+  "Process Flow Diagram.xlsx": {
+    "sheets": 1,
+    "flat_fields": 4,
+    "flat_types": {
+      "text": 4
+    },
+    "sections": 0,
+    "tables": [
+      {
+        "cols": 7,
+        "types": [
+          "text",
+          "text",
+          "number",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      },
+      {
+        "cols": 7,
+        "types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ]
+      }
+    ]
+  }
+}
