@@ -2649,7 +2649,7 @@ records.put("/:number/editing", async (request, response, next) => {
         if (!record) return response.status(404).json({ error: "Record not found" });
 
         const dirty = request.body?.dirty === true;
-        const editors = heartbeat(request.user.org_id, record.number, request.user, dirty)
+        const editors = (await heartbeat(request.user.org_id, record.number, request.user, dirty))
             .filter((e) => e.id !== request.user.id);
         response.json({ editors });
     } catch (error) {
@@ -2659,7 +2659,7 @@ records.put("/:number/editing", async (request, response, next) => {
 
 records.delete("/:number/editing", async (request, response, next) => {
     try {
-        leaveEditing(request.user.org_id, request.params.number, request.user.id);
+        await leaveEditing(request.user.org_id, request.params.number, request.user.id);
         response.json({ ok: true });
     } catch (error) {
         next(error);

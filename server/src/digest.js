@@ -7,13 +7,15 @@
    is empty.
 
    No cron: a self-arming timer fires at DIGEST_HOUR (local, default
-   07:00) and re-arms 24h later. Single-node; a multi-node deploy
-   would move this to a real scheduler and guard with a lock.
+   07:00) and re-arms 24h later. The run itself is behind a Postgres
+   advisory lock (audit H8), so with more than one instance armed
+   only one actually sends the digest.
    ============================================================ */
 
 import { query } from "./db.js";
 import { sendMail, isMailConfigured } from "./mail.js";
 import { syncNotifications } from "./routes/notifications.js";
+import { runOnce, JOB_LOCKS } from "./job-lock.js";
 
 const KIND_HEADING = {
     assigned: "Assigned to you",
@@ -102,9 +104,14 @@ export function startDigestSchedule() {
     const arm = () => {
         timer = setTimeout(async () => {
             try {
-                const summary = await runDigestOnce();
-                console.log("[digest] sent " + summary.sent.length + " of "
-                    + summary.considered + " opted-in users");
+                let summary;
+                const { ran } = await runOnce(JOB_LOCKS.digest, async () => { summary = await runDigestOnce(); });
+                if (ran) {
+                    console.log("[digest] sent " + summary.sent.length + " of "
+                        + summary.considered + " opted-in users");
+                } else {
+                    console.log("[digest] another instance is sending today's digest");
+                }
             } catch (error) {
                 console.error("[digest] run failed: " + error.message);
             }

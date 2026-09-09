@@ -36,7 +36,7 @@ import { layout } from "./routes/layout.js";
 import { formImport } from "./routes/form-import.js";
 import { notifications } from "./routes/notifications.js";
 import { formTemplates } from "./routes/form-templates.js";
-import { streamHandler } from "./stream.js";
+import { streamHandler, startChangeBus, stopChangeBus } from "./stream.js";
 import { startDigestSchedule } from "./digest.js";
 import { startLpaRollSchedule } from "./routes/lpa.js";
 import { startAuditPruneSchedule } from "./audit-retention.js";
@@ -381,6 +381,7 @@ const server = app.listen(PORT, () => {
     }
 
     log.info("server_started", { port: PORT, version: VERSION, node: process.version });
+    startChangeBus();          // the cross-instance SSE fan-out (LISTEN qms_change)
     startDigestSchedule();
     startLpaRollSchedule();
     startAuditPruneSchedule();
@@ -414,6 +415,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
     process.on(signal, () => {
         console.log("\nShutting down.");
         server.close(async () => {
+            await stopChangeBus();
             await pool.end();
             process.exit(0);
         });

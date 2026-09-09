@@ -3,41 +3,123 @@
    register or a dashboard can refresh the row that changed without
    polling.
 
-   The bus is in-process. That is the right size for a single-node
-   deployment - which is what a small shop runs - and the publish()
-   call is a no-op cost when nobody is listening. Moving to multiple
-   nodes later means putting Redis (or Postgres LISTEN/NOTIFY) behind
-   publish() and nothing else changes.
+   The fan-out is cross-instance (audit H8). publish() does a Postgres
+   NOTIFY; every app instance holds one dedicated LISTEN connection
+   and pushes each notification to its own open SSE streams. Postgres
+   is already required, so this adds no infrastructure - the change
+   from the old in-process EventEmitter is one NOTIFY and one LISTEN.
 
    Wire format (EventSource): an event named "change" whose data is
-       { orgId, entity, id, action, at }
+       { orgId, entity, id, action, at, ...extra }
    entity  - coarse bucket the client keys on: "records", "documents"
    id      - what the client needs to refetch (a record number, a doc id)
    action  - "created" | "updated" | "transitioned" | "deleted"
    ============================================================ */
 
-import { EventEmitter } from "node:events";
+import pg from "pg";
+import { pool } from "./db.js";
+import { log } from "./logger.js";
 
-const bus = new EventEmitter();
-/* One listener per open connection; a busy shop could have dozens of
-   tabs open. Node warns past 10 by default - lift the cap rather than
-   leak the warning. */
-bus.setMaxListeners(0);
+const CHANNEL = "qms_change";
 
-/* Fan a change out to every open stream belonging to that org. Safe
-   to call from anywhere, including inside a request handler after the
-   response has been sent. */
+/* NOTIFY has an 8 KB payload ceiling. Our frames are tiny except a
+   presence frame with a big editor list; past this size we send the
+   frame without its `editors` detail and the client refetches. */
+const MAX_PAYLOAD = 7000;
+
+/* Every SSE connection this instance is holding: { orgId, send }. */
+const localStreams = new Set();
+
+/* ---------- publish ---------- */
+
 export function publish(orgId, event) {
     if (!orgId || !event || !event.entity) return;
-    bus.emit("change", {
-        ...event,                       // carry through any extra payload (e.g. presence's `editors`)
+
+    const frame = {
+        ...event,
         orgId: String(orgId),
         entity: event.entity,
         id: event.id ?? null,
         action: event.action || "updated",
         at: Date.now()
-    });
+    };
+
+    let json = JSON.stringify(frame);
+    if (json.length > MAX_PAYLOAD && "editors" in frame) {
+        delete frame.editors;
+        json = JSON.stringify(frame);
+    }
+    if (json.length > MAX_PAYLOAD) {
+        log.warn("stream_frame_dropped", { entity: frame.entity, size: json.length });
+        return;
+    }
+
+    /* Fire and forget - a change feed must never fail a write. */
+    pool.query("select pg_notify($1, $2)", [CHANNEL, json])
+        .catch((error) => log.warn("stream_notify_failed", { err: error }));
 }
+
+/* ---------- the LISTEN side ---------- */
+
+let listener = null;
+let stopped = false;
+
+function fanOut(json) {
+    let frame;
+    try { frame = JSON.parse(json); } catch { return; }
+    for (const stream of localStreams) {
+        if (stream.orgId === frame.orgId) stream.send(frame);
+    }
+}
+
+async function connectListener() {
+    if (stopped) return;
+
+    const client = new pg.Client({
+        host: process.env.PGHOST,
+        port: Number(process.env.PGPORT || 5432),
+        database: process.env.PGDATABASE,
+        user: process.env.PGUSER,
+        password: process.env.PGPASSWORD
+    });
+
+    client.on("notification", (msg) => {
+        if (msg.channel === CHANNEL && msg.payload) fanOut(msg.payload);
+    });
+    client.on("error", (error) => {
+        log.warn("stream_listener_error", { err: error });
+        /* the 'end' handler does the reconnect */
+    });
+    client.on("end", () => {
+        listener = null;
+        if (!stopped) { const t = setTimeout(connectListener, 2000); if (typeof t.unref === "function") t.unref(); }
+    });
+
+    try {
+        await client.connect();
+        await client.query("LISTEN " + CHANNEL);
+        listener = client;
+        log.info("stream_listener_ready", { channel: CHANNEL });
+    } catch (error) {
+        log.warn("stream_listener_connect_failed", { err: error });
+        try { await client.end(); } catch { /* already down */ }
+        if (!stopped) { const t = setTimeout(connectListener, 2000); if (typeof t.unref === "function") t.unref(); }
+    }
+}
+
+export function startChangeBus() {
+    stopped = false;
+    connectListener();
+}
+
+export async function stopChangeBus() {
+    stopped = true;
+    const client = listener;
+    listener = null;
+    if (client) { try { await client.end(); } catch { /* already down */ } }
+}
+
+/* ---------- the SSE endpoint ---------- */
 
 /* GET /api/stream - mounted behind requireAuth, so request.user is
    set. Held open until the client navigates away or the socket drops. */
@@ -59,12 +141,14 @@ export function streamHandler(request, response) {
     response.write("retry: 3000\n\n");
     response.write(": connected\n\n");
 
-    const onChange = (event) => {
-        if (event.orgId !== orgId) return;
-        response.write("event: change\n");
-        response.write("data: " + JSON.stringify(event) + "\n\n");
+    const entry = {
+        orgId,
+        send(frame) {
+            response.write("event: change\n");
+            response.write("data: " + JSON.stringify(frame) + "\n\n");
+        }
     };
-    bus.on("change", onChange);
+    localStreams.add(entry);
 
     /* A comment every 25s so proxies and load balancers don't reap the
        connection as idle. */
@@ -75,13 +159,13 @@ export function streamHandler(request, response) {
 
     const stop = () => {
         clearInterval(heartbeat);
-        bus.off("change", onChange);
+        localStreams.delete(entry);
     };
     request.on("close", stop);
     request.on("error", stop);
 }
 
-/* For tests: how many streams are currently open. */
+/* For tests: how many streams this instance is holding. */
 export function openStreamCount() {
-    return bus.listenerCount("change");
+    return localStreams.size;
 }

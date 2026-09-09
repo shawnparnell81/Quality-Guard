@@ -8,97 +8,96 @@
    org's SSE streams as a { entity: "presence" } frame, so other open
    editors update live.
 
-   In-process, like the SSE bus it rides on - right for one node,
-   swap a shared store behind these four functions to scale out.
+   Backed by the `presence` table (migration 051, audit H8) so the
+   editor set is the same across app instances - the SSE bus it rides
+   on is already cross-instance.
    ============================================================ */
 
+import { query } from "./db.js";
 import { publish } from "./stream.js";
 
-const TTL_MS = 20000;
+const TTL = "20 seconds";
 
-/* key "<orgId>|<recordNumber>" -> Map<userId, { id, name, at }>.
-   A pipe is a safe separator: org ids are UUIDs and record numbers
-   are PREFIX-YYYY-NNNN, neither of which contains one. */
-const rooms = new Map();
-
-const keyFor = (orgId, number) => String(orgId) + "|" + number;
-const splitKey = (key) => {
-    const at = key.indexOf("|");
-    return [key.slice(0, at), key.slice(at + 1)];
-};
-
-function liveEditors(room) {
-    const now = Date.now();
-    const out = [];
-    for (const entry of room.values()) {
-        if (now - entry.at < TTL_MS) out.push({ id: entry.id, name: entry.name, dirty: !!entry.dirty });
-    }
-    return out;
+async function liveEditors(orgId, number) {
+    const rows = await query(`
+        select user_id as id, user_name as name, dirty
+          from presence
+         where org_id = $1 and record_number = $2
+           and last_seen_at > now() - interval '${TTL}'
+         order by last_seen_at
+    `, [orgId, number]);
+    return rows.rows.map((r) => ({ id: r.id, name: r.name, dirty: Boolean(r.dirty) }));
 }
 
-function broadcast(orgId, number, room) {
+async function broadcast(orgId, number) {
     publish(orgId, {
         entity: "presence",
         id: number,
         action: "editing",
-        editors: liveEditors(room)
+        editors: await liveEditors(orgId, number)
     });
 }
 
 /* Called on open and then on a timer. Returns the current editor list
    (including the caller - the client filters itself out by id). */
-export function heartbeat(orgId, number, user, dirty = false) {
-    const key = keyFor(orgId, number);
-    let room = rooms.get(key);
-    if (!room) { room = new Map(); rooms.set(key, room); }
+export async function heartbeat(orgId, number, user, dirty = false) {
+    const prior = await query(
+        "select dirty from presence where org_id = $1 and record_number = $2 and user_id = $3",
+        [orgId, number, user.id]
+    );
 
-    const prev = room.get(user.id);
-    room.set(user.id, {
-        id: user.id, name: user.full_name || user.initials || "Someone",
-        at: Date.now(), dirty: !!dirty
-    });
+    await query(`
+        insert into presence (org_id, record_number, user_id, user_name, dirty, last_seen_at)
+        values ($1, $2, $3, $4, $5, now())
+        on conflict (org_id, record_number, user_id) do update
+            set user_name = excluded.user_name,
+                dirty = excluded.dirty,
+                last_seen_at = now()
+    `, [orgId, number, user.id, user.full_name || user.initials || "Someone", Boolean(dirty)]);
 
     /* Tell everyone else when the set changed OR when this editor's
        unsaved-changes state flipped - both are news to the others. */
-    if (!prev || !!prev.dirty !== !!dirty) broadcast(orgId, number, room);
-    return liveEditors(room);
+    const joined = prior.rowCount === 0;
+    const flipped = prior.rowCount > 0 && Boolean(prior.rows[0].dirty) !== Boolean(dirty);
+    if (joined || flipped) await broadcast(orgId, number);
+
+    return liveEditors(orgId, number);
 }
 
 /* Called when the editor closes. */
-export function leaveEditing(orgId, number, userId) {
-    const key = keyFor(orgId, number);
-    const room = rooms.get(key);
-    if (!room || !room.delete(userId)) return;
-    if (room.size === 0) rooms.delete(key);
-    else broadcast(orgId, number, room);
+export async function leaveEditing(orgId, number, userId) {
+    const gone = await query(
+        "delete from presence where org_id = $1 and record_number = $2 and user_id = $3",
+        [orgId, number, userId]
+    );
+    if (gone.rowCount > 0) await broadcast(orgId, number);
 }
 
 /* Prune entries whose last heartbeat aged out; announce the rooms
-   that shrank. Runs on a timer from app startup. */
-export function sweepPresence() {
-    const now = Date.now();
-    for (const [key, room] of rooms) {
-        let changed = false;
-        for (const [userId, entry] of room) {
-            if (now - entry.at >= TTL_MS) { room.delete(userId); changed = true; }
-        }
-        if (!changed) continue;
+   that shrank. Runs on a timer from module load. With more than one
+   instance each sweeps, but DELETE ... RETURNING means only the
+   instance that actually removed a row broadcasts for that room. */
+export async function sweepPresence() {
+    const removed = await query(`
+        delete from presence
+         where last_seen_at <= now() - interval '${TTL}'
+        returning org_id, record_number
+    `);
+    if (removed.rowCount === 0) return;
 
-        const [orgId, number] = splitKey(key);
-        if (room.size === 0) {
-            rooms.delete(key);
-            publish(orgId, { entity: "presence", id: number, action: "editing", editors: [] });
-        } else {
-            broadcast(orgId, number, room);
-        }
+    const rooms = new Set(removed.rows.map((r) => r.org_id + "|" + r.record_number));
+    for (const room of rooms) {
+        const sep = room.indexOf("|");
+        await broadcast(room.slice(0, sep), room.slice(sep + 1));
     }
 }
 
 /* For tests. */
 export function editorsFor(orgId, number) {
-    const room = rooms.get(keyFor(orgId, number));
-    return room ? liveEditors(room) : [];
+    return liveEditors(orgId, number);
 }
 
-const timer = setInterval(sweepPresence, 10000);
+const timer = setInterval(() => {
+    sweepPresence().catch(() => { /* a transient DB blip is not worth a crash */ });
+}, 10000);
 if (typeof timer.unref === "function") timer.unref();

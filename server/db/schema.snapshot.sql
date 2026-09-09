@@ -455,6 +455,14 @@ CREATE TABLE public.ppap_elements (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ppap_elements_element_check CHECK (((element >= 1) AND (element <= 18)))
 );
+CREATE TABLE public.presence (
+    org_id uuid NOT NULL,
+    record_number text NOT NULL,
+    user_id uuid NOT NULL,
+    user_name text NOT NULL,
+    dirty boolean DEFAULT false NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL
+);
 CREATE TABLE public.production_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     org_id uuid NOT NULL,
@@ -953,6 +961,8 @@ ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_record_id_element_key UNIQUE (record_id, element);
+ALTER TABLE ONLY public.presence
+    ADD CONSTRAINT presence_pkey PRIMARY KEY (org_id, record_number, user_id);
 ALTER TABLE ONLY public.production_logs
     ADD CONSTRAINT production_logs_org_id_pl_number_key UNIQUE (org_id, pl_number);
 ALTER TABLE ONLY public.production_logs
@@ -1081,6 +1091,7 @@ CREATE INDEX idx_lpa_schedules ON public.lpa_schedules USING btree (org_id, acti
 CREATE INDEX idx_onboarding ON public.vendor_onboarding_stages USING btree (vendor_id, "position");
 CREATE INDEX idx_onboarding_docs ON public.vendor_onboarding_documents USING btree (stage_id);
 CREATE INDEX idx_ppap_elements ON public.ppap_elements USING btree (record_id, element);
+CREATE INDEX idx_presence_sweep ON public.presence USING btree (last_seen_at);
 CREATE INDEX idx_production_logs_org ON public.production_logs USING btree (org_id, status, order_date DESC);
 CREATE INDEX idx_production_logs_wo ON public.production_logs USING btree (org_id, wo_number);
 CREATE INDEX idx_purchase_orders_org ON public.purchase_orders USING btree (org_id, status, order_date DESC);
@@ -1254,6 +1265,10 @@ ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_record_id_fkey FOREIGN KEY (record_id) REFERENCES public.records(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.presence
+    ADD CONSTRAINT presence_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.presence
+    ADD CONSTRAINT presence_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.production_logs
     ADD CONSTRAINT production_logs_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.production_logs
