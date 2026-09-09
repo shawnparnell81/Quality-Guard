@@ -286,11 +286,14 @@ export function humanize(value) {
 /* Maps a record status onto one of the four pill styles. Anything
    unrecognised falls through to the neutral one rather than throwing. */
 export function statusKind(status) {
-    const open = ["draft", "containment", "investigation", "overdue", "unmitigated", "awaiting_8d"];
-    const progress = ["mrb", "root_cause", "action_plan", "in_progress", "scheduled",
-                      "eightd_linked", "investigating", "response_drafted", "with_logistics",
-                      "response_received", "d4", "d7"];
+    const open = ["draft", "initiation", "containment", "investigation", "overdue",
+                  "unmitigated", "awaiting_8d"];
+    const progress = ["mrb", "root_cause", "action_plan", "planning", "implementation",
+                      "in_progress", "scheduled", "eightd_linked", "investigating",
+                      "response_drafted", "with_logistics", "response_received", "d4", "d7"];
     const done = ["closed", "verify", "effectiveness", "controlled", "disposition"];
+    /* "escalated" - a terminal CAPA that failed effectiveness - is left
+       to the neutral "hold" pill, which reads as needs-attention. */
 
     if (open.includes(status)) return "open";
     if (progress.includes(status)) return "prog";

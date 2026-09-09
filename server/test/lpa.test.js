@@ -77,11 +77,16 @@ async function waitForHealth(deadlineMs) {
     throw new Error("Test server never became healthy on " + BASE);
 }
 
+/* Local calendar date, not UTC - the server compares against Postgres
+   current_date, which is local. toISOString() here made the
+   roll-forward test flake for the few hours each night when UTC has
+   ticked to tomorrow but local has not. */
 const isoDaysAgo = (n) => {
     const d = new Date();
     d.setDate(d.getDate() - n);
-    return d.toISOString().slice(0, 10);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const localToday = () => isoDaysAgo(0);
 
 before(async () => {
     serverProcess = spawn(process.execPath, ["--env-file=.env", "src/app.js"],
@@ -150,7 +155,7 @@ test("a template and its question bank", async () => {
 test("a schedule rolls forward into an audit on GET /api/lpa", async () => {
     const s = await api(adminCookie, "POST", "/api/lpa/schedules", {
         template_id: templateId, layer: "Shift supervisor", area: "Cell 4",
-        frequency_days: 7, start_on: new Date().toISOString().slice(0, 10)
+        frequency_days: 7, start_on: localToday()
     });
     assert.equal(s.status, 201, JSON.stringify(s.body));
 
@@ -162,7 +167,7 @@ test("a schedule rolls forward into an audit on GET /api/lpa", async () => {
 
     /* next_due moved a week out, so a second read does not duplicate. */
     const sched = board.body.schedules.find((x) => x.area === "Cell 4");
-    assert.notEqual(sched.next_due.slice(0, 10), new Date().toISOString().slice(0, 10));
+    assert.notEqual(sched.next_due.slice(0, 10), localToday());
     const again = await api(adminCookie, "GET", "/api/lpa");
     assert.equal(again.body.audits.filter((a) => a.area === "Cell 4").length, 1);
 });
