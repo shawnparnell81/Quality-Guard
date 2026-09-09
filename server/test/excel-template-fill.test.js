@@ -218,6 +218,40 @@ test("a filled template is read back in through the map, and can create a record
     assert.equal(made.body.record.data[tableKey][0].characteristic, "Bore dia");
 });
 
+test("a shifted template column is flagged loudly, not read into the wrong field", async () => {
+    const r = await fetch(BASE + "/api/records/" + recordNumber + "/excel", { headers: { Cookie: adminCookie } });
+    const filled = Buffer.from(await r.arrayBuffer());
+
+    const map = (await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/excel-map")).body.map;
+    const t = map.tables[tableKey];
+    const [firstColKey, firstLetter] = Object.entries(t.columns)[0];
+    const headerRowNo = Number(t.first_data_row) - 1;
+
+    /* rename that column's header in the customer's own template so
+       the map's letter no longer points at what it says it does */
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(filled);
+    const ws = wb.getWorksheet(t.sheet);
+    ws.getCell(firstLetter + headerRowNo).value = "Totally Different Header";
+    const shifted = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const dry = await uploadXlsx(adminCookie,
+        "/api/records/excel?type=" + typeKey + "&dry_run=true", shifted, "shifted.xlsx");
+    assert.equal(dry.status, 200, dry.text);
+    assert.ok(
+        dry.body.errors.some((e) => /layout has shifted/i.test(e)),
+        "the shift is reported: " + JSON.stringify(dry.body.errors)
+    );
+
+    /* and the mis-headed column is left out of the read rather than
+       pulling whatever now sits under that letter */
+    const rows = dry.body.header[tableKey] || [];
+    assert.ok(
+        rows.every((row) => !(firstColKey in row)),
+        "no value read into the shifted column"
+    );
+});
+
 test("a Form Builder type with no template still exports the generated grid", async () => {
     const made = await api(adminCookie, "POST", "/api/record-types", {
         name: "Plain Form", prefix: "PLN",

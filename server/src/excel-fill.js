@@ -466,6 +466,31 @@ export async function readTemplate(templateBuffer, map, schema) {
         const ws = workbook.getWorksheet(t.sheet);
         if (!ws) continue;
         const cols = new Map(field.columns.map((c) => [c.key, c]));
+
+        /* Anchor check: the map pins each column to a letter, but the
+           customer may have inserted or moved a column in their own
+           template since. If the header cell above a mapped letter no
+           longer reads that column's label, the whole grid has shifted
+           - say so loudly and drop that column rather than silently
+           read the wrong data into it. */
+        const headerRowNo = Number(t.first_data_row) - 1;
+        const headerRow = headerRowNo >= 1 ? (ws.getRow(headerRowNo).values || []) : [];
+        const readColumns = {};
+        for (const [colKey, letter] of Object.entries(t.columns || {})) {
+            const col = cols.get(colKey);
+            if (!col) continue;
+            const want = norm(col.label || colKey);
+            const got = norm(headerRow[letterToCol(letter)]);
+            if (want && got && got !== want) {
+                errors.push("\"" + (field.label || key) + "\": column " + letter
+                    + " of the template now reads \"" + headerRow[letterToCol(letter)]
+                    + "\", not \"" + (col.label || colKey) + "\". The layout has shifted -"
+                    + " re-check the Excel layout mapping before importing.");
+                continue;   // leave this column out of the read
+            }
+            readColumns[colKey] = letter;
+        }
+
         const out = [];
         /* Read to the first fully-empty row (a clean grid may have grown
            past t.capacity on fill); 5000 is just a runaway guard. */
@@ -473,7 +498,7 @@ export async function readTemplate(templateBuffer, map, schema) {
             const excelRowNo = Number(t.first_data_row) + i;
             const obj = {};
             let any = false;
-            for (const [colKey, letter] of Object.entries(t.columns || {})) {
+            for (const [colKey, letter] of Object.entries(readColumns)) {
                 const col = cols.get(colKey);
                 if (!col) continue;
                 const v = readCellValue(col, master(ws, letter + excelRowNo).value);
