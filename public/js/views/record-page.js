@@ -57,6 +57,14 @@ export function converted(type) {
     return GENERIC.has(type) || Boolean(BESPOKE[type]) || !BUILT_IN.has(type);
 }
 
+/* Types whose record IS its schema form: opening one goes straight to
+   the editable form + context panel (one surface, S3), not a
+   read-only view with an Edit button. The bespoke types keep the
+   view + Edit model - their screens are not plain forms. */
+function editInPlace(type) {
+    return GENERIC.has(type) || !BUILT_IN.has(type);
+}
+
 /* Where "Back" returns to, and the scroll position to restore there.
    Captured when a record is opened from a list; kept across an
    in-place re-render (opts.keepReturn) so an Edit round-trip does not
@@ -77,6 +85,18 @@ export async function openRecordPage(number, opts = {}) {
         catch { return false; }
     }
     if (!converted(type)) return false;
+
+    /* The merged surface: the record opens as its editable form with a
+       context panel below it (forms.js openRecordEditor). No separate
+       read-only view, no Edit button. */
+    if (editInPlace(type)) {
+        const back = opts.returnView || currentViewName() || "dashboard";
+        await show("record-editor", { reload: false });
+        await openRecordEditor(type, {
+            number: n, returnView: back, stayOnSave: true, custom: !BUILT_IN.has(type)
+        });
+        return true;
+    }
 
     if (!opts.keepReturn) {
         returnTo = { view: opts.returnView || currentViewName() || "dashboard", scrollY: window.scrollY };

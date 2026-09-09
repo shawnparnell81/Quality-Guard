@@ -13,7 +13,7 @@
 
 import { api } from "./api.js";
 import { currentUser } from "./session.js";
-import { el, toast } from "./dom.js";
+import { el, toast, pill, humanize, statusKind } from "./dom.js";
 import { beginEditing } from "./presence.js";
 import { buildUploader } from "./attach-upload.js";
 import { openFileWindow } from "./doc-windows.js";
@@ -748,20 +748,41 @@ let returnView = null;
 let editorTeardown = null;
 let editorIsDirty = () => false;
 
+/* The record the editor currently has open, so the shared Print / PDF
+   buttons in its header can act on it. Null while creating a new one. */
+let editorRecordNumber = null;
+
 export function wireRecordEditor() {
     const back = document.getElementById("record-editor-back");
-    if (!back) return;
+    if (back) {
+        back.addEventListener("click", () => {
+            if (editorIsDirty()
+                && !window.confirm("Leave without saving? Your draft is kept and offered when you come back.")) {
+                return;
+            }
+            if (editorTeardown) editorTeardown();
+            if (returnView) {
+                document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
+            }
+        });
+    }
 
-    back.addEventListener("click", () => {
-        if (editorIsDirty()
-            && !window.confirm("Leave without saving? Your draft is kept and offered when you come back.")) {
-            return;
-        }
-        if (editorTeardown) editorTeardown();
-        if (returnView) {
-            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
-        }
-    });
+    const printBtn = document.getElementById("record-editor-print");
+    if (printBtn) {
+        printBtn.addEventListener("click", () => {
+            if (editorRecordNumber) {
+                window.open("/api/records/" + encodeURIComponent(editorRecordNumber) + "/pdf?inline=1", "_blank");
+            }
+        });
+    }
+    const pdfBtn = document.getElementById("record-editor-pdf");
+    if (pdfBtn) {
+        pdfBtn.addEventListener("click", () => {
+            if (editorRecordNumber) {
+                window.location.href = "/api/records/" + encodeURIComponent(editorRecordNumber) + "/pdf";
+            }
+        });
+    }
 }
 
 /* Fields are rendered in the order the form defines, and an optional
@@ -785,13 +806,40 @@ function appendFieldsGrouped(container, entries) {
     }
 }
 
-export async function openRecordEditor(typeKey, { number, onSaved, returnView: fromView } = {}) {
+export async function openRecordEditor(typeKey, { number, onSaved, returnView: fromView, stayOnSave = false, custom = false } = {}) {
     if (fromView) returnView = fromView;
 
     const body = document.getElementById("record-editor-body");
     const titleEl = document.getElementById("record-editor-title");
     const subEl = document.getElementById("record-editor-sub");
+    const statusEl = document.getElementById("record-editor-status");
+    const actionsEl = document.getElementById("record-editor-actions");
     if (!body) return;
+
+    editorRecordNumber = number || null;
+    if (actionsEl) {
+        actionsEl.hidden = !number;
+        /* Print / PDF are static + wired once; drop any per-open extras
+           (Duplicate / Excel for a custom type) from the last record. */
+        actionsEl.querySelectorAll(".editor-extra").forEach((n) => n.remove());
+        if (number && custom) {
+            const dup = el("button", { class: "btn no-print editor-extra", type: "button", text: "Duplicate" });
+            dup.addEventListener("click", async () => {
+                dup.disabled = true;
+                try {
+                    const r = await api.cloneRecord(number);
+                    toast(r.number + " created from " + number);
+                    openRecordEditor(typeKey, { number: r.number, returnView, stayOnSave, custom });
+                } catch (error) { toast(error.message, "error"); dup.disabled = false; }
+            });
+            const excel = el("a", {
+                class: "btn no-print editor-extra", text: "Excel",
+                href: api.recordExcelUrl(number)
+            });
+            actionsEl.append(dup, excel);
+        }
+    }
+    if (statusEl) statusEl.replaceChildren();
 
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
@@ -811,10 +859,13 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
         return;
     }
 
-    if (titleEl) titleEl.textContent = existing ? "Edit " + existing.number : "New " + definition.name;
+    if (titleEl) titleEl.textContent = existing ? existing.number : "New " + definition.name;
     if (subEl) {
         subEl.textContent = "Clause " + (definition.clause || "-")
             + (existing ? " - form v" + existing.form_version : " - form v" + definition.version);
+    }
+    if (statusEl && existing) {
+        statusEl.replaceChildren(pill(humanize(existing.status), statusKind(existing.status)));
     }
 
     const errorBox = el("div", { class: "signin-error", hidden: "hidden" });
@@ -890,6 +941,24 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     form.append(el("div", { class: "row", style: "margin-top:18px" }, [save, cancel, autosaveHint]));
 
     body.replaceChildren(form);
+
+    /* ---------- the rest of the record (S3) ----------
+       For an existing record the editable form is only half the page;
+       its workflow, links, attachments and history render below it, so
+       the whole record is one surface. A workflow transition re-opens
+       the editor so the status pill and any now-locked fields update. */
+    if (existing) {
+        import("./views/record-context.js")
+            .then(({ buildRecordContext }) => {
+                if (editorRecordNumber !== existing.number) return;   // a newer editor opened
+                body.append(buildRecordContext(typeKey, existing.number, {
+                    onWorkflow: () => openRecordEditor(typeKey, {
+                        number: existing.number, onSaved, returnView, stayOnSave
+                    })
+                }));
+            })
+            .catch(() => { /* context is additive; the form still works without it */ });
+    }
 
     /* ---------- inline validation (P0.3) ---------- */
 
@@ -1162,7 +1231,19 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
             teardown();
 
             if (onSaved) await onSaved(result);
-            if (returnView) document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
+
+            /* stayOnSave (the merged record surface): a saved edit keeps
+               you on the record - re-open it so the form rebinds to the
+               new version and the context panel refreshes - instead of
+               bouncing back to the register. A brand-new record still
+               navigates, since there is nothing to stay on. */
+            if (stayOnSave && existing) {
+                await openRecordEditor(typeKey, {
+                    number: result.number, onSaved, returnView, stayOnSave
+                });
+            } else if (returnView) {
+                document.dispatchEvent(new CustomEvent("navigate", { detail: { view: returnView } }));
+            }
         } catch (error) {
             /* The server validates everything again. When it disagrees,
                it is right, and it names the fields. */
