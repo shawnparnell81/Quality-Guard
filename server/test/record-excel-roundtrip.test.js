@@ -186,6 +186,32 @@ test("a filled template uploads as one record with rows and computed RPN", async
     assert.equal(rec.body.record.data.process_name, "OP20 bore");
     assert.equal(rec.body.record.data.analysis.length, 2);
     assert.equal(rec.body.record.data.analysis[0].rpn, 8 * 4 * 6, "RPN computed server-side");
+
+    /* the spreadsheet the user filled is kept on the record */
+    assert.equal(up.body.source_attached, true);
+    const atts = await api(adminCookie, "GET", "/api/records/" + up.body.number + "/attachments");
+    assert.ok(atts.body.attachments.some((a) => /\.xlsx$/i.test(a.filename)),
+        "the filled workbook is attached: " + JSON.stringify(atts.body.attachments));
+});
+
+test("a spreadsheet that is not a filled template is rejected, not made into an empty record", async () => {
+    /* a bare workbook with an unrelated sheet - the shape a user's own
+       hand-built form has */
+    const junk = new ExcelJS.Workbook();
+    const s = junk.addWorksheet("My 8D Form");
+    s.addRow(["Problem Statement:", ""]);
+    s.addRow(["Team Leader:", ""]);
+    const buffer = Buffer.from(await junk.xlsx.writeBuffer());
+
+    const countPfmea = async () => (await query(
+        "select count(*)::int n from records r join record_types rt on rt.id = r.record_type_id "
+        + "where rt.org_id = $1 and rt.key = 'pfmea'", [tenant.orgId])).rows[0].n;
+
+    const before = await countPfmea();
+    const up = await uploadXlsx(adminCookie, "/api/records/excel?type=pfmea", buffer);
+    assert.equal(up.status, 422, JSON.stringify(up.body));
+    assert.match(up.body.error, /Excel template/i);
+    assert.equal(await countPfmea(), before, "no record was created from the junk file");
 });
 
 test("dry_run previews without creating", async () => {

@@ -1422,6 +1422,21 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
                 .map((f) => (f.label || f.key) + " still to fill");
             const errors = [...parsed.errors];
 
+            /* Nothing came across - almost always the wrong file: a form
+               the user built themselves, or an old download for a
+               different type. Say so plainly instead of quietly making
+               an empty record. */
+            const carriedAcross = Object.keys(data).length > 0 || Boolean(parsed.title);
+            if (!carriedAcross && errors.length === 0) {
+                return response.status(422).json({
+                    error: "Nothing was read from that spreadsheet. “Fill from Excel” "
+                        + "needs the “Excel template” download for "
+                        + (recordType.name || type) + " - open it, type values in the Value "
+                        + "column (and the table sheets), then upload that file.",
+                    matched_fields: 0
+                });
+            }
+
             const title = parsed.title
                 || (recordType.name + " - " + new Date().toISOString().slice(0, 10));
 
@@ -1442,8 +1457,31 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
                 recordType, type, title, severity: "ok", data, formVersion, dueAt: null
             }));
 
+            /* Keep the spreadsheet on the record so the user can open
+               the file they filled - it becomes an ordinary attachment.
+               Best-effort: a storage hiccup must not undo the import. */
+            let sourceAttached = false;
+            try {
+                const name = request.file.originalname && /\.xlsx$/i.test(request.file.originalname)
+                    ? request.file.originalname
+                    : title.replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) + "-import.xlsx";
+                const storagePath = await saveUploadedFile(
+                    "record-imports", ATTACHMENT_EXTENSIONS, name, request.file.buffer);
+                await query(`
+                    insert into attachments
+                        (record_id, filename, mime_type, size_bytes, storage_path, uploaded_by)
+                    values ($1, $2, $3, $4, $5, $6)
+                `, [created.id, name, XLSX_CONTENT_TYPE, request.file.size || request.file.buffer.length,
+                    storagePath, request.user.id]);
+                sourceAttached = true;
+            } catch (attachError) {
+                log.warn("record_import_attach_failed", { number: created.number, err: attachError });
+            }
+
             publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
-            response.status(201).json({ number: created.number, created_count: 1, warnings });
+            response.status(201).json({
+                number: created.number, created_count: 1, warnings, source_attached: sourceAttached
+            });
         } catch (error) {
             next(error);
         }
