@@ -1,0 +1,28 @@
+{
+  "key": "process_flow_aar",
+  "name": "Process Flow Diagram (AAR set)",
+  "prefix": "PFDAR",
+  "clause": "8.5.1",
+  "category": "APQP",
+  "standard": "AIAG",
+  "description": "The process flow diagram sheet from your Appearance Report workbook - header plus one line per operation: process description, outgoing characteristic, control method, characteristic description and special-characteristic flag. Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record.",
+  "fields": [
+    { "key": "customer", "label": "Customer", "type": "text", "section": "Header" },
+    { "key": "customer_part_number", "label": "Customer Part Number", "type": "text", "section": "Header" },
+    { "key": "supplier", "label": "Supplier", "type": "text", "section": "Header" },
+    { "key": "supplier_part_number", "label": "Supplier Part Number", "type": "text", "section": "Header" },
+    { "key": "part_name", "label": "Part Name", "type": "text", "section": "Header" },
+    { "key": "core_team", "label": "Core Team", "type": "memo", "section": "Header" },
+    {
+      "key": "operations", "label": "Process Flow", "type": "table", "required": true,
+      "columns": [
+        { "key": "op_no", "label": "Op. No.", "type": "text" },
+        { "key": "process_description", "label": "Process Description", "type": "text" },
+        { "key": "out_going", "label": "Out-going", "type": "text" },
+        { "key": "control_method", "label": "Control Method", "type": "text" },
+        { "key": "characteristic_description", "label": "Description", "type": "text" },
+        { "key": "sc", "label": "SC", "type": "text" }
+      ]
+    }
+  ]
+}

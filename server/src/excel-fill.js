@@ -98,7 +98,15 @@ function readCellValue(field, raw) {
         else if (v.text !== undefined) v = v.text;
         else if (v.result !== undefined) v = v.result;
         else if (v.richText) v = v.richText.map((t) => t.text).join("");
+        else if (v.formula !== undefined || v.sharedFormula !== undefined) return undefined;
         else return undefined;
+    }
+    /* A formula that could not resolve - a dead link to another workbook
+       ('[1]Common Data'!...), a #REF! after a column move - reads as
+       blank, not as the literal "#REF!" text or an [object Object]. */
+    if (v && typeof v === "object" && v.error !== undefined) return undefined;
+    if (typeof v === "string" && /^#(REF|VALUE|NAME|DIV\/0|N\/A|NULL|NUM)!?/i.test(v.trim())) {
+        return undefined;
     }
     if (v === null || v === undefined || String(v).trim() === "") return undefined;
     const type = field && field.type;

@@ -1,0 +1,35 @@
+{
+  "key": "control_plan_aar",
+  "name": "Control Plan (AAR set)",
+  "prefix": "CPAAR",
+  "clause": "8.5.1",
+  "category": "APQP",
+  "standard": "AIAG",
+  "description": "The control plan sheet from your Appearance Report workbook - header plus one line per characteristic: specification / tolerance, evaluation technique, sample size and frequency, control method and reaction plan. (The workbook pulls the body from a linked characteristics list; here the grid is yours to fill.) Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record.",
+  "fields": [
+    { "key": "control_plan_number", "label": "Control Plan Number", "type": "text", "required": true, "section": "Header" },
+    { "key": "part_number", "label": "Part Number/Latest Change Level", "type": "text", "section": "Header" },
+    { "key": "part_name", "label": "Part Name/Description", "type": "text", "section": "Header" },
+    { "key": "supplier_plant", "label": "Supplier/Plant", "type": "text", "section": "Header" },
+    { "key": "key_contact", "label": "Key Contact/Phone", "type": "text", "section": "Header" },
+    { "key": "core_team", "label": "Core Team", "type": "memo", "section": "Header" },
+    {
+      "key": "process_controls", "label": "Control Items", "type": "table", "required": true,
+      "columns": [
+        { "key": "part_process_number", "label": "Part/ Process Number", "type": "text" },
+        { "key": "process_name", "label": "Process Name/ Operation Description", "type": "text" },
+        { "key": "machine_device", "label": "Machine, Device, Jig, Tools, for Mfg.", "type": "text" },
+        { "key": "char_no", "label": "No.", "type": "text" },
+        { "key": "product_characteristic", "label": "Product", "type": "text" },
+        { "key": "process_characteristic", "label": "Process", "type": "text" },
+        { "key": "special_char_class", "label": "Special Char Class", "type": "text" },
+        { "key": "spec_tolerance", "label": "Product/Process Specification/ Tolerance", "type": "text" },
+        { "key": "measurement_technique", "label": "Evaluation/ Measurement Technique", "type": "text" },
+        { "key": "size", "label": "Size", "type": "text" },
+        { "key": "freq", "label": "Freq.", "type": "text" },
+        { "key": "control_method", "label": "Control Method", "type": "text" },
+        { "key": "reaction_plan", "label": "Reaction Plan", "type": "text" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "key": "pfmea_aar",
+  "name": "Process FMEA (AAR set)",
+  "prefix": "PFMAR",
+  "clause": "8.5.1",
+  "category": "APQP",
+  "standard": "AIAG",
+  "description": "The process FMEA sheet from your Appearance Report workbook - header plus one line per failure mode: effects and severity, causes and occurrence, current controls and detection, RPN, and the recommended action with its re-rated severity / occurrence / detection. Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record.",
+  "fields": [
+    { "key": "item", "label": "Item", "type": "text", "section": "Header" },
+    { "key": "model_years", "label": "Model Years", "type": "text", "section": "Header" },
+    { "key": "core_team", "label": "Core Team", "type": "memo", "section": "Header" },
+    { "key": "responsibility", "label": "Responsibility", "type": "text", "section": "Header" },
+    { "key": "key_date", "label": "Key Date", "type": "date", "section": "Header" },
+    { "key": "prepared_by", "label": "Prepared by", "type": "text", "section": "Header" },
+    { "key": "fmea_date", "label": "FMEA Date", "type": "date", "section": "Header" },
+    { "key": "fmea_number", "label": "FMEA Number", "type": "text", "section": "Header" },
+    {
+      "key": "analysis", "label": "FMEA", "type": "table", "required": true,
+      "columns": [
+        { "key": "requirements", "label": "Requirements", "type": "text" },
+        { "key": "failure_mode", "label": "Potential Failure Mode", "type": "text" },
+        { "key": "effects", "label": "Potential Effect(s) of Failure", "type": "text" },
+        { "key": "severity", "label": "Severity", "type": "number" },
+        { "key": "class", "label": "Class", "type": "text" },
+        { "key": "causes", "label": "Potential Cause(s) / Mechanism(s) of Failure", "type": "text" },
+        { "key": "occurrence", "label": "Occurrence", "type": "number" },
+        { "key": "controls_prevention", "label": "Current Process Controls Prevention", "type": "text" },
+        { "key": "controls_detection", "label": "Current Process Controls Detection", "type": "text" },
+        { "key": "detection", "label": "Detection", "type": "number" },
+        { "key": "rpn", "label": "R. P. N.", "type": "computed", "compute": "product", "inputs": ["severity", "occurrence", "detection"] },
+        { "key": "recommended_actions", "label": "Recommended Action(s)", "type": "text" },
+        { "key": "responsibility_target", "label": "Responsibility & Target Completion Date", "type": "text" },
+        { "key": "actions_taken", "label": "Actions Taken & Completion Date", "type": "text" },
+        { "key": "severity_2", "label": "Severity", "type": "number" },
+        { "key": "occurrence_2", "label": "Occurrence", "type": "number" },
+        { "key": "detection_2", "label": "Detection", "type": "number" },
+        { "key": "rpn_2", "label": "R. P. N.", "type": "computed", "compute": "product", "inputs": ["severity_2", "occurrence_2", "detection_2"] }
+      ]
+    }
+  ]
+}

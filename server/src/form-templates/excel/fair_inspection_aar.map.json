@@ -1,0 +1,31 @@
+{
+  "primary_sheet": "Inspection Report",
+  "sheets": [
+    "Inspection Report"
+  ],
+  "fields": {
+    "part_number": {
+      "sheet": "Inspection Report",
+      "cell": "B3"
+    },
+    "report_date": {
+      "sheet": "Inspection Report",
+      "cell": "D3"
+    }
+  },
+  "tables": {
+    "characteristics": {
+      "sheet": "Inspection Report",
+      "first_data_row": 6,
+      "columns": {
+        "range_of_tolerance": "B",
+        "sample_1": "C",
+        "sample_2": "D",
+        "sample_3": "E",
+        "comment": "F"
+      },
+      "capacity": 46,
+      "stop_on_blank_col": "B"
+    }
+  }
+}
