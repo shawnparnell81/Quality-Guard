@@ -1488,14 +1488,16 @@ records.get("/:number/excel", async (request, response, next) => {
    GET /api/records/NCR-2026-0142/audit
 
    Every INSERT / UPDATE / DELETE the records table saw for this
-   record, newest first, each with a full before/after row snapshot.
-   Written by the record_audit trigger (migration 044), so it also
-   captures a change made outside the app.
+   record, newest first. INSERT / DELETE carry the full row snapshot;
+   an UPDATE carries only the columns that changed, in both
+   old_values and new_values (migration 050, audit M11). Written by
+   the record_audit trigger (migration 044), so it also captures a
+   change made outside the app. Old UPDATE rows for closed records
+   are pruned on a schedule (server/src/audit-retention.js).
 
-   Gated on roles.manage: it returns whole-row payloads and is a
-   compliance / tamper-evidence view, the same audience as
-   GET /api/roles/history. Loosen to a record-read permission if it
-   should be broader. */
+   Gated on roles.manage: it is a compliance / tamper-evidence view,
+   the same audience as GET /api/roles/history. Loosen to a
+   record-read permission if it should be broader. */
 records.get("/:number/audit", requirePermission("roles.manage"),
     async (request, response, next) => {
         try {

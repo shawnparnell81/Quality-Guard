@@ -4,7 +4,12 @@ CREATE FUNCTION public.log_record_audit() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 declare
-    v_user uuid;
+    v_user    uuid;
+    v_old     jsonb;
+    v_new     jsonb;
+    v_old_d   jsonb := '{}'::jsonb;
+    v_new_d   jsonb := '{}'::jsonb;
+    k         text;
 begin
     begin
         v_user := nullif(current_setting('app.user_id', true), '')::uuid;
@@ -18,16 +23,50 @@ begin
                 (select key from record_types where id = old.record_type_id),
                 'DELETE', v_user, to_jsonb(old), null);
         return old;
-    else
+    elsif (tg_op = 'INSERT') then
         insert into record_audit (org_id, record_id, record_number, record_type,
                                   action_type, changed_by, old_values, new_values)
         values (new.org_id, new.id, new.number,
                 (select key from record_types where id = new.record_type_id),
-                tg_op, v_user,
-                case when tg_op = 'UPDATE' then to_jsonb(old) end,
-                to_jsonb(new));
+                'INSERT', v_user, null, to_jsonb(new));
+        return new;
+    else
+        v_old := to_jsonb(old);
+        v_new := to_jsonb(new);
+        for k in select jsonb_object_keys(v_new) loop
+            if (v_old -> k) is distinct from (v_new -> k) then
+                v_old_d := v_old_d || jsonb_build_object(k, v_old -> k);
+                v_new_d := v_new_d || jsonb_build_object(k, v_new -> k);
+            end if;
+        end loop;
+        /* nothing actually changed - no audit row */
+        if v_new_d = '{}'::jsonb then
+            return new;
+        end if;
+        insert into record_audit (org_id, record_id, record_number, record_type,
+                                  action_type, changed_by, old_values, new_values)
+        values (new.org_id, new.id, new.number,
+                (select key from record_types where id = new.record_type_id),
+                'UPDATE', v_user, v_old_d, v_new_d);
         return new;
     end if;
+end;
+$$;
+CREATE FUNCTION public.record_audit_prune(retain_days integer DEFAULT 730) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+declare
+    n bigint;
+begin
+    delete from record_audit ra
+     where ra.action_type = 'UPDATE'
+       and ra.changed_at < now() - make_interval(days => retain_days)
+       and not exists (
+           select 1 from records r
+            where r.id = ra.record_id and r.closed_at is null
+       );
+    get diagnostics n = row_count;
+    return n;
 end;
 $$;
 CREATE FUNCTION public.touch_updated_at() RETURNS trigger

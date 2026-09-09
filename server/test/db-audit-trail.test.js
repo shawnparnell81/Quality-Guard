@@ -204,3 +204,56 @@ test("a change made straight through the database is logged with no user", async
     assert.equal(outOfBand.changed_by, null, "no app session -> no attributed user");
     assert.equal(outOfBand.new_values.severity, "warn");
 });
+
+/* ---- diff + retention (audit M11) ---- */
+
+test("an UPDATE row carries only the columns that changed, not the whole row", async () => {
+    await api(adminCookie, "PATCH", "/api/records/" + number, {
+        title: "Porosity on lot 4471 (title only)", reason: "just the title"
+    });
+
+    const upd = (await query(`
+        select old_values, new_values from record_audit
+         where record_id = $1 and action_type = 'UPDATE'
+         order by id desc limit 1
+    `, [recordId])).rows[0];
+
+    const keys = Object.keys(upd.new_values);
+    assert.ok(keys.includes("title"), "the changed column is there");
+    assert.ok(!keys.includes("data"), "the untouched data blob is not dragged along");
+    assert.ok(!keys.includes("id") && !keys.includes("number"), "unchanged identity columns are absent");
+    assert.equal(upd.new_values.title, "Porosity on lot 4471 (title only)");
+    for (const k of keys) assert.ok(k in upd.old_values, k + " is on both sides of the diff");
+});
+
+test("record_audit_prune drops old UPDATE rows for a closed record, keeps INSERT and open history", async () => {
+    const closed = await api(adminCookie, "POST", "/api/records", {
+        type: "ncr", title: "To be closed", data: { disposition: "Scrap" }
+    });
+    const closedId = (await query("select id from records where number = $1 and org_id = $2",
+        [closed.body.number, tenant.orgId])).rows[0].id;
+    for (let i = 0; i < 3; i++) {
+        await api(adminCookie, "PATCH", "/api/records/" + closed.body.number,
+            { title: "edit " + i, reason: "churn" });
+    }
+    await query("update records set closed_at = now() where id = $1", [closedId]);
+
+    /* backdate every UPDATE audit row for both records past retention */
+    await query(`
+        update record_audit set changed_at = now() - interval '3 years'
+         where action_type = 'UPDATE' and record_id = any($1::uuid[])
+    `, [[closedId, recordId]]);
+
+    const pruned = Number((await query("select record_audit_prune(730) as n")).rows[0].n);
+    assert.ok(pruned >= 3, "the closed record's stale UPDATE rows were pruned");
+
+    const closedRows = (await query(
+        "select action_type from record_audit where record_id = $1", [closedId])).rows.map((r) => r.action_type);
+    assert.ok(closedRows.includes("INSERT"), "the INSERT row is always kept");
+    assert.ok(!closedRows.includes("UPDATE"), "the closed record's old UPDATE rows are gone");
+
+    const openUpdates = (await query(
+        "select count(*)::int n from record_audit where record_id = $1 and action_type = 'UPDATE'",
+        [recordId])).rows[0].n;
+    assert.ok(openUpdates > 0, "an OPEN record keeps its whole history even when old");
+});

@@ -39,6 +39,7 @@ import { formTemplates } from "./routes/form-templates.js";
 import { streamHandler } from "./stream.js";
 import { startDigestSchedule } from "./digest.js";
 import { startLpaRollSchedule } from "./routes/lpa.js";
+import { startAuditPruneSchedule } from "./audit-retention.js";
 import { rateLimit, clientIp } from "./rate-limit.js";
 
 const app = express();
@@ -382,6 +383,7 @@ const server = app.listen(PORT, () => {
     log.info("server_started", { port: PORT, version: VERSION, node: process.version });
     startDigestSchedule();
     startLpaRollSchedule();
+    startAuditPruneSchedule();
 });
 
 /* A dev server that fails to bind looks identical to one that is
