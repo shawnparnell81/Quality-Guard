@@ -66,7 +66,7 @@ function confirm2(title, message, confirmLabel, onConfirm) {
     node.showModal();
 }
 
-async function openAttachForm(number, slot) {
+async function openAttachForm(number, slot, viewSlot) {
     let documents = [];
     try { ({ documents } = await api.documents()); } catch { documents = []; }
 
@@ -95,11 +95,11 @@ async function openAttachForm(number, slot) {
             }
             return api.attachApqpDeliverable(number, slot.slot, form);
         },
-        onSaved: () => renderApqpDetail(number)
+        onSaved: () => renderApqpDetail(number, { slot: viewSlot })
     });
 }
 
-function buildAdvance(number, record, transitions, gate) {
+function buildAdvance(number, record, transitions, gate, viewSlot) {
     const next = (transitions || []).find((t) => !t.is_terminal) || (transitions || [])[0];
     if (!next) return el("p", { class: "sm dim no-print", text: "This program is closed." });
 
@@ -130,7 +130,7 @@ function buildAdvance(number, record, transitions, gate) {
                         reason: "Advanced via the APQP deliverables screen — phase gate met"
                     });
                     toast("Advanced to " + next.label);
-                    await renderApqpDetail(number);
+                    await renderApqpDetail(number, { slot: viewSlot });
                 }
             );
         });
@@ -148,10 +148,15 @@ function buildAdvance(number, record, transitions, gate) {
     ]);
 }
 
-export async function renderApqpDetail(number) {
-    const numberEl = document.getElementById("apqp-detail-number");
-    const statusEl = document.getElementById("apqp-detail-status");
-    const body = document.getElementById("apqp-detail");
+/* `slot` is the id prefix the detail is written into - "apqp" for the
+   register side panel (unchanged), "record-view" for the full-page
+   record view (record-page.js). Bound to `viewSlot` here because the
+   deliverables .map() below already uses `slot` for a deliverable. */
+export async function renderApqpDetail(number, { slot: viewSlot = "apqp" } = {}) {
+    const full = viewSlot !== "apqp";
+    const numberEl = document.getElementById(viewSlot + "-detail-number");
+    const statusEl = document.getElementById(viewSlot + "-detail-status");
+    const body = document.getElementById(viewSlot + "-detail");
     if (!body) return;
 
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
@@ -205,7 +210,7 @@ export async function renderApqpDetail(number) {
                     class: "btn btn-xs", type: "button",
                     dataset: { requires: "apqp.manage" }, text: doc ? "Replace" : "Attach"
                 });
-                attach.addEventListener("click", () => openAttachForm(number, slot));
+                attach.addEventListener("click", () => openAttachForm(number, slot, viewSlot));
                 actions.append(attach);
 
                 if (doc) {
@@ -220,7 +225,7 @@ export async function renderApqpDetail(number) {
                         async () => {
                             await api.removeApqpDeliverable(number, slot.slot);
                             toast(slot.label + " removed");
-                            await renderApqpDetail(number);
+                            await renderApqpDetail(number, { slot: viewSlot });
                         }
                     ));
                     actions.append(remove);
@@ -246,11 +251,13 @@ export async function renderApqpDetail(number) {
             header,
             el("div", { class: "section-label", text: "Phases" }), stepper,
             el("div", { class: "section-label", text: "APQP deliverables" }), grid,
-            buildAdvance(number, record, transitions, deliverables.gate)
+            buildAdvance(number, record, transitions, deliverables.gate, viewSlot),
+            full ? el("div", { class: "section-label", text: "Other program documents" }) : null,
+            full ? el("div", { class: "panel-body", id: viewSlot + "-documents-panel" }) : null
         );
         applyPermissions(body);
 
-        renderDocumentsPanel(number, "apqp-documents-panel");
+        renderDocumentsPanel(number, full ? viewSlot + "-documents-panel" : "apqp-documents-panel");
     } catch (error) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
     }

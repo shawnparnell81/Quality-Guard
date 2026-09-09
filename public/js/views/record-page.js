@@ -26,17 +26,26 @@ import { renderCustomDetail } from "./form-record.js";
 import { renderFairDetail } from "./fair.js";
 import { renderPpapDetail } from "./ppap.js";
 import { renderEightDDetail, renderChangeDetail } from "./change.js";
+import { renderDiDetail } from "./di.js";
+import { renderApqpDetail } from "./apqp.js";
 
 const SLOT = "record-view";
 
-const GENERIC = new Set(["ncr", "capa"]);
+const GENERIC = new Set(["ncr", "capa", "complaint", "scar", "audit", "risk"]);
 
 const BESPOKE = {
     fair: renderFairDetail,
     ppap: renderPpapDetail,
     eightd: renderEightDDetail,
-    ecn: renderChangeDetail
+    ecn: renderChangeDetail,
+    di: renderDiDetail,
+    apqp: renderApqpDetail
 };
+
+/* Built-in types whose old side panel carried no Edit button - the
+   record is driven by attaching deliverables / advancing phases, not
+   by the schema form. Keep it that way: chrome shows only Print / PDF. */
+const NO_EDIT = new Set(["di", "apqp"]);
 
 /* Every built-in type. One not in here is a type someone created. */
 const BUILT_IN = new Set([
@@ -91,6 +100,7 @@ export async function openRecordPage(number, opts = {}) {
        renderCustomDetail builds its own button row in the panel body,
        so for a custom type the chrome bar is hidden. */
     document.getElementById(SLOT + "-actions").hidden = isCustom;
+    document.getElementById(SLOT + "-edit").hidden = NO_EDIT.has(type);
 
     try {
         if (isCustom) {
