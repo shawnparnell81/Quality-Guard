@@ -17,7 +17,8 @@ import { identify, requireAuth, requirePasswordCurrent, requireCsrf } from "./au
 import { auth } from "./routes/auth.js";
 import { records } from "./routes/records.js";
 import { masterdata } from "./routes/masterdata.js";
-import { dashboard, metrics } from "./routes/dashboard.js";
+import { dashboard } from "./routes/dashboard.js";
+import { metrics } from "./routes/metrics.js";
 import { access, meHandler } from "./routes/access.js";
 import { production } from "./routes/production.js";
 import { change } from "./routes/change.js";
@@ -38,6 +39,8 @@ import { formTemplates } from "./routes/form-templates.js";
 import { streamHandler } from "./stream.js";
 import { startDigestSchedule } from "./digest.js";
 import { startLpaRollSchedule } from "./routes/lpa.js";
+import { startAuditPruneSchedule } from "./audit-retention.js";
+import { rateLimit, clientIp } from "./rate-limit.js";
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -104,6 +107,25 @@ app.use((request, response, next) => {
     }
     next();
 });
+
+/* Rate limiting (audit M12). Three layers - a generous global
+   per-IP cap on all of /api, a strict per-IP cap on /api/auth to
+   slow password-spray, and a per-user cap on the endpoints that
+   render or parse a document. Each cap is env-tunable; RATE_LIMIT_OFF
+   disables the lot (the dedicated test forces its own tiny caps).
+   The per-account login lockout in routes/auth.js is separate and
+   unchanged. */
+const rlCap = (name, fallback) => {
+    const n = Number(process.env[name]);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const rlOn = () => !process.env.RATE_LIMIT_OFF;
+const HEAVY_PATH = /\/(?:pdf|excel|xlsx|imports?)\b/i;
+
+app.use("/api", rateLimit({
+    name: "global", windowMs: 60_000,
+    max: rlCap("RATE_LIMIT_GLOBAL_PER_MIN", 600), when: rlOn
+}));
 
 /* The public address is the pitch, not the product. Visiting the bare
    domain shows the landing page; the working application only lives
@@ -225,7 +247,12 @@ app.use("/api", (request, response, next) => {
     requestContext.run({ userId: request.user?.id }, next);
 });
 
-/* Sign-in has to be reachable without being signed in. */
+/* Sign-in has to be reachable without being signed in - but a strict
+   per-IP cap sits in front of it (audit M12). */
+app.use("/api/auth", rateLimit({
+    name: "auth", windowMs: 15 * 60_000,
+    max: rlCap("RATE_LIMIT_AUTH_PER_15MIN", 60), when: rlOn
+}));
 app.use("/api/auth", auth);
 
 /* Everything past this line requires a session. Guarding it in one
@@ -248,13 +275,31 @@ app.use("/api", requirePasswordCurrent);
    non-browser callers pass straight through. */
 app.use("/api", requireCsrf);
 
+/* Per-user cap on the endpoints that parse or render a document -
+   Excel export / template fill, PDF, form import - which are the
+   cheap DoS (audit M12). Keyed by user, so one heavy user cannot
+   starve the rest of their org. */
+app.use("/api", rateLimit({
+    name: "heavy", windowMs: 60_000,
+    max: rlCap("RATE_LIMIT_HEAVY_PER_MIN", 120),
+    when: (request) => rlOn() && HEAVY_PATH.test(request.path),
+    by: (request) => request.user?.id || clientIp(request)
+}));
+
 /* Live change feed (SSE). A single handler, not a router - it holds
    the connection open and streams { entity, id, action } for the
    caller's org until the tab closes. */
 app.get("/api/stream", streamHandler);
 
+/* Route mounts. Convention (docs/api-conventions.md): a feature
+   router mounts under its own /api/<feature> prefix and names its
+   paths relative to it; a cross-cutting router with no single
+   feature home mounts at bare /api and each of its routes carries
+   its own full path. New routers pick the side they belong to. */
 app.use("/api/records", records);
 app.use("/api/dashboard", dashboard);
+
+/* cross-cutting */
 app.use("/api", metrics);
 app.use("/api", access);
 app.use("/api", production);
@@ -338,6 +383,7 @@ const server = app.listen(PORT, () => {
     log.info("server_started", { port: PORT, version: VERSION, node: process.version });
     startDigestSchedule();
     startLpaRollSchedule();
+    startAuditPruneSchedule();
 });
 
 /* A dev server that fails to bind looks identical to one that is

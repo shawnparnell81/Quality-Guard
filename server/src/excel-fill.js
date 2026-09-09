@@ -268,6 +268,118 @@ export function buildDefaultMap(workbook, schema) {
     };
 }
 
+/* ---------- validation & version reconcile (audit M4) ----------
+
+   The excel_map is free-form jsonb. mapProblem catches a
+   structurally bad one on save (a cell that is not a real address, a
+   negative row, a column letter that is not a letter). reconcileMap
+   is run on export: it drops entries for fields the schema no longer
+   has and reports which schema fields nothing maps to, so a form
+   edit turns "field silently stopped exporting" into a visible
+   state. The map is stamped with built_for_version - the form
+   version it was authored against - so "stale" is a fact, not a
+   guess. */
+
+const CELL_RE = /^[A-Za-z]{1,3}[1-9][0-9]{0,6}$/;
+const COL_RE = /^[A-Za-z]{1,3}$/;
+
+export function mapProblem(map) {
+    if (!map || typeof map !== "object" || Array.isArray(map)) return "The map must be an object";
+    if (!map.template_path || typeof map.template_path !== "string") {
+        return "The map needs a template_path";
+    }
+    for (const k of ["primary_sheet", "template_name"]) {
+        if (map[k] !== undefined && typeof map[k] !== "string") return k + " must be text";
+    }
+    if (map.built_for_version !== undefined
+        && !(Number.isInteger(map.built_for_version) && map.built_for_version > 0)) {
+        return "built_for_version must be a positive whole number";
+    }
+
+    if (map.fields !== undefined) {
+        if (typeof map.fields !== "object" || Array.isArray(map.fields)) return "fields must be an object";
+        for (const [key, spec] of Object.entries(map.fields)) {
+            if (!spec || typeof spec !== "object") return "field \"" + key + "\" has a bad mapping";
+            if (spec.sheet !== undefined && typeof spec.sheet !== "string") {
+                return "field \"" + key + "\" has a bad sheet";
+            }
+            if (typeof spec.cell !== "string" || !CELL_RE.test(spec.cell.replace(/\$/g, ""))) {
+                return "field \"" + key + "\" maps to \"" + spec.cell + "\", which is not a cell address";
+            }
+        }
+    }
+
+    if (map.tables !== undefined) {
+        if (typeof map.tables !== "object" || Array.isArray(map.tables)) return "tables must be an object";
+        for (const [key, spec] of Object.entries(map.tables)) {
+            if (!spec || typeof spec !== "object") return "table \"" + key + "\" has a bad mapping";
+            if (spec.sheet !== undefined && typeof spec.sheet !== "string") {
+                return "table \"" + key + "\" has a bad sheet";
+            }
+            if (!Number.isInteger(spec.first_data_row) || spec.first_data_row < 1) {
+                return "table \"" + key + "\" needs a first_data_row of 1 or more";
+            }
+            if (spec.row_number_col !== undefined
+                && (typeof spec.row_number_col !== "string" || !COL_RE.test(spec.row_number_col))) {
+                return "table \"" + key + "\" has a bad row_number_col";
+            }
+            if (spec.capacity !== undefined
+                && (!Number.isInteger(spec.capacity) || spec.capacity < 1)) {
+                return "table \"" + key + "\" has a bad capacity";
+            }
+            if (spec.columns === undefined || typeof spec.columns !== "object" || Array.isArray(spec.columns)) {
+                return "table \"" + key + "\" needs a columns object";
+            }
+            for (const [ck, letter] of Object.entries(spec.columns)) {
+                if (typeof letter !== "string" || !COL_RE.test(letter)) {
+                    return "table \"" + key + "\" column \"" + ck + "\" maps to \"" + letter + "\", not a column letter";
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/* Returns { map, dropped, unmapped } - `map` with entries for
+   schema-absent fields removed, `dropped` those keys, `unmapped` the
+   schema fields (real inputs, not computed / section headers) that
+   nothing places. */
+export function reconcileMap(map, schema) {
+    const fields = Array.isArray(schema && schema.fields) ? schema.fields : [];
+    const real = fields.filter((f) => f.type !== "computed");
+    const byKey = new Set(real.map((f) => f.key));
+    const tableKeys = new Set(fields.filter((f) => f.type === "table").map((f) => f.key));
+
+    const out = { ...(map || {}) };
+    const dropped = [];
+
+    for (const bag of ["fields", "tables"]) {
+        if (!out[bag] || typeof out[bag] !== "object") continue;
+        const kept = {};
+        for (const [k, v] of Object.entries(out[bag])) {
+            /* "__"-prefixed keys are reserved placeholders (e.g. the
+               record title), not schema fields - leave them be */
+            if (k.startsWith("__")) { kept[k] = v; continue; }
+            const belongs = bag === "tables" ? tableKeys.has(k) : (byKey.has(k) && !tableKeys.has(k));
+            if (belongs) kept[k] = v;
+            else dropped.push(k);
+        }
+        out[bag] = kept;
+    }
+
+    const placed = new Set([
+        ...Object.keys(out.fields || {}),
+        ...Object.keys(out.tables || {})
+    ]);
+    const unmapped = real
+        .filter((f) => !placed.has(f.key))
+        /* a section-only heading with no data key does not count */
+        .filter((f) => f.key)
+        .map((f) => f.key);
+
+    return { map: out, dropped, unmapped };
+}
+
 /* ---------- filling ---------- */
 
 /* "<label, trimmed> +extra", kept inside Excel's 31-char sheet-name

@@ -16,7 +16,7 @@ import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { upload } from "../uploads.js";
 import { publish } from "../stream.js";
-import { buildDefaultMap } from "../excel-fill.js";
+import { buildDefaultMap, mapProblem, reconcileMap } from "../excel-fill.js";
 import { identifiers as exprIdentifiers } from "../../../public/js/expr.js";
 
 const XLSX_EXTENSIONS = new Set([".xlsx"]);
@@ -295,6 +295,29 @@ const FIELD_TYPES = new Set([
     "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table", "boolean"
 ]);
 
+/* Size caps on a published schema (audit M7). problemWith already
+   proves a schema is structurally sound; these stop a pathological
+   one - 300 columns, 5000 options, a novel-length label - from
+   becoming the form every future record of the type renders. Chosen
+   well above any real quality form (a big PFMEA is ~25 columns, a
+   long disposition list ~15 options) and well below what would choke
+   the renderer. */
+const SCHEMA_LIMITS = {
+    fields: 250,
+    tableColumns: 80,
+    options: 500,
+    keyChars: 100,
+    labelChars: 300,
+    sectionChars: 200,
+    exprChars: 1000
+};
+
+function tooLong(what, value, cap) {
+    return typeof value === "string" && value.length > cap
+        ? what + " is too long (" + value.length + " chars, limit " + cap + ")"
+        : null;
+}
+
 /* A table field's columns can only be scalars - a repeating grid of
    grids is not something any real QMS form needs and not something
    the renderer supports. "computed" is a read-only cell worked out
@@ -324,6 +347,10 @@ function tableProblem(field) {
     if (!Array.isArray(field.columns) || field.columns.length === 0) {
         return "\"" + field.label + "\" needs at least one column";
     }
+    if (field.columns.length > SCHEMA_LIMITS.tableColumns) {
+        return "\"" + field.label + "\" has too many columns ("
+            + field.columns.length + ", limit " + SCHEMA_LIMITS.tableColumns + ")";
+    }
     if (field.rowAttachments !== undefined && typeof field.rowAttachments !== "boolean") {
         return "\"" + field.label + "\"'s rowAttachments must be true or false";
     }
@@ -333,6 +360,9 @@ function tableProblem(field) {
         if (!col || typeof col !== "object") return "\"" + field.label + "\" has a bad column";
         if (!col.key || typeof col.key !== "string") return "\"" + field.label + "\" has a column with no key";
         if (!col.label || typeof col.label !== "string") return "\"" + field.label + "\" has a column with no label";
+        const clk = tooLong("Column key \"" + col.key + "\"", col.key, SCHEMA_LIMITS.keyChars)
+            || tooLong("Column label \"" + col.label + "\"", col.label, SCHEMA_LIMITS.labelChars);
+        if (clk) return clk;
         if (!TABLE_COLUMN_TYPES.has(col.type)) {
             return "\"" + field.label + "\" column \"" + col.label + "\" has an unusable type";
         }
@@ -341,6 +371,13 @@ function tableProblem(field) {
         byKey.set(col.key, col);
         if (col.type === "select" && (!Array.isArray(col.options) || col.options.length === 0)) {
             return "\"" + field.label + "\" column \"" + col.label + "\" needs options";
+        }
+        if (Array.isArray(col.options) && col.options.length > SCHEMA_LIMITS.options) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" has too many options ("
+                + col.options.length + ", limit " + SCHEMA_LIMITS.options + ")";
+        }
+        if (typeof col.expr === "string" && col.expr.length > SCHEMA_LIMITS.exprChars) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" has an over-long expression";
         }
         if (col.thresholds !== undefined && col.type !== "number" && col.type !== "computed") {
             return "\"" + field.label + "\" column \"" + col.label + "\" can only carry thresholds on a number or computed column";
@@ -393,10 +430,15 @@ function tableProblem(field) {
    checks all of this before it ever sends a request, but the field
    list is exactly the shape every screen in the app renders forms
    from, so a bad one here breaks every future record of this type,
-   not just the request that sent it. */
+   not just the request that sent it. Structural soundness AND size
+   (SCHEMA_LIMITS, audit M7) - a schema that parses but is
+   pathologically large is still rejected. */
 export function problemWith(fields) {
     if (!Array.isArray(fields) || fields.length === 0) {
         return "At least one field is required";
+    }
+    if (fields.length > SCHEMA_LIMITS.fields) {
+        return "Too many fields (" + fields.length + ", limit " + SCHEMA_LIMITS.fields + ")";
     }
 
     const seenKeys = new Set();
@@ -406,6 +448,10 @@ export function problemWith(fields) {
         if (!field.key || typeof field.key !== "string") return "Every field needs a key";
         if (!field.label || typeof field.label !== "string") return "Every field needs a label";
         if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
+        const flk = tooLong("Field key \"" + field.key + "\"", field.key, SCHEMA_LIMITS.keyChars)
+            || tooLong("Field label \"" + field.label + "\"", field.label, SCHEMA_LIMITS.labelChars)
+            || tooLong("\"" + field.label + "\"'s section", field.section, SCHEMA_LIMITS.sectionChars);
+        if (flk) return flk;
         if (field.section !== undefined && typeof field.section !== "string") {
             return "\"" + field.label + "\"'s section must be text";
         }
@@ -415,6 +461,10 @@ export function problemWith(fields) {
 
         if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
             return "\"" + field.label + "\" needs at least one option";
+        }
+        if (Array.isArray(field.options) && field.options.length > SCHEMA_LIMITS.options) {
+            return "\"" + field.label + "\" has too many options ("
+                + field.options.length + ", limit " + SCHEMA_LIMITS.options + ")";
         }
         if (field.thresholds !== undefined && field.type !== "number") {
             return "\"" + field.label + "\" can only carry thresholds on a number field";
@@ -440,10 +490,13 @@ export function problemWith(fields) {
 /* PUT /api/record-types/ncr/form   { fields: [...] }
 
    Publishing a new version, never overwriting the one records were
-   captured under - unchanged from how the Form Builder already
-   described itself working, now made real. Conditional rules are not
-   editable from here yet, so whatever the previous version had is
-   carried forward untouched rather than silently dropped. */
+   captured under. Conditional rules are carried forward from the
+   previous version (not editable here yet). So is the Excel template
+   map (audit M4): its cell assignments for fields that survived are
+   kept, entries for removed fields are dropped, and the response
+   lists any fields the map does not place - the map is marked as
+   built against the OLD version so the Excel-layout screen shows it
+   needs a review. */
 masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
     async (request, response, next) => {
         try {
@@ -463,9 +516,9 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
 
             const recordTypeId = typeRow.rows[0].id;
 
-            const version = await withTransaction(async (client) => {
+            const outcome = await withTransaction(async (client) => {
                 const previous = await client.query(`
-                    select version, schema from form_versions
+                    select version, schema, excel_map from form_versions
                      where record_type_id = $1
                      order by version desc limit 1
                 `, [recordTypeId]);
@@ -473,10 +526,31 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
                 const nextVersion = previous.rowCount > 0 ? previous.rows[0].version + 1 : 1;
                 const rules = previous.rowCount > 0 ? (previous.rows[0].schema.rules || []) : [];
 
+                /* Carry the Excel template map forward, reconciled. */
+                let excelMap = null;
+                let unmapped = [];
+                let dropped = [];
+                const prevMap = previous.rows[0]?.excel_map;
+                if (prevMap && prevMap.template_path) {
+                    const r = reconcileMap(prevMap, { fields });
+                    excelMap = {
+                        ...r.map,
+                        /* keep built_for_version pointing at the version
+                           the cells were last reviewed against, so GET
+                           reports this map as stale until someone
+                           confirms it on the layout screen */
+                        built_for_version: prevMap.built_for_version || (nextVersion - 1)
+                    };
+                    unmapped = r.unmapped;
+                    dropped = r.dropped;
+                }
+
                 await client.query(`
-                    insert into form_versions (record_type_id, version, schema, published_at, published_by)
-                    values ($1, $2, $3, now(), $4)
-                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules }), request.user.id]);
+                    insert into form_versions
+                        (record_type_id, version, schema, excel_map, published_at, published_by)
+                    values ($1, $2, $3, $4, now(), $5)
+                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules }),
+                    excelMap ? JSON.stringify(excelMap) : null, request.user.id]);
 
                 await client.query(`
                     insert into audit_log
@@ -484,10 +558,15 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
                     values ($1, 'form_versions', $2, 'published', $3, $4)
                 `, [request.user.org_id, recordTypeId, "v" + nextVersion + ", " + fields.length + " fields", request.user.id]);
 
-                return nextVersion;
+                return { version: nextVersion, excel_map_carried: Boolean(excelMap), unmapped, dropped };
             });
 
-            response.json({ key: request.params.key, version, field_count: fields.length });
+            response.json({
+                key: request.params.key, version: outcome.version, field_count: fields.length,
+                excel_map_carried: outcome.excel_map_carried,
+                excel_unmapped: outcome.unmapped,
+                excel_dropped: outcome.dropped
+            });
         } catch (error) {
             next(error);
         }
@@ -521,11 +600,26 @@ masterdata.get("/record-types/:key/excel-map", requirePermission("forms.manage")
             const fv = await latestVersionRow(request.user.org_id, request.params.key);
             if (!fv) return response.status(404).json({ error: "No such record type" });
             const map = fv.excel_map || null;
+
+            /* What the map and the current schema disagree about (audit
+               M4), so the review screen can show it. */
+            let drift = { dropped: [], unmapped: [], stale: false };
+            if (map && map.template_path) {
+                const r = reconcileMap(map, fv.schema || { fields: [] });
+                drift = {
+                    dropped: r.dropped,
+                    unmapped: r.unmapped,
+                    stale: Boolean(map.built_for_version) && map.built_for_version !== fv.version
+                };
+            }
+
             response.json({
                 version: fv.version,
                 has_template: Boolean(map && map.template_path),
+                built_for_version: (map && map.built_for_version) || null,
                 map,
-                schema: fv.schema
+                schema: fv.schema,
+                ...drift
             });
         } catch (error) {
             next(error);
@@ -550,7 +644,11 @@ masterdata.post("/record-types/:key/excel-template", requirePermission("forms.ma
                 "excel-templates", XLSX_EXTENSIONS, request.file.originalname, request.file.buffer);
 
             const guess = buildDefaultMap(workbook, fv.schema || { fields: [] });
-            const map = { template_path: templatePath, template_name: request.file.originalname, ...guess };
+            const map = {
+                template_path: templatePath, template_name: request.file.originalname,
+                built_for_version: fv.version,   // the schema this guess was made against (audit M4)
+                ...guess
+            };
 
             await query("update form_versions set excel_map = $1 where id = $2",
                 [JSON.stringify(map), fv.id]);
@@ -577,20 +675,27 @@ masterdata.put("/record-types/:key/excel-map", requirePermission("forms.manage")
             if (!fv) return response.status(404).json({ error: "No such record type" });
 
             /* Keep the stored template_path - the client edits cell
-               assignments, not where the file lives. */
+               assignments, not where the file lives. A save re-anchors
+               the map to the current form version (audit M4). */
             const current = fv.excel_map || {};
             const map = {
                 ...incoming,
                 template_path: current.template_path || incoming.template_path,
-                template_name: current.template_name || incoming.template_name
+                template_name: current.template_name || incoming.template_name,
+                built_for_version: fv.version
             };
             if (!map.template_path) {
                 return response.status(422).json({ error: "Upload a template file first" });
             }
 
+            const bad = mapProblem(map);
+            if (bad) return response.status(422).json({ error: bad });
+
             await query("update form_versions set excel_map = $1 where id = $2",
                 [JSON.stringify(map), fv.id]);
-            response.json({ version: fv.version, map });
+
+            const drift = reconcileMap(map, fv.schema || { fields: [] });
+            response.json({ version: fv.version, map, unmapped: drift.unmapped });
         } catch (error) {
             next(error);
         }

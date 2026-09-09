@@ -18,7 +18,7 @@ import {
 import { upload } from "../uploads.js";
 import { log } from "../logger.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
-import { fillTemplate, readTemplate } from "../excel-fill.js";
+import { fillTemplate, readTemplate, reconcileMap } from "../excel-fill.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { formatValue, isEmpty } from "../../../public/js/format.js";
 import { evaluate as evalExpr } from "../../../public/js/expr.js";
@@ -136,13 +136,21 @@ function applyComputedColumns(schema, data) {
     return out;
 }
 
+const ROW_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /* Every row of a table field carries a stable "_id" so a per-row
    attachment (attachments.row_ref = "<fieldKey>:<_id>") stays pinned
-   to its row across edits, inserts and reorders. Assigned here, on
-   the server, and only where missing - a row that already has one
-   keeps it. A no-op unless the schema declares a table field and the
-   data actually carries rows. */
-function ensureRowIds(schema, data) {
+   to its row across edits, inserts and reorders.
+
+   The id is SERVER-OWNED (audit M5). The client's "_id" is advisory:
+   on a write it is honoured only when it is a real uuid that this
+   record already carries for that table AND has not been sent twice
+   in the same array. Anything else - a made-up id, a collision, an
+   id lifted from another record - is replaced with a fresh one, and
+   uniqueness within the array is guaranteed. On create (`prior`
+   omitted) every row gets a fresh id regardless of what was sent. A
+   no-op unless the schema declares a table field carrying rows. */
+function ensureRowIds(schema, data, prior) {
     const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
     if (!data || typeof data !== "object" || fields.length === 0) return data;
 
@@ -152,12 +160,23 @@ function ensureRowIds(schema, data) {
         const rows = Array.isArray(out[field.key]) ? out[field.key] : null;
         if (!rows) continue;
 
+        const known = new Set(
+            (prior && Array.isArray(prior[field.key]) ? prior[field.key] : [])
+                .filter((r) => r && typeof r._id === "string" && ROW_ID_RE.test(r._id))
+                .map((r) => r._id)
+        );
+        const taken = new Set();
+
         let touched = false;
         const next = rows.map((row) => {
             if (!row || typeof row !== "object" || Array.isArray(row)) return row;
-            if (typeof row._id === "string" && row._id) return row;
+            const claimed = typeof row._id === "string" ? row._id : "";
+            const keep = claimed && known.has(claimed) && !taken.has(claimed);
+            const id = keep ? claimed : randomUUID();
+            taken.add(id);
+            if (id === row._id) return row;
             touched = true;
-            return { ...row, _id: randomUUID() };
+            return { ...row, _id: id };
         });
         if (touched) {
             if (out === data) out = { ...data };
@@ -1442,11 +1461,23 @@ records.get("/:number/excel", async (request, response, next) => {
             'attachment; filename="' + record.number + '.xlsx"');
 
         /* If this form version has the customer's own layout mapped,
-           the export is that spreadsheet with the values dropped in. */
+           the export is that spreadsheet with the values dropped in.
+           Reconcile the map against the schema first (audit M4): drop
+           entries for fields the form no longer has, and tell the
+           caller in the response headers what the map and the schema
+           now disagree about, so a form edit does not silently send a
+           field to the wrong cell or nowhere. */
         const fill = await loadTemplateFill(record.record_type_id, record.form_version);
         if (fill) {
+            const { map, dropped, unmapped } = reconcileMap(fill.map, fill.schema);
+            const stale = Boolean(fill.map.built_for_version)
+                && fill.map.built_for_version !== record.form_version;
+            response.setHeader("X-Excel-Map-Stale", stale ? "true" : "false");
+            if (dropped.length) response.setHeader("X-Excel-Map-Dropped", dropped.join(","));
+            if (unmapped.length) response.setHeader("X-Excel-Unmapped-Fields", unmapped.join(","));
+
             const { buffer } = await fillTemplate(
-                fill.templateBuffer, fill.map, fill.schema,
+                fill.templateBuffer, map, fill.schema,
                 { title: record.title, data: record.data });
             response.send(Buffer.from(buffer));
             return;
@@ -1469,14 +1500,16 @@ records.get("/:number/excel", async (request, response, next) => {
    GET /api/records/NCR-2026-0142/audit
 
    Every INSERT / UPDATE / DELETE the records table saw for this
-   record, newest first, each with a full before/after row snapshot.
-   Written by the record_audit trigger (migration 044), so it also
-   captures a change made outside the app.
+   record, newest first. INSERT / DELETE carry the full row snapshot;
+   an UPDATE carries only the columns that changed, in both
+   old_values and new_values (migration 050, audit M11). Written by
+   the record_audit trigger (migration 044), so it also captures a
+   change made outside the app. Old UPDATE rows for closed records
+   are pruned on a schedule (server/src/audit-retention.js).
 
-   Gated on roles.manage: it returns whole-row payloads and is a
-   compliance / tamper-evidence view, the same audience as
-   GET /api/roles/history. Loosen to a record-read permission if it
-   should be broader. */
+   Gated on roles.manage: it is a compliance / tamper-evidence view,
+   the same audience as GET /api/roles/history. Loosen to a
+   record-read permission if it should be broader. */
 records.get("/:number/audit", requirePermission("roles.manage"),
     async (request, response, next) => {
         try {
@@ -2291,7 +2324,10 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             );
             merged = applyComputedColumns(schemaRow.rows[0]?.schema || null, merged);
             merged = applyFairResults(record.type, merged);
-            merged = ensureRowIds(schemaRow.rows[0]?.schema || null, merged);
+            /* server-owned row ids: prior = what the record already
+               holds, so a real existing id is kept and anything else
+               is re-minted (audit M5) */
+            merged = ensureRowIds(schemaRow.rows[0]?.schema || null, merged, record.data);
             merged = stampSignatures(schemaRow.rows[0]?.schema || null, merged,
                 record.data, request.user, record.form_version);
 
