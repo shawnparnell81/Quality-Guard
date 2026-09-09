@@ -2,15 +2,19 @@
    Full-page record view.
 
    Clicking a record anywhere - a register row, a search hit, a
-   linked-record chip, a dashboard row, a ?record= deep link - opens
-   it here: the whole main content area becomes the record, rendered
-   by the same detail renderer the old side panel used, plus a page
-   header with Back / Edit / Print / PDF. No side panel, no browser
-   tab.
+   linked-record chip, a dashboard trend point, a ?record= deep link -
+   opens it here: the whole main content area becomes the record,
+   rendered by the same detail renderer the old side panel used, plus a
+   page header with Back / Edit / Print / PDF. No side panel, no
+   browser tab.
 
-   Types are converted to this view a few at a time. converted(type)
-   says whether a type is on the full-page path yet; callers that get
-   `false` from openRecordPage() fall back to their old side panel.
+   Types move onto this path a few at a time. converted(type) says
+   whether a type is there yet; a caller that gets `false` from
+   openRecordPage() falls back to that type's own screen.
+
+     GENERIC  - events.js renderRecordDetail, side panel removed
+     BESPOKE  - its own renderer (fair/ppap/8D/ECN), side panel removed
+     custom   - user-created type, renderCustomDetail (always full-page)
    ============================================================ */
 
 import { show } from "../app.js";
@@ -19,26 +23,29 @@ import { el } from "../dom.js";
 import { openRecordEditor } from "../forms.js";
 import { renderRecordDetail } from "./events.js";
 import { renderCustomDetail } from "./form-record.js";
+import { renderFairDetail } from "./fair.js";
+import { renderPpapDetail } from "./ppap.js";
+import { renderEightDDetail, renderChangeDetail } from "./change.js";
 
 const SLOT = "record-view";
 
-/* Built-in types that render through events.js renderRecordDetail
-   generic path AND have had their side panel removed. Grows as more
-   screens are flipped over (stages S1-S2). */
 const GENERIC = new Set(["ncr", "capa"]);
 
-/* Every built-in type. One not in here is a type someone created; all
-   of those go through renderCustomDetail and are already on the
-   full-page path. */
+const BESPOKE = {
+    fair: renderFairDetail,
+    ppap: renderPpapDetail,
+    eightd: renderEightDDetail,
+    ecn: renderChangeDetail
+};
+
+/* Every built-in type. One not in here is a type someone created. */
 const BUILT_IN = new Set([
     "ncr", "capa", "eightd", "complaint", "scar",
     "audit", "ecn", "risk", "apqp", "di", "fair", "ppap"
 ]);
 
-/* A type is on the full-page path if it is a converted built-in or a
-   custom (user-created) type. */
 export function converted(type) {
-    return GENERIC.has(type) || !BUILT_IN.has(type);
+    return GENERIC.has(type) || Boolean(BESPOKE[type]) || !BUILT_IN.has(type);
 }
 
 /* Where "Back" returns to, and the scroll position to restore there.
@@ -69,7 +76,9 @@ export async function openRecordPage(number, opts = {}) {
     await show("record", { reload: false });
     const shell = buildShell();
     shell.dataset.type = type;
-    current = { number: n, type, generic: GENERIC.has(type) };
+    current = { number: n, type };
+
+    const isCustom = !BUILT_IN.has(type);
 
     const heading = document.getElementById(SLOT + "-detail-number");
     if (heading) heading.textContent = n;
@@ -78,16 +87,18 @@ export async function openRecordPage(number, opts = {}) {
         .replaceChildren(el("p", { class: "sm dim", text: "Loading…" }));
     document.title = n + " · QMS Guardian";
 
-    /* The generic renderer relies on external Edit/Print/PDF buttons
-       (the chrome provides them); renderCustomDetail builds its own
-       button row in the panel body, so the chrome hides its bar. */
-    document.getElementById(SLOT + "-actions").hidden = !current.generic;
+    /* A built-in type leans on the chrome's Edit / Print / PDF;
+       renderCustomDetail builds its own button row in the panel body,
+       so for a custom type the chrome bar is hidden. */
+    document.getElementById(SLOT + "-actions").hidden = isCustom;
 
     try {
-        if (current.generic) {
-            await renderRecordDetail(type, n, { slot: SLOT });
-        } else {
+        if (isCustom) {
             await renderCustomDetail(type, n, { slot: SLOT });
+        } else if (BESPOKE[type]) {
+            await BESPOKE[type](n, { slot: SLOT });
+        } else {
+            await renderRecordDetail(type, n, { slot: SLOT });
         }
     } catch (error) {
         document.getElementById(SLOT + "-detail").replaceChildren(
@@ -103,7 +114,7 @@ export function refreshRecordPage() {
     if (current) return openRecordPage(current.number, { type: current.type, keepReturn: true });
 }
 
-/* The page frame, built once. Provides the id-suffixed slots the
+/* The page frame, built once. It provides the id-suffixed slots the
    detail renderers write into:
      #record-view-detail-number  #record-view-detail-status
      #record-view-detail

@@ -15,6 +15,7 @@ import {
 } from "../dom.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { recordLink, recordOpenLink } from "../record-nav.js";
+import { openRecordPage } from "./record-page.js";
 
 /* ============================================================
    8D
@@ -72,23 +73,34 @@ export async function renderEightD(preferNumber) {
     }
 }
 
-async function renderEightDDetail(number) {
+/* `slot` is the id prefix the detail renders into. "eightd" (default)
+   writes to the register screen's own three panels (#eightd-number,
+   #eightd-track, #eightd-side, #eightd-documents-panel). "record-view"
+   composes the track, the detail and the documents into the one
+   #record-view-detail body of the full-page record view. */
+export async function renderEightDDetail(number, { slot = "eightd" } = {}) {
     selectedEightD = number;
+    const full = slot !== "eightd";
 
-    const heading = document.getElementById("eightd-number");
-    const track = document.getElementById("eightd-track");
-    const side = document.getElementById("eightd-side");
-    const editButton = document.getElementById("eightd-edit");
+    const heading = document.getElementById(full ? slot + "-detail-number" : "eightd-number");
+    const track = document.getElementById(full ? slot + "-detail" : "eightd-track");
+    const side = full ? null : document.getElementById("eightd-side");
+    const editButton = document.getElementById(full ? slot + "-edit" : "eightd-edit");
 
-    if (track) track.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
+    /* No target: the register's own side panel was retired (8D now
+       opens full-page), or the full-page host is not mounted. */
+    if (!track) return;
+    if (!full) track.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
         const { record, links, transitions } = await api.record(number);
 
-        if (heading) heading.replaceChildren(recordOpenLink(record.number));
+        if (heading) {
+            heading.replaceChildren(full
+                ? document.createTextNode(record.number)
+                : recordOpenLink(record.number));
+        }
         if (editButton) editButton.dataset.number = record.number;
-
-        renderDocumentsPanel(record.number, "eightd-documents-panel");
 
         /* The disciplines are workflow states, so "done" is simply
            everything before the one the record is sitting on. */
@@ -96,7 +108,7 @@ async function renderEightDDetail(number) {
         const closed = record.status === "closed";
         const dates = record.data.disciplines || {};
 
-        track.replaceChildren(...DISCIPLINES.map(([key, name, detail], index) => {
+        const stepEls = DISCIPLINES.map(([key, name, detail], index) => {
             const done = closed || (currentIndex > -1 && index < currentIndex);
             const active = !closed && index === currentIndex;
 
@@ -112,9 +124,9 @@ async function renderEightDDetail(number) {
                     ? pill(formatDate(dates[key]), "done")
                     : active ? pill("Current", "prog") : pill("-", "hold")
             ]);
-        }));
+        });
 
-        /* ---- side panel: five why, links, and the next step ---- */
+        /* ---- five why, links, and the next step ---- */
         const children = [];
 
         const fiveWhy = record.data.five_why || [];
@@ -141,9 +153,24 @@ async function renderEightDDetail(number) {
             ));
         }
 
-        children.push(...workflowButtons(record, transitions, renderEightD));
+        const refresh = full ? () => renderEightDDetail(number, { slot }) : renderEightD;
+        children.push(...workflowButtons(record, transitions, refresh));
 
-        if (side) side.replaceChildren(...children);
+        if (full) {
+            const docsHost = el("div", { class: "panel-body", id: slot + "-documents-panel" });
+            track.replaceChildren(
+                el("div", { class: "d8" }, stepEls),
+                el("div", { class: "section-label", text: "Investigation detail" }),
+                ...children,
+                el("div", { class: "section-label", text: "Documents" }),
+                docsHost
+            );
+            renderDocumentsPanel(record.number, slot + "-documents-panel");
+        } else {
+            track.replaceChildren(...stepEls);
+            if (side) side.replaceChildren(...children);
+            renderDocumentsPanel(record.number, "eightd-documents-panel");
+        }
     } catch (error) {
         if (track) {
             track.replaceChildren(
@@ -195,16 +222,24 @@ export async function renderChange(preferNumber) {
     }
 }
 
-async function renderChangeDetail(number) {
+/* `slot` is the id prefix the detail renders into. "ecn" (default)
+   writes to the register screen's own panels (#ecn-number, #ecn-note,
+   #impact-table, #ecn-side). "record-view" composes the impact table
+   and the change detail into the one #record-view-detail body of the
+   full-page record view. */
+export async function renderChangeDetail(number, { slot = "ecn" } = {}) {
     selectedChange = number;
+    const full = slot !== "ecn";
 
-    const heading = document.getElementById("ecn-number");
-    const note = document.getElementById("ecn-note");
-    const body = document.getElementById("impact-table");
-    const side = document.getElementById("ecn-side");
-    const editButton = document.getElementById("ecn-edit");
+    const heading = document.getElementById(full ? slot + "-detail-number" : "ecn-number");
+    const note = full ? null : document.getElementById("ecn-note");
+    const body = full ? el("tbody") : document.getElementById("impact-table");
+    const side = full ? null : document.getElementById("ecn-side");
+    const editButton = document.getElementById(full ? slot + "-edit" : "ecn-edit");
+    const host = full ? document.getElementById(slot + "-detail") : null;
 
-    if (body) loadingRow(body, 4);
+    if (!full && !body) return;
+    if (body && !full) loadingRow(body, 4);
 
     try {
         const [{ record, links, transitions }, impact] = await Promise.all([
@@ -214,13 +249,16 @@ async function renderChangeDetail(number) {
 
         if (editButton) editButton.dataset.number = record.number;
 
-        if (heading) heading.replaceChildren(recordOpenLink(record.number));
-
-        if (note) {
-            note.textContent = impact.complete
-                ? "All areas signed"
-                : impact.outstanding + " area(s) outstanding";
+        if (heading) {
+            heading.replaceChildren(full
+                ? document.createTextNode(record.number)
+                : recordOpenLink(record.number));
         }
+
+        const noteText = impact.complete
+            ? "All areas signed"
+            : impact.outstanding + " area(s) outstanding";
+        if (note) note.textContent = noteText;
 
         fillTable(body, impact.areas, [
             { className: "sm", render: (row) => row.area },
@@ -248,7 +286,7 @@ async function renderChangeDetail(number) {
                         confirmLabel: "Sign for " + row.area,
                         onConfirm: async (reason) => {
                             await api.signImpact(number, row.area, { note: reason });
-                            await renderChangeDetail(number);
+                            await renderChangeDetail(number, { slot });
                         }
                     });
                 });
@@ -268,7 +306,7 @@ async function renderChangeDetail(number) {
                 currentValue: record.due_at,
                 onSave: async (value) => {
                     await api.updateRecord(record.number, { due_at: value });
-                    await renderChangeDetail(record.number);
+                    await renderChangeDetail(record.number, { slot });
                 }
             });
         });
@@ -310,12 +348,31 @@ async function renderChangeDetail(number) {
                 text: "Every area has to sign before this change goes to review."
             }));
         } else {
-            children.push(...workflowButtons(record, transitions, renderChange));
+            const refresh = full ? () => renderChangeDetail(number, { slot }) : renderChange;
+            children.push(...workflowButtons(record, transitions, refresh));
         }
 
-        if (side) side.replaceChildren(...children);
+        if (full && host) {
+            host.replaceChildren(
+                el("p", { class: "sm dim", style: "margin:0 0 8px", text: noteText }),
+                el("div", { class: "section-label", style: "margin-top:0", text: "Impact assessment" }),
+                el("div", { class: "table-wrap" }, el("table", {}, [
+                    el("thead", {}, el("tr", {}, ["Area", "Impact", "Signed", "Sign-off"]
+                        .map((h) => el("th", { text: h })))),
+                    body
+                ])),
+                el("div", { class: "section-label", text: "Change detail" }),
+                ...children
+            );
+        } else if (side) {
+            side.replaceChildren(...children);
+        }
     } catch (error) {
-        errorRow(body, 4, error);
+        if (full && host) {
+            host.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
+        } else {
+            errorRow(body, 4, error);
+        }
     }
 }
 
@@ -375,23 +432,19 @@ function workflowButtons(record, transitions, refresh) {
 }
 
 export function wireChangeScreens() {
-    const eightd = document.getElementById("eightd-register");
-    if (eightd) {
-        eightd.addEventListener("click", (event) => {
+    for (const [tbodyId, type, returnView, renderDetail] of [
+        ["eightd-register", "eightd", "d8", renderEightDDetail],
+        ["ecn-register", "ecn", "change", renderChangeDetail]
+    ]) {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) continue;
+        tbody.addEventListener("click", async (event) => {
             const row = event.target.closest("tr[data-number]");
             if (!row) return;
-            markSelected(eightd, row.dataset.number);
-            renderEightDDetail(row.dataset.number);
-        });
-    }
-
-    const ecn = document.getElementById("ecn-register");
-    if (ecn) {
-        ecn.addEventListener("click", (event) => {
-            const row = event.target.closest("tr[data-number]");
-            if (!row) return;
-            markSelected(ecn, row.dataset.number);
-            renderChangeDetail(row.dataset.number);
+            markSelected(tbody, row.dataset.number);
+            if (!await openRecordPage(row.dataset.number, { type, returnView })) {
+                await renderDetail(row.dataset.number);
+            }
         });
     }
 }

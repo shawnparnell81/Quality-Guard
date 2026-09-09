@@ -560,7 +560,7 @@
             <p class="view-sub">The eight disciplines are the workflow. A record sits on one until the discipline is complete, and cannot skip ahead.</p>
         </div>
 
-        <div class="panel" style="margin-bottom:16px">
+        <div class="panel">
             <div class="panel-head">
                 <h2 class="panel-title">Open investigations</h2>
                 <button class="btn btn-primary" data-requires="capa.create" data-new-record="eightd">New 8D</button>
@@ -572,28 +572,6 @@
                 </table>
             </div>
         </div>
-
-        <div class="grid-2">
-            <div>
-                <div class="panel" style="margin-bottom:16px">
-                    <div class="panel-head">
-                        <h2 class="panel-title" id="eightd-number">Select an investigation</h2>
-                        <span class="panel-note">eight disciplines</span>
-                    </div>
-                </div>
-                <div class="d8" id="eightd-track"></div>
-            </div>
-
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">Investigation detail</h2>
-                    <button type="button" class="btn btn-primary no-print" id="eightd-edit" data-edit-record="eightd">Edit</button>
-                </div>
-                <div class="panel-body" id="eightd-side"></div>
-                <div class="section-label">Documents</div>
-                <div class="panel-body" id="eightd-documents-panel"></div>
-            </div>
-        </div>
     </section>
 
     <section class="view" id="view-change" hidden>
@@ -602,7 +580,7 @@
             <p class="view-sub">Planned changes with an impact assessment. Nothing reaches the floor until every affected area has signed for its own impact.</p>
         </div>
 
-        <div class="panel" style="margin-bottom:16px">
+        <div class="panel">
             <div class="panel-head">
                 <h2 class="panel-title">Engineering change notices</h2>
                 <button class="btn btn-primary" data-requires="change.create" data-new-record="ecn">Raise ECN</button>
@@ -612,29 +590,6 @@
                     <thead><tr><th>ECN</th><th>Change</th><th>Part</th><th>Effectivity</th><th>Status</th></tr></thead>
                     <tbody id="ecn-register"></tbody>
                 </table>
-            </div>
-        </div>
-
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title" id="ecn-number">Select a change</h2>
-                    <span class="panel-note" id="ecn-note"></span>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Area</th><th>Impact</th><th>Signed</th><th>Sign-off</th></tr></thead>
-                        <tbody id="impact-table"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">Change detail</h2>
-                    <button type="button" class="btn btn-primary no-print" id="ecn-edit" data-edit-record="ecn">Edit</button>
-                </div>
-                <div class="panel-body" id="ecn-side"></div>
             </div>
         </div>
     </section>
@@ -1315,38 +1270,25 @@
             <p class="view-sub">A ballooned dimensional layout of the first production part: every characteristic measured against nominal and tolerance, pass/fail computed, an overall disposition, reviewed for approval.</p>
         </div>
 
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">FAIR register</h2>
-                    <div class="row">
-                        <select class="filter-severity" data-type="fair" title="Filter by severity">
-                            <option value="">All severities</option>
-                            <option value="crit">Critical</option>
-                            <option value="warn">Warning</option>
-                            <option value="ok">OK</option>
-                        </select>
-                        <label class="filter-open"><input type="checkbox" data-type="fair"> Open only</label>
-                        <button class="btn btn-primary" data-requires="fair.manage" data-new-record="fair">New FAIR</button>
-                    </div>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>FAIR</th><th>Part / rev</th><th>Customer</th><th>Inspected</th><th class="num">Conforming</th><th>Status</th></tr></thead>
-                        <tbody id="fair-register"></tbody>
-                    </table>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">FAIR register</h2>
+                <div class="row">
+                    <select class="filter-severity" data-type="fair" title="Filter by severity">
+                        <option value="">All severities</option>
+                        <option value="crit">Critical</option>
+                        <option value="warn">Warning</option>
+                        <option value="ok">OK</option>
+                    </select>
+                    <label class="filter-open"><input type="checkbox" data-type="fair"> Open only</label>
+                    <button class="btn btn-primary" data-requires="fair.manage" data-new-record="fair">New FAIR</button>
                 </div>
             </div>
-
-            <div class="panel" id="fair-detail-panel">
-                <div class="panel-head">
-                    <h2 class="panel-title" id="fair-detail-number">Select a FAIR</h2>
-                    <span id="fair-detail-status"></span>
-                    <button type="button" class="btn btn-primary no-print" id="fair-edit" data-edit-record="fair">Edit</button>
-                    <button type="button" class="btn no-print" id="fair-print">Print</button>
-                    <button type="button" class="btn no-print" id="fair-pdf">PDF</button>
-                </div>
-                <div class="panel-body" id="fair-detail"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>FAIR</th><th>Part / rev</th><th>Customer</th><th>Inspected</th><th class="num">Conforming</th><th>Status</th></tr></thead>
+                    <tbody id="fair-register"></tbody>
+                </table>
             </div>
         </div>
     </section>
@@ -1404,38 +1346,25 @@
             <p class="view-sub">The submission package for a part: its level, and the 18 AIAG elements as slots pointing at the record or document that satisfies each. It cannot be submitted until every element the level requires is on file.</p>
         </div>
 
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">PPAP register</h2>
-                    <div class="row">
-                        <select class="filter-severity" data-type="ppap" title="Filter by severity">
-                            <option value="">All severities</option>
-                            <option value="crit">Critical</option>
-                            <option value="warn">Warning</option>
-                            <option value="ok">OK</option>
-                        </select>
-                        <label class="filter-open"><input type="checkbox" data-type="ppap"> Open only</label>
-                        <button class="btn btn-primary" data-requires="ppap.manage" data-new-record="ppap">New PPAP</button>
-                    </div>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>PPAP</th><th>Part / rev</th><th>Customer</th><th>Level</th><th>Reason</th><th>Status</th></tr></thead>
-                        <tbody id="ppap-register"></tbody>
-                    </table>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">PPAP register</h2>
+                <div class="row">
+                    <select class="filter-severity" data-type="ppap" title="Filter by severity">
+                        <option value="">All severities</option>
+                        <option value="crit">Critical</option>
+                        <option value="warn">Warning</option>
+                        <option value="ok">OK</option>
+                    </select>
+                    <label class="filter-open"><input type="checkbox" data-type="ppap"> Open only</label>
+                    <button class="btn btn-primary" data-requires="ppap.manage" data-new-record="ppap">New PPAP</button>
                 </div>
             </div>
-
-            <div class="panel" id="ppap-detail-panel">
-                <div class="panel-head">
-                    <h2 class="panel-title" id="ppap-detail-number">Select a PPAP</h2>
-                    <span id="ppap-detail-status"></span>
-                    <button type="button" class="btn btn-primary no-print" id="ppap-edit" data-edit-record="ppap">Edit</button>
-                    <button type="button" class="btn no-print" id="ppap-print">Print</button>
-                    <button type="button" class="btn no-print" id="ppap-pdf">PDF</button>
-                </div>
-                <div class="panel-body" id="ppap-detail"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>PPAP</th><th>Part / rev</th><th>Customer</th><th>Level</th><th>Reason</th><th>Status</th></tr></thead>
+                    <tbody id="ppap-register"></tbody>
+                </table>
             </div>
         </div>
     </section>

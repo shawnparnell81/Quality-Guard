@@ -66,7 +66,7 @@ function dispositionKind(disposition) {
     return "prog";
 }
 
-function transitionsRow(number, record, transitions) {
+function transitionsRow(number, record, transitions, slot) {
     if (!transitions || transitions.length === 0) {
         return el("p", { class: "sm dim no-print",
             text: "This FAIR is " + (STATE_LABEL[record.status] || record.status).toLowerCase() + "." });
@@ -88,7 +88,7 @@ function transitionsRow(number, record, transitions) {
             confirmLabel: "Move to " + step.label,
             onConfirm: async (reason) => {
                 await api.transition(number, { to: step.to, reason });
-                await renderFairDetail(number);
+                await renderFairDetail(number, { slot });
             }
         }));
 
@@ -101,10 +101,13 @@ function transitionsRow(number, record, transitions) {
     ]);
 }
 
-export async function renderFairDetail(number) {
-    const numberEl = document.getElementById("fair-detail-number");
-    const statusEl = document.getElementById("fair-detail-status");
-    const body = document.getElementById("fair-detail");
+/* `slot` is the id prefix the detail is written into - "fair" for the
+   register side panel (unchanged), "record-view" for the full-page
+   record view (record-page.js). */
+export async function renderFairDetail(number, { slot = "fair" } = {}) {
+    const numberEl = document.getElementById(slot + "-detail-number");
+    const statusEl = document.getElementById(slot + "-detail-status");
+    const body = document.getElementById(slot + "-detail");
     if (!body) return;
 
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
@@ -176,7 +179,7 @@ export async function renderFairDetail(number) {
             charTable(rows),
             el("div", { class: "section-label", text: "Disposition" }),
             dispDl.childElementCount ? dispDl : el("p", { class: "sm dim", text: "Not dispositioned yet." }),
-            transitionsRow(number, record, transitions)
+            transitionsRow(number, record, transitions, slot)
         );
         applyPermissions(body);
     } catch (error) {
