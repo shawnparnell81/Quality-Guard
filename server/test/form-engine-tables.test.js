@@ -157,6 +157,46 @@ test("a table field with no columns, or a bad column type, is refused", async ()
     assert.equal(badCol.status, 422);
 });
 
+test("a pathologically large schema is rejected (audit M7 caps)", async () => {
+    const base = (await api(adminCookie, "GET", "/api/record-types/ncr/form")).body.fields
+        .filter((f) => f.key !== "line_items");
+
+    /* 5000 options on one select */
+    const bigSelect = await api(adminCookie, "PUT", "/api/record-types/ncr/form", {
+        fields: [...base, {
+            key: "huge", label: "Huge list", type: "select",
+            options: Array.from({ length: 5000 }, (_, i) => "opt" + i)
+        }]
+    });
+    assert.equal(bigSelect.status, 422);
+    assert.match(bigSelect.body.error, /too many options/i);
+
+    /* 300 columns on one table */
+    const wideTable = await api(adminCookie, "PUT", "/api/record-types/ncr/form", {
+        fields: [...base, {
+            key: "wide", label: "Wide", type: "table",
+            columns: Array.from({ length: 300 }, (_, i) => (
+                { key: "c" + i, label: "C" + i, type: "text" }))
+        }]
+    });
+    assert.equal(wideTable.status, 422);
+    assert.match(wideTable.body.error, /too many columns/i);
+
+    /* a novel-length label */
+    const longLabel = await api(adminCookie, "PUT", "/api/record-types/ncr/form", {
+        fields: [...base, { key: "x", label: "L".repeat(1000), type: "text" }]
+    });
+    assert.equal(longLabel.status, 422);
+    assert.match(longLabel.body.error, /too long/i);
+
+    /* the real form still publishes fine - the caps sit well above
+       real use. Restore line_items so the later tests still see it. */
+    const ok = await api(adminCookie, "PUT", "/api/record-types/ncr/form", {
+        fields: [...base, TABLE_FIELD]
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+});
+
 test("a record carries table rows in its data and reads them back", async () => {
     /* ncr's form now has the line_items table from the first test. */
     const created = await api(adminCookie, "POST", "/api/records", {

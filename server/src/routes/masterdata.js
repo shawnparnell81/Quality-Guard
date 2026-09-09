@@ -295,6 +295,29 @@ const FIELD_TYPES = new Set([
     "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table", "boolean"
 ]);
 
+/* Size caps on a published schema (audit M7). problemWith already
+   proves a schema is structurally sound; these stop a pathological
+   one - 300 columns, 5000 options, a novel-length label - from
+   becoming the form every future record of the type renders. Chosen
+   well above any real quality form (a big PFMEA is ~25 columns, a
+   long disposition list ~15 options) and well below what would choke
+   the renderer. */
+const SCHEMA_LIMITS = {
+    fields: 250,
+    tableColumns: 80,
+    options: 500,
+    keyChars: 100,
+    labelChars: 300,
+    sectionChars: 200,
+    exprChars: 1000
+};
+
+function tooLong(what, value, cap) {
+    return typeof value === "string" && value.length > cap
+        ? what + " is too long (" + value.length + " chars, limit " + cap + ")"
+        : null;
+}
+
 /* A table field's columns can only be scalars - a repeating grid of
    grids is not something any real QMS form needs and not something
    the renderer supports. "computed" is a read-only cell worked out
@@ -324,6 +347,10 @@ function tableProblem(field) {
     if (!Array.isArray(field.columns) || field.columns.length === 0) {
         return "\"" + field.label + "\" needs at least one column";
     }
+    if (field.columns.length > SCHEMA_LIMITS.tableColumns) {
+        return "\"" + field.label + "\" has too many columns ("
+            + field.columns.length + ", limit " + SCHEMA_LIMITS.tableColumns + ")";
+    }
     if (field.rowAttachments !== undefined && typeof field.rowAttachments !== "boolean") {
         return "\"" + field.label + "\"'s rowAttachments must be true or false";
     }
@@ -333,6 +360,9 @@ function tableProblem(field) {
         if (!col || typeof col !== "object") return "\"" + field.label + "\" has a bad column";
         if (!col.key || typeof col.key !== "string") return "\"" + field.label + "\" has a column with no key";
         if (!col.label || typeof col.label !== "string") return "\"" + field.label + "\" has a column with no label";
+        const clk = tooLong("Column key \"" + col.key + "\"", col.key, SCHEMA_LIMITS.keyChars)
+            || tooLong("Column label \"" + col.label + "\"", col.label, SCHEMA_LIMITS.labelChars);
+        if (clk) return clk;
         if (!TABLE_COLUMN_TYPES.has(col.type)) {
             return "\"" + field.label + "\" column \"" + col.label + "\" has an unusable type";
         }
@@ -341,6 +371,13 @@ function tableProblem(field) {
         byKey.set(col.key, col);
         if (col.type === "select" && (!Array.isArray(col.options) || col.options.length === 0)) {
             return "\"" + field.label + "\" column \"" + col.label + "\" needs options";
+        }
+        if (Array.isArray(col.options) && col.options.length > SCHEMA_LIMITS.options) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" has too many options ("
+                + col.options.length + ", limit " + SCHEMA_LIMITS.options + ")";
+        }
+        if (typeof col.expr === "string" && col.expr.length > SCHEMA_LIMITS.exprChars) {
+            return "\"" + field.label + "\" column \"" + col.label + "\" has an over-long expression";
         }
         if (col.thresholds !== undefined && col.type !== "number" && col.type !== "computed") {
             return "\"" + field.label + "\" column \"" + col.label + "\" can only carry thresholds on a number or computed column";
@@ -393,10 +430,15 @@ function tableProblem(field) {
    checks all of this before it ever sends a request, but the field
    list is exactly the shape every screen in the app renders forms
    from, so a bad one here breaks every future record of this type,
-   not just the request that sent it. */
+   not just the request that sent it. Structural soundness AND size
+   (SCHEMA_LIMITS, audit M7) - a schema that parses but is
+   pathologically large is still rejected. */
 export function problemWith(fields) {
     if (!Array.isArray(fields) || fields.length === 0) {
         return "At least one field is required";
+    }
+    if (fields.length > SCHEMA_LIMITS.fields) {
+        return "Too many fields (" + fields.length + ", limit " + SCHEMA_LIMITS.fields + ")";
     }
 
     const seenKeys = new Set();
@@ -406,6 +448,10 @@ export function problemWith(fields) {
         if (!field.key || typeof field.key !== "string") return "Every field needs a key";
         if (!field.label || typeof field.label !== "string") return "Every field needs a label";
         if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
+        const flk = tooLong("Field key \"" + field.key + "\"", field.key, SCHEMA_LIMITS.keyChars)
+            || tooLong("Field label \"" + field.label + "\"", field.label, SCHEMA_LIMITS.labelChars)
+            || tooLong("\"" + field.label + "\"'s section", field.section, SCHEMA_LIMITS.sectionChars);
+        if (flk) return flk;
         if (field.section !== undefined && typeof field.section !== "string") {
             return "\"" + field.label + "\"'s section must be text";
         }
@@ -415,6 +461,10 @@ export function problemWith(fields) {
 
         if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
             return "\"" + field.label + "\" needs at least one option";
+        }
+        if (Array.isArray(field.options) && field.options.length > SCHEMA_LIMITS.options) {
+            return "\"" + field.label + "\" has too many options ("
+                + field.options.length + ", limit " + SCHEMA_LIMITS.options + ")";
         }
         if (field.thresholds !== undefined && field.type !== "number") {
             return "\"" + field.label + "\" can only carry thresholds on a number field";
