@@ -519,6 +519,14 @@ CREATE SEQUENCE public.record_audit_id_seq
     NO MAXVALUE
     CACHE 1;
 ALTER SEQUENCE public.record_audit_id_seq OWNED BY public.record_audit.id;
+CREATE TABLE public.record_drafts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    draft_key text NOT NULL,
+    snapshot jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
 CREATE TABLE public.record_links (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     from_record_id uuid NOT NULL,
@@ -902,6 +910,10 @@ ALTER TABLE ONLY public.receipts
     ADD CONSTRAINT receipts_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.record_audit
     ADD CONSTRAINT record_audit_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.record_drafts
+    ADD CONSTRAINT record_drafts_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.record_drafts
+    ADD CONSTRAINT record_drafts_user_id_draft_key_key UNIQUE (user_id, draft_key);
 ALTER TABLE ONLY public.record_links
     ADD CONSTRAINT record_links_from_record_id_to_record_id_link_type_key UNIQUE (from_record_id, to_record_id, link_type);
 ALTER TABLE ONLY public.record_links
@@ -1006,6 +1018,8 @@ CREATE INDEX idx_purchase_requests_org ON public.purchase_requests USING btree (
 CREATE INDEX idx_receipt_meas ON public.receipt_measurements USING btree (receipt_id, "position");
 CREATE INDEX idx_record_audit_org ON public.record_audit USING btree (org_id, changed_at DESC);
 CREATE INDEX idx_record_audit_row ON public.record_audit USING btree (record_id, changed_at DESC);
+CREATE INDEX idx_record_drafts_key ON public.record_drafts USING btree (org_id, draft_key);
+CREATE INDEX idx_record_drafts_user ON public.record_drafts USING btree (user_id);
 CREATE INDEX idx_records_data_gin ON public.records USING gin (data);
 CREATE INDEX idx_records_due ON public.records USING btree (due_at) WHERE (closed_at IS NULL);
 CREATE INDEX idx_records_org_type ON public.records USING btree (org_id, record_type_id);
@@ -1025,6 +1039,7 @@ CREATE INDEX idx_wo_ops_order ON public.work_order_operations USING btree (work_
 CREATE UNIQUE INDEX notifications_dedupe ON public.notifications USING btree (user_id, dedupe_key) WHERE ((dedupe_key IS NOT NULL) AND (read_at IS NULL));
 CREATE INDEX notifications_user_feed ON public.notifications USING btree (user_id, read_at, created_at DESC);
 CREATE UNIQUE INDEX records_org_idempotency_key ON public.records USING btree (org_id, idempotency_key) WHERE (idempotency_key IS NOT NULL);
+CREATE TRIGGER record_drafts_touch BEFORE UPDATE ON public.record_drafts FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 CREATE TRIGGER records_touch BEFORE UPDATE ON public.records FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 CREATE TRIGGER trg_record_audit AFTER INSERT OR DELETE OR UPDATE ON public.records FOR EACH ROW EXECUTE FUNCTION public.log_record_audit();
 ALTER TABLE ONLY public.apqp_deliverables
@@ -1197,6 +1212,10 @@ ALTER TABLE ONLY public.receipts
     ADD CONSTRAINT receipts_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.receipts
     ADD CONSTRAINT receipts_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.record_drafts
+    ADD CONSTRAINT record_drafts_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.record_drafts
+    ADD CONSTRAINT record_drafts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.record_links
     ADD CONSTRAINT record_links_from_record_id_fkey FOREIGN KEY (from_record_id) REFERENCES public.records(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.record_links

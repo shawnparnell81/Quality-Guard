@@ -2549,7 +2549,8 @@ records.put("/:number/editing", async (request, response, next) => {
         const record = await findRecordInOrg(request.user.org_id, request.params.number);
         if (!record) return response.status(404).json({ error: "Record not found" });
 
-        const editors = heartbeat(request.user.org_id, record.number, request.user)
+        const dirty = request.body?.dirty === true;
+        const editors = heartbeat(request.user.org_id, record.number, request.user, dirty)
             .filter((e) => e.id !== request.user.id);
         response.json({ editors });
     } catch (error) {
@@ -2560,6 +2561,61 @@ records.put("/:number/editing", async (request, response, next) => {
 records.delete("/:number/editing", async (request, response, next) => {
     try {
         leaveEditing(request.user.org_id, request.params.number, request.user.id);
+        response.json({ ok: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- server-side drafts (P3 / M15) ----------
+   PUT/GET/DELETE /api/records/drafts/<record-type>:<number|new>
+
+   One draft per (user, key). The snapshot is opaque here - the editor
+   owns its shape. Kept so an unsaved entry survives a device change,
+   and deleted on a real save or an explicit discard. */
+const DRAFT_KEY_RX = /^[a-z0-9_]+:[A-Za-z0-9_-]+$/;
+
+records.get("/drafts/:key", async (request, response, next) => {
+    try {
+        if (!DRAFT_KEY_RX.test(request.params.key)) {
+            return response.status(400).json({ error: "Bad draft key" });
+        }
+        const row = await query(
+            "select snapshot, updated_at from record_drafts where user_id = $1 and draft_key = $2",
+            [request.user.id, request.params.key]);
+        if (row.rowCount === 0) return response.status(404).json({ error: "No draft" });
+        response.json(row.rows[0]);
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.put("/drafts/:key", async (request, response, next) => {
+    try {
+        if (!DRAFT_KEY_RX.test(request.params.key)) {
+            return response.status(400).json({ error: "Bad draft key" });
+        }
+        const snapshot = request.body?.snapshot;
+        if (!snapshot || typeof snapshot !== "object") {
+            return response.status(400).json({ error: "snapshot object required" });
+        }
+        const saved = await query(`
+            insert into record_drafts (org_id, user_id, draft_key, snapshot)
+            values ($1, $2, $3, $4)
+            on conflict (user_id, draft_key)
+            do update set snapshot = excluded.snapshot
+            returning updated_at
+        `, [request.user.org_id, request.user.id, request.params.key, JSON.stringify(snapshot)]);
+        response.json({ ok: true, updated_at: saved.rows[0].updated_at });
+    } catch (error) {
+        next(error);
+    }
+});
+
+records.delete("/drafts/:key", async (request, response, next) => {
+    try {
+        await query("delete from record_drafts where user_id = $1 and draft_key = $2",
+            [request.user.id, request.params.key]);
         response.json({ ok: true });
     } catch (error) {
         next(error);
