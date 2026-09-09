@@ -21,6 +21,7 @@ import { renderRoles, renderPeople, wireMatrixEditing, wirePeopleActions } from 
 import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
 import { openRecord } from "./record-nav.js";
+import { trackTab, wireTabs } from "./tabs.js";
 import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
 import {
     renderDrawings, renderOnboarding, renderOnboardingPacket,
@@ -112,9 +113,22 @@ const deptbar = document.querySelector(".deptbar");
    Safe despite the import cycle this creates with palette.js: show is
    a hoisted function declaration, so the live binding exists before
    either module's top-level code has finished running. */
-export async function show(name) {
+/* scrollY at the moment each view was last left, so a tab switch can
+   put the person back where they were rather than at the top. */
+const scrollByView = new Map();
+let currentView = null;
+
+/* opts.reload:false skips the view's data loader - used when switching
+   BACK to an already-open workspace tab, so a half-filled form, the
+   selected record and the scroll position all survive. A menu click
+   omits it and gets fresh figures. */
+export async function show(name, opts = {}) {
     const target = document.getElementById("view-" + name);
     if (!target) return;
+
+    if (currentView) scrollByView.set(currentView, window.scrollY);
+    trackTab(name);
+    currentView = name;
 
     views.forEach((view) => {
         view.hidden = (view !== target);
@@ -145,18 +159,23 @@ export async function show(name) {
         heading.focus();
     }
 
-    window.scrollTo(0, 0);
-
     /* Refetch on every visit. These are live quality figures, and a
-       cached "2 overdue CAPAs" that is actually 3 is worse than a
-       few milliseconds of latency on localhost. */
+       cached "2 overdue CAPAs" that is actually 3 is worse than a few
+       milliseconds of latency on localhost. Skipped only when a tab
+       switch asked to keep the screen exactly as it was left. */
     const load = LOADERS[name];
-    if (load) {
+    if (load && opts.reload !== false) {
         try {
             await load();
         } catch (error) {
             console.error("Failed to load view " + name + ":", error);
         }
+    }
+
+    if (opts.reload === false && scrollByView.has(name)) {
+        window.scrollTo(0, scrollByView.get(name));
+    } else {
+        window.scrollTo(0, 0);
     }
 }
 
@@ -446,17 +465,20 @@ async function start() {
     showReadinessBadge();
     updateNavCounts();
 
+    /* Restore the workspace tab strip from the last visit; returns the
+       tab that was active. */
+    const restoredView = wireTabs();
+
     /* Deep link: /app?record=CAPA-2026-0034 opens straight to that
-       record's screen with it selected, so a register row (or a
-       linked-record chip) can be opened in its own browser tab and
-       several records worked side by side. */
+       record's screen with it selected. */
     const deepRecord = new URLSearchParams(location.search).get("record");
     if (deepRecord) {
         document.title = deepRecord + " · QMS Guardian";
         try { await openRecord(deepRecord); }
         catch { show("dashboard"); }
     } else {
-        show("dashboard");
+        /* No deep link - reopen whatever tab the person left on. */
+        show(restoredView || "dashboard");
     }
 
     /* First-run wizard, for an admin whose org has not been set up.
