@@ -17,7 +17,7 @@ import { Router } from "express";
 import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
-import { upload } from "../uploads.js";
+import { xlsxUpload, assertSaneWorkbook } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { problemWith, slugKey } from "./masterdata.js";
 import { buildDefaultMap } from "../excel-fill.js";
@@ -591,7 +591,7 @@ export function inferWorkbook(workbook, baseName) {
    ============================================================ */
 
 formImport.post("/forms/import", requirePermission("forms.manage"),
-    upload.single("file"), async (request, response, next) => {
+    xlsxUpload.single("file"), async (request, response, next) => {
         try {
             if (!request.file) return response.status(400).json({ error: "An .xlsx file is required" });
 
@@ -600,6 +600,7 @@ formImport.post("/forms/import", requirePermission("forms.manage"),
 
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.load(request.file.buffer);
+            assertSaneWorkbook(workbook);
 
             const baseName = (request.file.originalname || "Imported form").replace(/\.[^.]+$/, "");
 

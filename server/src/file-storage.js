@@ -68,6 +68,73 @@ export function assertAllowedExtension(filename, allowedExtensions) {
     return ext;
 }
 
+/* Magic-byte signatures per extension. A renamed .exe is caught here
+   even though its extension passed the allowlist. Extensions with no
+   reliable signature (.txt, .csv) are not listed and are let through
+   on the allowlist alone. */
+const SIGNATURES = {
+    ".pdf":  [[0x25, 0x50, 0x44, 0x46]],                              // %PDF
+    ".png":  [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
+    ".jpg":  [[0xff, 0xd8, 0xff]],
+    ".jpeg": [[0xff, 0xd8, 0xff]],
+    ".gif":  [[0x47, 0x49, 0x46, 0x38]],                              // GIF8
+    ".bmp":  [[0x42, 0x4d]],
+    ".tif":  [[0x49, 0x49, 0x2a, 0x00], [0x4d, 0x4d, 0x00, 0x2a]],
+    ".tiff": [[0x49, 0x49, 0x2a, 0x00], [0x4d, 0x4d, 0x00, 0x2a]],
+    ".webp": [],                                                       // RIFF/WEBP check below
+    ".heic": [],                                                       // ftyp brand check below
+    ".heif": [],
+    ".rtf":  [[0x7b, 0x5c, 0x72, 0x74, 0x66]],                        // {\rtf
+    ".zip":  [[0x50, 0x4b, 0x03, 0x04], [0x50, 0x4b, 0x05, 0x06], [0x50, 0x4b, 0x07, 0x08]],
+    /* OOXML is a zip; legacy Office and .msg are OLE compound files */
+    ".docx": [[0x50, 0x4b, 0x03, 0x04]],
+    ".xlsx": [[0x50, 0x4b, 0x03, 0x04]],
+    ".pptx": [[0x50, 0x4b, 0x03, 0x04]],
+    ".doc":  [[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]],
+    ".xls":  [[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]],
+    ".ppt":  [[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]],
+    ".msg":  [[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]]
+};
+
+const startsWith = (buffer, bytes) =>
+    buffer.length >= bytes.length && bytes.every((b, i) => buffer[i] === b);
+
+/* Throws 422 when the bytes plainly are not the kind of file the name
+   claims. A no-op for an extension with no signature, or an empty
+   buffer (multer already rejects those). */
+export function assertContentMatchesExtension(ext, buffer) {
+    if (!buffer || buffer.length < 4) return;
+    const sigs = SIGNATURES[ext];
+    if (sigs === undefined) return;              // nothing reliable to check
+
+    if (ext === ".webp") {
+        const ok = startsWith(buffer, [0x52, 0x49, 0x46, 0x46])
+            && buffer.length >= 12
+            && [0x57, 0x45, 0x42, 0x50].every((b, i) => buffer[8 + i] === b);
+        if (!ok) throw badContent(ext);
+        return;
+    }
+    if (ext === ".heic" || ext === ".heif") {
+        /* ....ftyp<brand> where brand is one of the HEIF family */
+        const brand = buffer.slice(8, 12).toString("latin1");
+        const isFtyp = buffer.slice(4, 8).toString("latin1") === "ftyp";
+        if (!(isFtyp && /^(heic|heix|hevc|mif1|msf1)$/.test(brand))) throw badContent(ext);
+        return;
+    }
+
+    if (sigs.length && !sigs.some((sig) => startsWith(buffer, sig))) {
+        throw badContent(ext);
+    }
+}
+
+function badContent(ext) {
+    return Object.assign(
+        new Error("That file's contents are not a valid \"" + ext + "\" file - "
+            + "it may have been renamed. Upload the file in its real format."),
+        { status: 422 }
+    );
+}
+
 /* ---------- local disk driver ---------- */
 
 /* storage_path is always exactly what saveUploadedFile built, but a
@@ -129,6 +196,7 @@ export const STORAGE_DRIVER = driver.name;
    never taken from the request. */
 export async function saveUploadedFile(subdir, allowedExtensions, originalFilename, buffer) {
     const ext = assertAllowedExtension(originalFilename, allowedExtensions);
+    assertContentMatchesExtension(ext, buffer);
     const storagePath = path.posix.join(subdir, crypto.randomUUID() + ext);
     await driver.save(storagePath, buffer);
     return storagePath;
