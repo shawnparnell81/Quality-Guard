@@ -22,13 +22,7 @@ import { openExcelLayout } from "./excel-layout.js";
 import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, statusKind, toast
 } from "../dom.js";
-
-/* One table cell for the read-only detail grid: a checkbox reads as
-   Yes / No, an empty cell as a dash, everything else as itself. */
-function cellText(column, raw) {
-    if (column.type === "boolean") return (raw === true || raw === "true") ? "Yes" : "No";
-    return raw != null && raw !== "" ? String(raw) : "-";
-}
+import { formatValue } from "../format.js";
 
 const BUILT_IN = new Set([
     "ncr", "capa", "eightd", "complaint", "scar", "audit", "ecn", "risk", "apqp", "di"
@@ -174,15 +168,13 @@ async function renderCustomDetail(typeKey, number) {
             children.push(el("div", { class: "table-wrap" }, el("table", { class: "sm" }, [
                 el("thead", {}, el("tr", {}, columns.map((c) => el("th", { text: c.label })))),
                 el("tbody", {}, value.map((r) => el("tr", {},
-                    columns.map((c) => el("td", { class: "sm", text: cellText(c, r[c.key]) })))))
+                    columns.map((c) => el("td", { class: "sm", text: formatValue(c, r[c.key], { empty: "-" }) })))))
             ])));
         } else {
             if (!kv) kv = el("dl", { class: "kv" });
             kv.append(
                 el("dt", { text: field.label }),
-                el("dd", { text: field.type === "boolean"
-                    ? (value === true || value === "true" ? "Yes" : "No")
-                    : field.type === "date" ? formatDate(value) : String(value) })
+                el("dd", { text: formatValue(field, value) })
             );
         }
     }
