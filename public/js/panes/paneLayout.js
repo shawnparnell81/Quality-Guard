@@ -23,7 +23,71 @@ export function paintAll(root, ws, cb, bodyFor) {
         if (index > 0) row.append(divider(ws.panes[index - 1], pane, ws, cb, row));
         row.append(shell(pane, index, ws, cb, bodyFor(pane)));
     });
+    wireDragReorder(row, ws, cb);
     root.replaceChildren(toolbar(ws, cb), row);
+}
+
+/* Drag a pane by its header to a new slot. Pointer-based (not HTML5
+   DnD) so it also works on touch. A short move threshold keeps a
+   plain header click from starting a drag. */
+function wireDragReorder(row, ws, cb) {
+    const horizontal = () => ws.layout === "row";
+
+    row.addEventListener("pointerdown", (event) => {
+        const head = event.target.closest(".pane-head");
+        if (!head) return;
+        if (event.target.closest("button, input, select, textarea, a")) return;
+
+        const pane = head.closest(".pane[data-pane-id]");
+        if (!pane) return;
+        const id = pane.dataset.paneId;
+        const start = horizontal() ? event.clientX : event.clientY;
+        let dragging = false;
+
+        const panesNow = () => [...row.querySelectorAll(".pane[data-pane-id]")];
+        const clearMarks = () => panesNow().forEach((p) =>
+            p.classList.remove("drop-before", "drop-after"));
+
+        const targetIndex = (ev) => {
+            const rects = panesNow().map((p) => p.getBoundingClientRect());
+            const pos = horizontal() ? ev.clientX : ev.clientY;
+            for (let i = 0; i < rects.length; i++) {
+                const mid = horizontal()
+                    ? rects[i].left + rects[i].width / 2
+                    : rects[i].top + rects[i].height / 2;
+                if (pos < mid) return i;
+            }
+            return rects.length;
+        };
+
+        const onMove = (ev) => {
+            if (!dragging) {
+                if (Math.abs((horizontal() ? ev.clientX : ev.clientY) - start) < 6) return;
+                dragging = true;
+                pane.classList.add("is-dragreorder");
+                try { row.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
+            }
+            const t = targetIndex(ev);
+            clearMarks();
+            const panes = panesNow();
+            if (t >= panes.length) panes[panes.length - 1].classList.add("drop-after");
+            else panes[t].classList.add("drop-before");
+        };
+
+        const onUp = (ev) => {
+            row.removeEventListener("pointermove", onMove);
+            row.removeEventListener("pointerup", onUp);
+            row.removeEventListener("pointercancel", onUp);
+            if (!dragging) return;
+            clearMarks();
+            pane.classList.remove("is-dragreorder");
+            cb.onReorder(id, targetIndex(ev));
+        };
+
+        row.addEventListener("pointermove", onMove);
+        row.addEventListener("pointerup", onUp);
+        row.addEventListener("pointercancel", onUp);
+    });
 }
 
 function emptyState() {
@@ -119,12 +183,19 @@ function divider(left, right, ws, cb, row) {
 }
 
 function toolbar(ws, cb) {
+    const canCompare = ws.panes.length === 2
+        && ws.panes[0].type === ws.panes[1].type
+        && ws.panes[0].number && ws.panes[1].number;
+
     return el("div", { class: "pane-toolbar no-print" }, [
         el("button", { class: "btn btn-xs", type: "button", onClick: cb.onCollapse }, "⇔ Single view"),
         el("button", {
             class: "btn btn-xs", type: "button",
             onClick: () => cb.onLayout(ws.layout === "row" ? "column" : "row")
         }, ws.layout === "row" ? "Stack" : "Side by side"),
+        canCompare ? el("button", {
+            class: "btn btn-xs", type: "button", onClick: cb.onCompare
+        }, "Compare fields") : null,
         el("span", { class: "sm dim", text: ws.panes.length + (ws.panes.length === 1 ? " form open" : " forms open") })
     ]);
 }

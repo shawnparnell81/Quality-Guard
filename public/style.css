@@ -614,6 +614,11 @@ body {
 }
 .pane-row-column .pane { min-height: 320px; }
 .pane.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.pane.is-dragreorder { opacity: .5; }
+.pane.drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+.pane.drop-after  { box-shadow: inset -3px 0 0 var(--accent); }
+.pane-row-column .pane.drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+.pane-row-column .pane.drop-after  { box-shadow: inset 0 -3px 0 var(--accent); }
 
 .pane-head {
     display: flex;
@@ -622,7 +627,16 @@ body {
     padding: 6px 8px;
     border-bottom: 1px solid var(--hairline);
     background: var(--surface-2);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
 }
+.pane.is-dragreorder .pane-head { cursor: grabbing; }
+.pane-head button, .pane-head .pane-title { cursor: default; }
+
+.compare-table th, .compare-table td { text-align: left; padding: 4px 10px; vertical-align: top; }
+.compare-table tr.compare-diff td { background: var(--warn-tint); }
+.compare-table tr.compare-diff td:first-child { font-weight: 600; }
 .pane-title {
     font-family: "IBM Plex Mono", ui-monospace, monospace;
     font-weight: 600;
