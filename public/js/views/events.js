@@ -905,18 +905,22 @@ export function wireRegisterClicks() {
             openRecordEditor(type, {
                 returnView: TYPE_VIEW[type] || type,
                 onSaved: async (created) => {
+                    /* A converted type lands back on its register (the
+                       navigate below reopens it and its LOADER re-runs);
+                       the new record is in the list, a click opens its
+                       full page. */
+                    if (converted(type)) return;
+
                     if (OWN_SCREEN_REFRESH[type]) {
                         await OWN_SCREEN_REFRESH[type](created.number);
                     } else if (REGISTERS[type]) {
                         await renderRegister(type);
 
                         /* Land on the thing that was just created rather
-                           than leaving somebody to hunt for it - the
-                           register still selects it, and clicking opens
-                           the full-page view for a converted type. */
+                           than leaving somebody to hunt for it. */
                         const register = document.getElementById(REGISTERS[type].tbody);
                         if (register) selectRow(register, created.number);
-                        if (!converted(type)) await renderRecordDetail(type, created.number);
+                        await renderRecordDetail(type, created.number);
                     }
                 }
             });
@@ -1023,7 +1027,7 @@ export async function renderRecordDetail(type, number, { slot = type } = {}) {
         if (pdfButton) pdfButton.dataset.number = number;
         const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = number;
-        return renderFairDetail(number);
+        return renderFairDetail(number, { slot });
     }
 
     /* A PPAP is built around its 18 element slots and the submit gate
@@ -1033,7 +1037,7 @@ export async function renderRecordDetail(type, number, { slot = type } = {}) {
         if (pdfButton) pdfButton.dataset.number = number;
         const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = number;
-        return renderPpapDetail(number);
+        return renderPpapDetail(number, { slot });
     }
 
     const panel = document.getElementById(slot + "-detail");

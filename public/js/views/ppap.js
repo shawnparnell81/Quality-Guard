@@ -34,7 +34,7 @@ const HEADER_FIELDS = [
     ["Customer disposition", "customer_disposition"], ["Customer sign-off", "customer_signoff"]
 ];
 
-function openLinkForm(number, element) {
+function openLinkForm(number, element, slot) {
     openEntityForm({
         title: "Element " + element.element + " - " + element.name,
         fields: [
@@ -46,11 +46,11 @@ function openLinkForm(number, element) {
         submitLabel: "Link",
         successMessage: () => "Element " + element.element + " linked",
         onSubmit: ({ values }) => api.setPpapElement(number, element.element, values),
-        onSaved: () => renderPpapDetail(number)
+        onSaved: () => renderPpapDetail(number, { slot })
     });
 }
 
-function openNaForm(number, element) {
+function openNaForm(number, element, slot) {
     openEntityForm({
         title: "Mark element " + element.element + " not applicable",
         fields: [
@@ -62,7 +62,7 @@ function openNaForm(number, element) {
         successMessage: () => "Element " + element.element + " marked not applicable",
         onSubmit: ({ values }) => api.setPpapElement(number, element.element,
             { not_applicable: true, note: values.note }),
-        onSaved: () => renderPpapDetail(number)
+        onSaved: () => renderPpapDetail(number, { slot })
     });
 }
 
@@ -109,7 +109,7 @@ function elementRow(number, element, canManage) {
     ]);
 }
 
-function transitionsRow(number, record, transitions) {
+function transitionsRow(number, record, transitions, slot) {
     if (!transitions || transitions.length === 0) {
         return el("p", { class: "sm dim no-print",
             text: "This PPAP is " + (STATE_LABEL[record.status] || record.status).toLowerCase() + "." });
@@ -133,7 +133,7 @@ function transitionsRow(number, record, transitions) {
             confirmLabel: "Move to " + step.label,
             onConfirm: async (reason) => {
                 await api.transition(number, { to: step.to, reason });
-                await renderPpapDetail(number);
+                await renderPpapDetail(number, { slot });
             }
         }));
         return button;
@@ -152,10 +152,13 @@ function transitionsRow(number, record, transitions) {
    with what is already on a slot without another round trip. */
 let lastPackage = null;
 
-export async function renderPpapDetail(number) {
-    const numberEl = document.getElementById("ppap-detail-number");
-    const statusEl = document.getElementById("ppap-detail-status");
-    const body = document.getElementById("ppap-detail");
+/* `slot` is the id prefix the detail is written into - "ppap" for the
+   register side panel (unchanged), "record-view" for the full-page
+   record view (record-page.js). */
+export async function renderPpapDetail(number, { slot = "ppap" } = {}) {
+    const numberEl = document.getElementById(slot + "-detail-number");
+    const statusEl = document.getElementById(slot + "-detail-status");
+    const body = document.getElementById(slot + "-detail");
     if (!body) return;
 
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
@@ -198,7 +201,7 @@ export async function renderPpapDetail(number) {
             el("div", { class: "section-label", text: "The 18 elements" }),
             gateBanner,
             el("ul", { class: "ppap-list" }, pkg.elements.map((e) => elementRow(number, e, canManage))),
-            transitionsRow(number, record, transitions)
+            transitionsRow(number, record, transitions, slot)
         );
         applyPermissions(body);
     } catch (error) {
@@ -206,34 +209,41 @@ export async function renderPpapDetail(number) {
     }
 }
 
-/* Delegated once from the view container so it survives re-renders. */
+/* Delegated once from each container the 18-element list can live in -
+   the register side panel (#view-ppap) and the full-page record view
+   (#view-record) - so the Link / N/A / Clear buttons work in both and
+   survive a re-render. On #view-record a non-PPAP record has no
+   data-ppap-* buttons, so the handler simply no-ops there. */
 export function wirePpap() {
-    const view = document.getElementById("view-ppap");
-    if (!view) return;
-    view.addEventListener("click", (event) => {
-        const number = document.getElementById("ppap-detail-number")?.textContent;
-        if (!number || number === "Select a PPAP") return;
+    for (const [viewId, slot] of [["view-ppap", "ppap"], ["view-record", "record-view"]]) {
+        const view = document.getElementById(viewId);
+        if (view) view.addEventListener("click", (event) => handlePpapClick(event, slot));
+    }
+}
 
-        const link = event.target.closest("[data-ppap-link]");
-        if (link) { openLinkForm(number, findElement(number, Number(link.dataset.ppapLink))); return; }
+function handlePpapClick(event, slot) {
+    const number = document.getElementById(slot + "-detail-number")?.textContent;
+    if (!number || number === "Select a PPAP") return;
 
-        const na = event.target.closest("[data-ppap-na]");
-        if (na) { openNaForm(number, findElement(number, Number(na.dataset.ppapNa))); return; }
+    const link = event.target.closest("[data-ppap-link]");
+    if (link) { openLinkForm(number, findElement(number, Number(link.dataset.ppapLink)), slot); return; }
 
-        const clear = event.target.closest("[data-ppap-clear]");
-        if (clear) {
-            const n = Number(clear.dataset.ppapClear);
-            confirmStep({
-                title: "Clear element " + n,
-                body: "Takes whatever is on this slot off the package.",
-                confirmLabel: "Clear",
-                onConfirm: async () => {
-                    await api.clearPpapElement(number, n);
-                    await renderPpapDetail(number);
-                }
-            });
-        }
-    });
+    const na = event.target.closest("[data-ppap-na]");
+    if (na) { openNaForm(number, findElement(number, Number(na.dataset.ppapNa)), slot); return; }
+
+    const clear = event.target.closest("[data-ppap-clear]");
+    if (clear) {
+        const n = Number(clear.dataset.ppapClear);
+        confirmStep({
+            title: "Clear element " + n,
+            body: "Takes whatever is on this slot off the package.",
+            confirmLabel: "Clear",
+            onConfirm: async () => {
+                await api.clearPpapElement(number, n);
+                await renderPpapDetail(number, { slot });
+            }
+        });
+    }
 }
 
 function findElement(number, n) {
