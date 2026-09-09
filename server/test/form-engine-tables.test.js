@@ -543,3 +543,60 @@ test("a table PATCH to an unknown field is a 400", async () => {
         "/api/records/" + rec.body.number + "/table/not_a_field", { upsert: [{ x: 1 }] });
     assert.equal(bad.status, 400);
 });
+
+/* ---------- link fields that target another record (audit P1 / M2) ---------- */
+
+test("a link field can target another record, and the picker is populated", async () => {
+    const anchor = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "Anchor record for linking",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }] }
+    });
+    assert.equal(anchor.status, 201, JSON.stringify(anchor.body));
+
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Link To Record", prefix: "L2R", clause: "10.2",
+        fields: [
+            { key: "summary", label: "Summary", type: "text" },
+            { key: "any_record", label: "Related record", type: "link", target: "record" },
+            { key: "the_dev", label: "The study", type: "link", target: "record", record_type: "deviation_study" }
+        ]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    const form = await api(adminCookie, "GET", "/api/record-types/link_to_record/form");
+    assert.ok(Array.isArray(form.body.options.record), "unfiltered picker present");
+    assert.ok(form.body.options.record.some((o) => o.value === anchor.body.number));
+
+    const devOnly = form.body.options["record:deviation_study"];
+    assert.ok(Array.isArray(devOnly), "type-filtered picker present");
+    assert.ok(devOnly.some((o) => o.value === anchor.body.number));
+    assert.ok(devOnly.every((o) => /^DEV-/.test(o.value)), "only deviation studies in the filtered list");
+});
+
+test("a record stores a record-link value", async () => {
+    const anchor = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "Anchor 2",
+        data: { checks: [{ nominal: 2, actual: 2, tol: 0.1 }] }
+    });
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "link_to_record", title: "links out",
+        data: { summary: "see the study", the_dev: anchor.body.number }
+    });
+    assert.equal(rec.status, 201, JSON.stringify(rec.body));
+    const got = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    assert.equal(got.body.record.data.the_dev, anchor.body.number);
+});
+
+test("an invalid link target is still refused; a bad record_type filter too", async () => {
+    const badTarget = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Bad Target " + Math.random().toString(36).slice(2, 6), prefix: "BT1",
+        fields: [{ key: "l", label: "L", type: "link", target: "not_a_table" }]
+    });
+    assert.equal(badTarget.status, 422);
+
+    const badFilter = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Bad Filter " + Math.random().toString(36).slice(2, 6), prefix: "BF1",
+        fields: [{ key: "l", label: "L", type: "link", target: "record", record_type: 5 }]
+    });
+    assert.equal(badFilter.status, 422);
+});

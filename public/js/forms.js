@@ -94,7 +94,11 @@ export function buildField(field, options, currentValue, context = {}) {
         }
 
         case "link": {
-            const list = options[field.target] || [];
+            /* target:"record" links to another record; when it is
+               narrowed to a type the options come keyed "record:<type>" */
+            const optKey = field.target === "record" && field.record_type
+                ? "record:" + field.record_type : field.target;
+            const list = options[optKey] || [];
             input = el("select", { id, name: field.key }, [
                 el("option", { value: "", text: "Choose..." }),
                 ...list.map((item) => {
