@@ -416,6 +416,30 @@ CREATE TABLE public.ppap_elements (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT ppap_elements_element_check CHECK (((element >= 1) AND (element <= 18)))
 );
+CREATE TABLE public.production_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    pl_number text NOT NULL,
+    wo_number text,
+    customer text,
+    customer_po text,
+    part_number text,
+    revision text,
+    status text DEFAULT 'scheduled'::text NOT NULL,
+    order_date date,
+    promised_date date,
+    qty_ordered integer,
+    qty_completed integer,
+    qty_scrapped integer,
+    qty_shipped integer,
+    line text,
+    notes text,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT production_logs_status_check CHECK ((status = ANY (ARRAY['scheduled'::text, 'in_production'::text, 'hold'::text, 'shipped'::text, 'closed'::text, 'cancelled'::text])))
+);
 CREATE TABLE public.purchase_orders (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     org_id uuid NOT NULL,
@@ -890,6 +914,10 @@ ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_record_id_element_key UNIQUE (record_id, element);
+ALTER TABLE ONLY public.production_logs
+    ADD CONSTRAINT production_logs_org_id_pl_number_key UNIQUE (org_id, pl_number);
+ALTER TABLE ONLY public.production_logs
+    ADD CONSTRAINT production_logs_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT purchase_orders_org_id_po_number_key UNIQUE (org_id, po_number);
 ALTER TABLE ONLY public.purchase_orders
@@ -1013,6 +1041,8 @@ CREATE INDEX idx_lpa_schedules ON public.lpa_schedules USING btree (org_id, acti
 CREATE INDEX idx_onboarding ON public.vendor_onboarding_stages USING btree (vendor_id, "position");
 CREATE INDEX idx_onboarding_docs ON public.vendor_onboarding_documents USING btree (stage_id);
 CREATE INDEX idx_ppap_elements ON public.ppap_elements USING btree (record_id, element);
+CREATE INDEX idx_production_logs_org ON public.production_logs USING btree (org_id, status, order_date DESC);
+CREATE INDEX idx_production_logs_wo ON public.production_logs USING btree (org_id, wo_number);
 CREATE INDEX idx_purchase_orders_org ON public.purchase_orders USING btree (org_id, status, order_date DESC);
 CREATE INDEX idx_purchase_requests_org ON public.purchase_requests USING btree (org_id, status, created_at DESC);
 CREATE INDEX idx_receipt_meas ON public.receipt_measurements USING btree (receipt_id, "position");
@@ -1184,6 +1214,10 @@ ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_record_id_fkey FOREIGN KEY (record_id) REFERENCES public.records(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.ppap_elements
     ADD CONSTRAINT ppap_elements_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.production_logs
+    ADD CONSTRAINT production_logs_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.production_logs
+    ADD CONSTRAINT production_logs_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT purchase_orders_buyer_id_fkey FOREIGN KEY (buyer_id) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.purchase_orders

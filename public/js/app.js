@@ -40,7 +40,7 @@ import { renderEngDocuments } from "./views/eng-documents.js";
 import { renderFormRecord, wireFormRecord } from "./views/form-record.js";
 import { renderFormImport, wireFormImport } from "./views/form-import.js";
 import { renderFormLibrary } from "./views/form-library.js";
-import { renderPoLog, renderWoLog, renderPrLog, wireLogs } from "./views/logs.js";
+import { renderPoLog, renderWoLog, renderPrLog, renderProductionLog, wireLogs } from "./views/logs.js";
 import { renderMenuLayout } from "./views/menu-layout.js";
 import { badgePlaceholders } from "./placeholders.js";
 import {
@@ -92,6 +92,7 @@ const LOADERS = {
     "po-log":    renderPoLog,
     "wo-log":    renderWoLog,
     "pr-log":    renderPrLog,
+    "production-log": renderProductionLog,
     shipping:    renderShipping,
     onboarding:  renderOnboarding,
     "onboarding-packet": renderOnboardingPacket,

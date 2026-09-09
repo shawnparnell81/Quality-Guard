@@ -38,6 +38,7 @@ export const NAV = [
     { dept: "Customer Service", items: [
         { label: "Purchase Orders", view: "po-log" },
         { label: "Work Orders", view: "wo-log" },
+        { label: "Production Log", view: "production-log" },
         { label: "Purchase Requests", view: "pr-log" }
     ] },
 

@@ -1,11 +1,14 @@
 /* ============================================================
-   Customer Service logs: purchase orders and purchase requests.
+   Customer Service logs: purchase orders, purchase requests, the
+   production log.
 
    Registers, not workflows. Each row is a thin record - a number, a
    party, a status, the dates that matter - with a `data jsonb`
    column carrying whatever the finessed form adds later. Viewing a
-   log needs only a session; creating and editing entries needs
-   purchasing.log.
+   log needs only a session; creating and editing purchase entries
+   needs purchasing.log, and the production log reuses wo.log so the
+   CSR who writes the work orders (and the GM) are the only people
+   who can change a row.
 
    The work order log lives in production.js, on the existing
    work_orders table.
@@ -22,6 +25,9 @@ const PO_STATUS = new Set([
 ]);
 const PR_STATUS = new Set([
     "draft", "submitted", "approved", "rejected", "ordered", "closed"
+]);
+const PL_STATUS = new Set([
+    "scheduled", "in_production", "hold", "shipped", "closed", "cancelled"
 ]);
 
 /* PO-2026-0007 / PR-2026-0007 - sorted on the numeric suffix, not the
@@ -41,6 +47,13 @@ function num(value) {
     if (value === undefined || value === null || value === "") return null;
     const n = Number(value);
     return Number.isFinite(n) ? n : null;
+}
+
+/* Quantities land in integer columns - round a stray decimal rather
+   than let Postgres reject the whole write. */
+function whole(value) {
+    const n = num(value);
+    return n === null ? null : Math.round(n);
 }
 
 /* ============================================================
@@ -354,6 +367,210 @@ logs.patch("/purchase-requests/:number", requirePermission("purchasing.log"),
             });
 
             if (!result) return response.status(404).json({ error: "No such purchase request" });
+            if (result.conflict) return response.status(409).json({ error: result.conflict });
+            response.json(result);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* ============================================================
+   Production log
+
+   The CSR's ledger of orders through production. One thin row per
+   tracked job, following a work order by number - work_orders stays
+   the source of truth for what is on the floor. Reading is open;
+   wo.log gates the writes, the same permission the work-order author
+   already holds.
+   ============================================================ */
+
+/* Bare list, for RETURNING (no table alias allowed there). The
+   SELECTs below join users, which also has `status` and `created_at`,
+   so they use `pl.*` rather than this. */
+const PL_COLUMNS = `pl_number, wo_number, customer, customer_po, part_number,
+    revision, status, order_date, promised_date, qty_ordered, qty_completed,
+    qty_scrapped, qty_shipped, line, notes, data`;
+
+/* What the floor says about the work order this row follows: its
+   status, any hold reason, and how many nonconformances against it
+   are still open. Null when the row names no work order or the
+   number does not match one. */
+async function woContext(orgId, woNumber) {
+    if (!woNumber) return null;
+    const found = await query(`
+        select w.status, w.hold_reason,
+               count(r.id) filter (
+                   where r.closed_at is null and rt.key = 'ncr'
+               )::int as open_ncr_count
+          from work_orders w
+     left join records r on r.org_id = w.org_id and r.data->>'work_order' = w.wo_number
+     left join record_types rt on rt.id = r.record_type_id
+         where w.org_id = $1 and w.wo_number = $2
+         group by w.status, w.hold_reason
+    `, [orgId, woNumber]);
+    return found.rows[0] || null;
+}
+
+logs.get("/production-logs", async (request, response, next) => {
+    try {
+        const result = await query(`
+            select pl.*, u.full_name as created_by
+              from production_logs pl
+         left join users u on u.id = pl.created_by
+             where pl.org_id = $1
+             order by case pl.status
+                        when 'hold' then 0 when 'in_production' then 1
+                        when 'scheduled' then 2 else 3 end,
+                      pl.promised_date asc nulls last, pl.created_at desc
+        `, [request.user.org_id]);
+
+        response.json({ count: result.rowCount, production_logs: result.rows });
+    } catch (error) {
+        next(error);
+    }
+});
+
+logs.get("/production-logs/:number", async (request, response, next) => {
+    try {
+        const found = await query(`
+            select pl.*, u.full_name as created_by
+              from production_logs pl
+         left join users u on u.id = pl.created_by
+             where pl.org_id = $1 and pl.pl_number = $2
+        `, [request.user.org_id, request.params.number]);
+
+        if (found.rowCount === 0) return response.status(404).json({ error: "No such production log entry" });
+
+        response.json({
+            production_log: found.rows[0],
+            wo_context: await woContext(request.user.org_id, found.rows[0].wo_number),
+            can_edit: request.can("wo.log")
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+logs.post("/production-logs", requirePermission("wo.log"),
+    async (request, response, next) => {
+        try {
+            const body = request.body || {};
+            const status = PL_STATUS.has(body.status) ? body.status : "scheduled";
+
+            const created = await withTransaction(async (client) => {
+                const number = (body.pl_number || "").trim()
+                    || await nextNumber(client, request.user.org_id, "production_logs", "pl_number", "PL");
+
+                const clash = await client.query(
+                    "select 1 from production_logs where org_id = $1 and pl_number = $2",
+                    [request.user.org_id, number]
+                );
+                if (clash.rowCount > 0) return { conflict: "A production log entry already has that number: " + number };
+
+                const inserted = await client.query(`
+                    insert into production_logs
+                        (org_id, pl_number, wo_number, customer, customer_po, part_number,
+                         revision, status, order_date, promised_date, qty_ordered, qty_completed,
+                         qty_scrapped, qty_shipped, line, notes, data, created_by)
+                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                    returning ${PL_COLUMNS}
+                `, [request.user.org_id, number,
+                    (body.wo_number || "").trim() || null,
+                    (body.customer || "").trim() || null,
+                    (body.customer_po || "").trim() || null,
+                    (body.part_number || "").trim() || null,
+                    (body.revision || "").trim() || null,
+                    status, body.order_date || null, body.promised_date || null,
+                    whole(body.qty_ordered), whole(body.qty_completed),
+                    whole(body.qty_scrapped), whole(body.qty_shipped),
+                    (body.line || "").trim() || null, body.notes || null,
+                    body.data && typeof body.data === "object" ? body.data : {},
+                    request.user.id]);
+
+                await client.query(`
+                    insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'production_logs', null, 'created', $2, $3)
+                `, [request.user.org_id, number, request.user.id]);
+
+                return { row: inserted.rows[0] };
+            });
+
+            if (created.conflict) return response.status(409).json({ error: created.conflict });
+            response.status(201).json(created.row);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+logs.patch("/production-logs/:number", requirePermission("wo.log"),
+    async (request, response, next) => {
+        try {
+            const body = request.body || {};
+            if (body.status !== undefined && !PL_STATUS.has(body.status)) {
+                return response.status(422).json({ error: "Unknown status: " + body.status });
+            }
+
+            const result = await withTransaction(async (client) => {
+                const found = await client.query(
+                    "select id, status, data from production_logs where org_id = $1 and pl_number = $2 for update",
+                    [request.user.org_id, request.params.number]
+                );
+                if (found.rowCount === 0) return null;
+
+                /* A closed or cancelled entry is done with. Its status
+                   can still change (to reopen it); nothing else. */
+                const editsBeyondStatus = Object.keys(body).some((k) => k !== "status");
+                if (["closed", "cancelled"].includes(found.rows[0].status) && editsBeyondStatus) {
+                    return { conflict: "This entry is " + found.rows[0].status
+                        + " - reopen it before editing" };
+                }
+
+                const str = (key) => body[key] === undefined
+                    ? null
+                    : ((body[key] || "").trim() || null);
+
+                const mergedData = body.data && typeof body.data === "object"
+                    ? { ...(found.rows[0].data || {}), ...body.data }
+                    : (found.rows[0].data || {});
+
+                const updated = await client.query(`
+                    update production_logs
+                       set wo_number     = coalesce($3, wo_number),
+                           customer      = coalesce($4, customer),
+                           customer_po   = coalesce($5, customer_po),
+                           part_number   = coalesce($6, part_number),
+                           revision      = coalesce($7, revision),
+                           status        = coalesce($8, status),
+                           order_date    = coalesce($9, order_date),
+                           promised_date = coalesce($10, promised_date),
+                           qty_ordered   = coalesce($11, qty_ordered),
+                           qty_completed = coalesce($12, qty_completed),
+                           qty_scrapped  = coalesce($13, qty_scrapped),
+                           qty_shipped   = coalesce($14, qty_shipped),
+                           line          = coalesce($15, line),
+                           notes         = coalesce($16, notes),
+                           data          = $17,
+                           updated_at    = now()
+                     where id = $1 and org_id = $2
+                    returning ${PL_COLUMNS}
+                `, [found.rows[0].id, request.user.org_id,
+                    str("wo_number"), str("customer"), str("customer_po"),
+                    str("part_number"), str("revision"),
+                    body.status || null, body.order_date || null, body.promised_date || null,
+                    whole(body.qty_ordered), whole(body.qty_completed),
+                    whole(body.qty_scrapped), whole(body.qty_shipped),
+                    str("line"), body.notes === undefined ? null : (body.notes || null),
+                    mergedData]);
+
+                await client.query(`
+                    insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                    values ($1, 'production_logs', null, 'updated', $2, $3)
+                `, [request.user.org_id, request.params.number, request.user.id]);
+
+                return updated.rows[0];
+            });
+
+            if (!result) return response.status(404).json({ error: "No such production log entry" });
             if (result.conflict) return response.status(409).json({ error: result.conflict });
             response.json(result);
         } catch (error) {
