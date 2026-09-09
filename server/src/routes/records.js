@@ -22,7 +22,9 @@ import { fillTemplate, readTemplate } from "../excel-fill.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { formatValue, isEmpty } from "../../../public/js/format.js";
 import { evaluate as evalExpr } from "../../../public/js/expr.js";
+import { checkRules } from "../../../public/js/rules.js";
 import { ppapMissing } from "./ppap.js";
+import { notify } from "./notifications.js";
 import { publish } from "../stream.js";
 import { heartbeat, leaveEditing } from "../presence.js";
 
@@ -295,6 +297,30 @@ function checkSignatures(schema, data) {
         };
     }
     return Object.keys(out).length ? out : undefined;
+}
+
+/* Push a notification for each notify-rule that matched, to every
+   active user in the org holding the named role. Dedup-keyed on the
+   record + the rule text so re-saving does not re-notify, and it can
+   never fail the write that triggered it. */
+async function fireRuleNotifications(orgId, type, number, ruleNotify) {
+    for (const n of ruleNotify || []) {
+        if (!n.role) continue;
+        try {
+            const people = await query(
+                "select id from users where org_id = $1 and role = $2 and active",
+                [orgId, n.role]);
+            for (const p of people.rows) {
+                await notify(orgId, p.id, {
+                    kind: "rule",
+                    title: number + " - " + n.message,
+                    link_type: type,
+                    link_number: number,
+                    dedupe_key: "rule:" + number + ":" + n.message
+                });
+            }
+        } catch { /* notifications are best-effort */ }
+    }
 }
 
 /* First Article Inspection: a measured characteristic conforms when
@@ -1624,21 +1650,25 @@ records.get("/:number", async (request, response, next) => {
         const version = recordVersion(record.updated_at);
         if (version) response.setHeader("ETag", '"' + version + '"');
 
-        /* content-bound signatures: was the rest of the form edited
-           after each one was signed? (audit P2 / M6) */
+        /* content-bound signatures + any conditional-rule approval this
+           record now needs (audit P2 / M6, P3 / L4) */
         let signatures;
+        let approvalsNeeded = [];
         {
-            const sigSchema = await query(
+            const vSchema = await query(
                 "select schema from form_versions where record_type_id = $1 and version = $2",
                 [record.record_type_id, record.form_version]
             );
-            signatures = checkSignatures(sigSchema.rows[0]?.schema || null, record.data);
+            const schema = vSchema.rows[0]?.schema || null;
+            signatures = checkSignatures(schema, record.data);
+            approvalsNeeded = checkRules(schema, record.data).approvals;
         }
 
         response.json({
             record,
             version,
             ...(signatures ? { signatures } : {}),
+            ...(approvalsNeeded.length ? { approvals_needed: approvalsNeeded } : {}),
             links: links.rows,
             history: history.rows,
             transitions
@@ -2064,6 +2094,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
         `, [recordType.id]);
 
         let formVersion = 1;
+        let ruleResult = { blocked: [], warnings: [], notify: [], approvals: [] };
 
         if (formRow.rowCount > 0) {
             formVersion = formRow.rows[0].version;
@@ -2098,6 +2129,17 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
                     fields: missing
                 });
             }
+
+            /* Conditional form rules (audit P3 / L4). A matched
+               block_submit / require_field rule stops the save. */
+            ruleResult = checkRules(formRow.rows[0].schema, data);
+            if (ruleResult.blocked.length > 0) {
+                return response.status(422).json({
+                    error: "This record breaks a form rule",
+                    rule_violations: ruleResult.blocked,
+                    warnings: ruleResult.warnings
+                });
+            }
         }
 
         const created = await withTransaction(async (client) => {
@@ -2124,8 +2166,14 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             return response.status(200).json(created.row);
         }
 
+        await fireRuleNotifications(request.user.org_id, type, created.number, ruleResult.notify);
+
         publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
-        response.status(201).json(created);
+        response.status(201).json({
+            ...created,
+            ...(ruleResult.warnings.length ? { warnings: ruleResult.warnings } : {}),
+            ...(ruleResult.approvals.length ? { approvals_needed: ruleResult.approvals } : {})
+        });
     } catch (error) {
         next(error);
     }
@@ -2206,6 +2254,16 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                     type: record.type, form_version: record.form_version,
                     problems: schemaProblems
                 });
+            }
+
+            /* Conditional form rules (audit P3 / L4). */
+            const ruleResult = checkRules(schemaRow.rows[0]?.schema || null, merged);
+            if (ruleResult.blocked.length > 0) {
+                return {
+                    ruleBlocked: true,
+                    rule_violations: ruleResult.blocked,
+                    warnings: ruleResult.warnings
+                };
             }
 
             if (record.type === "audit"
@@ -2290,11 +2348,19 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                 returning id, number, title, status, severity, data, due_at, updated_at
             `, [record.id, merged, severity || null, nextDueAt, nextTitle]);
 
-            return result.rows[0];
+            return { ...result.rows[0], type: record.type, ruleResult };
         });
 
         if (!updated) {
             return response.status(404).json({ error: "Record not found" });
+        }
+
+        if (updated.ruleBlocked) {
+            return response.status(422).json({
+                error: "This record breaks a form rule",
+                rule_violations: updated.rule_violations,
+                warnings: updated.warnings
+            });
         }
 
         if (updated.stale) {
@@ -2312,12 +2378,21 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             });
         }
 
+        const rr = updated.ruleResult || { notify: [], warnings: [], approvals: [] };
+        await fireRuleNotifications(request.user.org_id, updated.type, updated.number, rr.notify);
+
         publish(request.user.org_id, {
             entity: "records", id: request.params.number, action: "updated"
         });
         const version = recordVersion(updated.updated_at);
         if (version) response.setHeader("ETag", '"' + version + '"');
-        response.json({ ...updated, version });
+
+        const { ruleResult, type, ...body } = updated;
+        response.json({
+            ...body, version,
+            ...(rr.warnings.length ? { warnings: rr.warnings } : {}),
+            ...(rr.approvals.length ? { approvals_needed: rr.approvals } : {})
+        });
     } catch (error) {
         next(error);
     }

@@ -18,6 +18,7 @@ import { beginEditing } from "./presence.js";
 import { buildUploader } from "./attach-upload.js";
 import { openFileWindow } from "./doc-windows.js";
 import { evaluate as evalExpr, identifiers as exprIdentifiers } from "./expr.js";
+import { checkRules } from "./rules.js";
 
 /* ---------- one dialog, reused ---------- */
 
@@ -1077,6 +1078,19 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
             if (value !== undefined) data[entry.field.key] = value;
         }
 
+        /* Conditional form rules - instant feedback before the round
+           trip; the server enforces the same rules authoritatively. */
+        const rules = checkRules(definition, data);
+        if (rules.blocked.length) {
+            errorBox.replaceChildren(
+                el("div", { class: "sm", style: "font-weight:600;margin-bottom:4px", text: "This form's rules block the save" }),
+                ...rules.blocked.map((m) => el("div", { text: m }))
+            );
+            errorBox.hidden = false;
+            errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
+
         save.disabled = true;
         save.textContent = "Saving...";
 
@@ -1119,11 +1133,13 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
                it is right, and it names the fields. */
             const fields = error.payload?.fields;
             const stale = error.payload?.code === "stale";
+            const ruleHits = error.payload?.rule_violations;
             errorBox.replaceChildren(
                 el("div", { text: stale
                     ? "Someone else saved this record while you were editing. Reopen it to see their change, then re-apply yours."
                     : error.message }),
-                fields ? el("div", { class: "sm", text: "Missing: " + fields.join(", ") }) : null
+                fields ? el("div", { class: "sm", text: "Missing: " + fields.join(", ") }) : null,
+                ...(Array.isArray(ruleHits) ? ruleHits.map((m) => el("div", { class: "sm", text: m })) : [])
             );
             errorBox.hidden = false;
             errorBox.scrollIntoView({ behavior: "smooth", block: "center" });
