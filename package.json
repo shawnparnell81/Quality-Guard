@@ -9,6 +9,6 @@
     "test": "cd server && node --env-file=.env --test"
   },
   "devDependencies": {
-    "typescript": "5.7.3"
+    "typescript": "7.0.2"
   }
 }
