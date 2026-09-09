@@ -1,0 +1,41 @@
+{
+  "key": "calibration_log",
+  "name": "Master Calibration Log",
+  "prefix": "CALLOG",
+  "clause": "7.1.5",
+  "category": "Measurement",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "The measurement-equipment register: one line per gage or instrument with its calibration interval, last and next due dates, and current status. (The built-in Calibration / Gages module tracks each gage as its own record with a due-date badge; this is the flat log for an org that keeps one controlled spreadsheet.)",
+  "fields": [
+    { "key": "log_owner", "label": "Log owner / custodian", "type": "text", "section": "Log details" },
+    { "key": "prepared_by", "label": "Prepared by", "type": "text", "section": "Log details" },
+    { "key": "period_covered", "label": "Period covered", "type": "text", "section": "Log details" },
+    { "key": "generated_on", "label": "Generated on", "type": "date", "section": "Log details" },
+
+    {
+      "key": "equipment", "label": "Equipment", "type": "table", "required": true, "section": "Equipment",
+      "columns": [
+        { "key": "equipment_id", "label": "Equipment ID", "type": "text" },
+        { "key": "description", "label": "Item description", "type": "text" },
+        { "key": "manufacturer", "label": "Manufacturer", "type": "text" },
+        { "key": "model", "label": "Model", "type": "text" },
+        { "key": "serial_number", "label": "Serial number (S/N)", "type": "text" },
+        { "key": "location", "label": "Location", "type": "text" },
+        { "key": "last_cal_date", "label": "Last cal date", "type": "date" },
+        { "key": "interval_months", "label": "Interval (months)", "type": "number" },
+        { "key": "next_cal_due", "label": "Next cal due date", "type": "date" },
+        { "key": "days_until_due", "label": "Days until due", "type": "number" },
+        {
+          "key": "calibration_status", "label": "Calibration status", "type": "select",
+          "options": ["Current / OK", "Due within 30 days", "Past due", "Inactive"]
+        },
+        { "key": "calibrated_by", "label": "Calibrated by", "type": "text" },
+        { "key": "cert_number", "label": "Cert / report #", "type": "text" },
+        {
+          "key": "record_status", "label": "Status", "type": "select",
+          "options": ["Active", "Inactive"]
+        }
+      ]
+    }
+  ]
+}

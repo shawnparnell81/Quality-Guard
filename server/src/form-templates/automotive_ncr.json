@@ -1,0 +1,175 @@
+{
+  "key": "automotive_ncr",
+  "name": "Automotive NCR (full report)",
+  "prefix": "ANCR",
+  "clause": "10.2 / 8.7",
+  "category": "Problem solving",
+  "standard": "IATF 16949",
+  "description": "The full automotive nonconformance report: identification, description, immediate containment (ICA), root-cause analysis with a 5-why table, the corrective action plan, effectiveness verification, customer / supplier notification, and closure with approvals. (The built-in NCR record type carries a disposition workflow; this is the flat customer-format report.)",
+  "fields": [
+    { "key": "ncr_number", "label": "NCR number", "type": "text", "required": true, "section": "Header" },
+    { "key": "revision", "label": "Revision", "type": "text", "section": "Header" },
+    { "key": "date_issued", "label": "Date issued", "type": "date", "section": "Header" },
+    {
+      "key": "document_status", "label": "Document status", "type": "select",
+      "options": ["Draft", "Active", "Closed"], "section": "Header"
+    },
+
+    { "key": "part_number", "label": "Part number / description", "type": "text", "required": true, "section": "1. Identification" },
+    { "key": "customer_supplier", "label": "Customer / supplier name", "type": "text", "section": "1. Identification" },
+    { "key": "po_job_number", "label": "Purchase order / job number", "type": "text", "section": "1. Identification" },
+    { "key": "drawing_ref", "label": "Drawing / specification reference", "type": "text", "section": "1. Identification" },
+    { "key": "qty_nonconforming", "label": "Quantity nonconforming", "type": "number", "section": "1. Identification" },
+    { "key": "qty_inspected", "label": "Total quantity inspected", "type": "number", "section": "1. Identification" },
+    {
+      "key": "detection_point", "label": "Detection point", "type": "select",
+      "options": ["Incoming inspection", "In-process", "Final inspection", "Customer return", "Field"],
+      "section": "1. Identification"
+    },
+    {
+      "key": "classification", "label": "NCR classification", "type": "select",
+      "options": ["Minor", "Major", "Critical"], "section": "1. Identification"
+    },
+    {
+      "key": "category", "label": "Nonconformance category", "type": "select",
+      "options": ["Dimensional", "Material", "Workmanship", "Documentation", "Process", "Other"],
+      "section": "1. Identification"
+    },
+    { "key": "reported_by", "label": "Reported by (name / title)", "type": "text", "section": "1. Identification" },
+    { "key": "department", "label": "Department", "type": "text", "section": "1. Identification" },
+    { "key": "date_reported", "label": "Date reported", "type": "date", "section": "1. Identification" },
+
+    { "key": "description", "label": "Nonconformance description", "type": "memo", "required": true, "section": "2. Nonconformance description" },
+    { "key": "requirement_violated", "label": "Reference standard / requirement violated", "type": "text", "section": "2. Nonconformance description" },
+    {
+      "key": "supporting_evidence", "label": "Supporting evidence", "type": "select",
+      "options": ["Attached (photos, measurements, test results)", "N/A"], "section": "2. Nonconformance description"
+    },
+
+    {
+      "key": "containment_actions", "label": "Containment actions", "type": "table", "section": "3. Immediate containment (ICA)",
+      "columns": [
+        { "key": "action", "label": "Containment action taken", "type": "text" },
+        { "key": "responsible", "label": "Responsible person", "type": "text" },
+        { "key": "target_date", "label": "Target date", "type": "date" },
+        { "key": "completion_date", "label": "Completion date", "type": "date" },
+        { "key": "status", "label": "Status", "type": "select", "options": ["Open", "Closed"] }
+      ]
+    },
+    {
+      "key": "disposition", "label": "Suspect material disposition", "type": "select",
+      "options": ["Use as-is (with concession)", "Rework", "Repair", "Scrap", "Return to supplier", "Sort"],
+      "section": "3. Immediate containment (ICA)"
+    },
+    {
+      "key": "concession_required", "label": "Concession / deviation required", "type": "select",
+      "options": ["Yes", "No"], "section": "3. Immediate containment (ICA)"
+    },
+    { "key": "concession_ref", "label": "Concession / deviation reference", "type": "text", "section": "3. Immediate containment (ICA)" },
+    { "key": "containment_verified_by", "label": "Containment verified by", "type": "text", "section": "3. Immediate containment (ICA)" },
+    { "key": "containment_verified_date", "label": "Date verified", "type": "date", "section": "3. Immediate containment (ICA)" },
+
+    {
+      "key": "rca_method", "label": "RCA method used", "type": "select",
+      "options": ["5-Why", "Fishbone (Ishikawa)", "Fault tree analysis (FTA)", "8D", "Other"],
+      "section": "4. Root cause analysis"
+    },
+    {
+      "key": "five_why", "label": "5-Why analysis", "type": "table", "section": "4. Root cause analysis",
+      "columns": [
+        { "key": "level", "label": "Why #", "type": "text" },
+        { "key": "question", "label": "Why?", "type": "text" },
+        { "key": "answer", "label": "Because...", "type": "text" }
+      ]
+    },
+    { "key": "root_cause_summary", "label": "Identified root cause (summary)", "type": "memo", "section": "4. Root cause analysis" },
+    { "key": "contributing_factors", "label": "Contributing factors / escape point", "type": "memo", "section": "4. Root cause analysis" },
+    { "key": "rca_completed_by", "label": "RCA completed by (name / title)", "type": "text", "section": "4. Root cause analysis" },
+    { "key": "rca_date", "label": "Date", "type": "date", "section": "4. Root cause analysis" },
+
+    {
+      "key": "corrective_actions", "label": "Corrective actions", "type": "table", "section": "5. Corrective action plan (CAP)",
+      "columns": [
+        { "key": "action", "label": "Corrective action description", "type": "text" },
+        { "key": "process_affected", "label": "Process / system affected", "type": "text" },
+        { "key": "owner", "label": "Owner (name / title)", "type": "text" },
+        { "key": "target_date", "label": "Target date", "type": "date" },
+        { "key": "completion_date", "label": "Completion date", "type": "date" },
+        { "key": "verification_method", "label": "Verification method", "type": "text" },
+        { "key": "status", "label": "Status", "type": "select", "options": ["Open", "Closed"] }
+      ]
+    },
+    { "key": "systemic_prevention", "label": "Systemic prevention (horizontal deployment)", "type": "memo", "section": "5. Corrective action plan (CAP)" },
+    {
+      "key": "poka_yoke", "label": "Error-proofing (poka-yoke) applied", "type": "select",
+      "options": ["Yes", "No"], "section": "5. Corrective action plan (CAP)"
+    },
+    {
+      "key": "control_plan_updated", "label": "Control plan updated", "type": "select",
+      "options": ["Yes", "No", "N/A"], "section": "5. Corrective action plan (CAP)"
+    },
+    {
+      "key": "fmea_updated", "label": "FMEA updated", "type": "select",
+      "options": ["Yes", "No", "N/A"], "section": "5. Corrective action plan (CAP)"
+    },
+    {
+      "key": "work_instructions_updated", "label": "Work instructions updated", "type": "select",
+      "options": ["Yes", "No", "N/A"], "section": "5. Corrective action plan (CAP)"
+    },
+
+    {
+      "key": "effectiveness", "label": "Effectiveness verification", "type": "table", "section": "6. Corrective action effectiveness verification",
+      "columns": [
+        { "key": "method", "label": "Verification method", "type": "text" },
+        { "key": "responsible", "label": "Responsible person", "type": "text" },
+        { "key": "date", "label": "Verification date", "type": "date" },
+        { "key": "result", "label": "Result / observations", "type": "memo" },
+        { "key": "pass_fail", "label": "Pass / fail", "type": "select", "options": ["Pass", "Fail"] }
+      ]
+    },
+    {
+      "key": "verification_evidence", "label": "Verification evidence", "type": "select",
+      "options": ["Re-inspection", "Audit", "Process monitoring", "Customer feedback", "Other"],
+      "section": "6. Corrective action effectiveness verification"
+    },
+    { "key": "effectiveness_confirmed_by", "label": "Effectiveness confirmed by (name / title)", "type": "text", "section": "6. Corrective action effectiveness verification" },
+    { "key": "effectiveness_date", "label": "Date", "type": "date", "section": "6. Corrective action effectiveness verification" },
+
+    {
+      "key": "customer_notified", "label": "Customer / supplier notified", "type": "select",
+      "options": ["Yes", "No", "N/A"], "section": "7. Customer / supplier notification"
+    },
+    {
+      "key": "notification_method", "label": "Notification method", "type": "select",
+      "options": ["Email", "Phone", "8D report", "Formal letter", "Customer portal"],
+      "section": "7. Customer / supplier notification"
+    },
+    { "key": "notification_date", "label": "Notification date", "type": "date", "section": "7. Customer / supplier notification" },
+    { "key": "contact_name", "label": "Contact name / title", "type": "text", "section": "7. Customer / supplier notification" },
+    { "key": "notification_ref", "label": "Reference number (8D / SCAR / etc.)", "type": "text", "section": "7. Customer / supplier notification" },
+    {
+      "key": "customer_approval_required", "label": "Customer approval required", "type": "select",
+      "options": ["Yes", "No"], "section": "7. Customer / supplier notification"
+    },
+
+    {
+      "key": "approvals", "label": "Closure approvals", "type": "table", "section": "8. Closure & approval",
+      "columns": [
+        {
+          "key": "role", "label": "Role", "type": "select",
+          "options": ["Quality Manager", "Operations / Production Manager", "Engineering", "Customer Representative"]
+        },
+        { "key": "name", "label": "Name", "type": "text" },
+        { "key": "date", "label": "Date", "type": "date" }
+      ]
+    },
+    { "key": "closure_date", "label": "NCR closure date", "type": "date", "section": "8. Closure & approval" },
+    {
+      "key": "final_disposition_confirmed", "label": "Final disposition confirmed", "type": "select",
+      "options": ["Yes", "No"], "section": "8. Closure & approval"
+    },
+    { "key": "lessons_learned", "label": "Lessons learned / knowledge capture", "type": "memo", "section": "8. Closure & approval" },
+    { "key": "related_documents", "label": "Related documents / NCR cross-references", "type": "memo", "section": "8. Closure & approval" },
+    { "key": "approved_by", "label": "Report approved by", "type": "signature", "section": "8. Closure & approval" }
+  ]
+}

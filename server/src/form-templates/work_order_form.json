@@ -1,0 +1,62 @@
+{
+  "key": "work_order_form",
+  "name": "Production Work Order",
+  "prefix": "WOF",
+  "clause": "8.5.1",
+  "category": "Production",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "A shop-floor work order with the traceability header, raw-material verification, the process routing with its control-plan and inspection references, and a yield / scrap sign-off. (The built-in Production Control screen tracks work orders on the work_orders table; this is the printable per-job form.)",
+  "fields": [
+    { "key": "work_order_number", "label": "Work order #", "type": "text", "required": true, "section": "1. Order & traceability" },
+    { "key": "date_issued", "label": "Date issued", "type": "date", "section": "1. Order & traceability" },
+    { "key": "part_number", "label": "Part number", "type": "text", "required": true, "section": "1. Order & traceability" },
+    { "key": "revision", "label": "Rev", "type": "text", "section": "1. Order & traceability" },
+    { "key": "customer", "label": "Customer", "type": "text", "section": "1. Order & traceability" },
+    { "key": "target_date", "label": "Target date", "type": "date", "section": "1. Order & traceability" },
+    { "key": "part_description", "label": "Part description", "type": "text", "section": "1. Order & traceability" },
+    { "key": "drawing_ref", "label": "Drawing reference", "type": "text", "section": "1. Order & traceability" },
+    { "key": "order_qty", "label": "Order quantity", "type": "number", "section": "1. Order & traceability" },
+    {
+      "key": "priority", "label": "Priority level", "type": "select",
+      "options": ["Normal", "High", "Rush"], "section": "1. Order & traceability"
+    },
+    { "key": "lot_number", "label": "Lot / batch #", "type": "text", "section": "1. Order & traceability" },
+    { "key": "special_class", "label": "Special characteristics class", "type": "text", "section": "1. Order & traceability" },
+
+    {
+      "key": "materials", "label": "Raw material & components", "type": "table", "section": "2. Raw material & components verification",
+      "columns": [
+        { "key": "material_id", "label": "Item / material ID", "type": "text" },
+        { "key": "description", "label": "Description", "type": "text" },
+        { "key": "required_qty", "label": "Required qty", "type": "text" },
+        { "key": "allocated_lot", "label": "Allocated lot #", "type": "text" },
+        { "key": "heat_cert", "label": "Heat / mill cert #", "type": "text" },
+        { "key": "inspected_by", "label": "Inspected by", "type": "text" },
+        { "key": "release_date", "label": "Release date", "type": "date" },
+        {
+          "key": "status", "label": "Status", "type": "select",
+          "options": ["Passed", "Failed", "Pending"]
+        }
+      ]
+    },
+
+    {
+      "key": "routing", "label": "Process routing", "type": "table", "section": "3. Process routing & quality control",
+      "columns": [
+        { "key": "op_number", "label": "Op #", "type": "text" },
+        { "key": "operation", "label": "Operation description", "type": "text" },
+        { "key": "work_center", "label": "Work center", "type": "text" },
+        { "key": "special_class_symbol", "label": "Special-class symbol", "type": "text" },
+        { "key": "control_plan_ref", "label": "Control plan reference", "type": "text" },
+        { "key": "inspection_method", "label": "Inspection method", "type": "text" },
+        { "key": "operator_sign", "label": "Operator sign", "type": "text" },
+        { "key": "qa_sign", "label": "QA sign", "type": "text" }
+      ]
+    },
+
+    { "key": "good_parts", "label": "Total good parts yielded", "type": "number", "section": "4. Quality validation & sign-off" },
+    { "key": "scrap_parts", "label": "Total defective / scrap parts", "type": "number", "section": "4. Quality validation & sign-off" },
+    { "key": "ncr_reference", "label": "NCR reference (if any nonconformance)", "type": "text", "section": "4. Quality validation & sign-off" },
+    { "key": "released_by", "label": "Lot released by", "type": "signature", "section": "4. Quality validation & sign-off" }
+  ]
+}
