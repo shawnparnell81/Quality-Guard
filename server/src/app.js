@@ -17,7 +17,8 @@ import { identify, requireAuth, requirePasswordCurrent, requireCsrf } from "./au
 import { auth } from "./routes/auth.js";
 import { records } from "./routes/records.js";
 import { masterdata } from "./routes/masterdata.js";
-import { dashboard, metrics } from "./routes/dashboard.js";
+import { dashboard } from "./routes/dashboard.js";
+import { metrics } from "./routes/metrics.js";
 import { access, meHandler } from "./routes/access.js";
 import { production } from "./routes/production.js";
 import { change } from "./routes/change.js";
@@ -253,8 +254,15 @@ app.use("/api", requireCsrf);
    caller's org until the tab closes. */
 app.get("/api/stream", streamHandler);
 
+/* Route mounts. Convention (docs/api-conventions.md): a feature
+   router mounts under its own /api/<feature> prefix and names its
+   paths relative to it; a cross-cutting router with no single
+   feature home mounts at bare /api and each of its routes carries
+   its own full path. New routers pick the side they belong to. */
 app.use("/api/records", records);
 app.use("/api/dashboard", dashboard);
+
+/* cross-cutting */
 app.use("/api", metrics);
 app.use("/api", access);
 app.use("/api", production);
