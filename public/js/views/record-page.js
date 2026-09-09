@@ -28,6 +28,7 @@ import { renderPpapDetail } from "./ppap.js";
 import { renderEightDDetail, renderChangeDetail } from "./change.js";
 import { renderDiDetail } from "./di.js";
 import { renderApqpDetail } from "./apqp.js";
+import { openPane, hasPanes } from "../panes/paneManager.js";
 
 const SLOT = "record-view";
 
@@ -84,6 +85,11 @@ export async function openRecordPage(number, opts = {}) {
         try { type = (await api.record(n)).record.type; }
         catch { return false; }
     }
+
+    /* A split is open - every record opened from anywhere joins it as
+       a pane rather than replacing the surface. */
+    if (hasPanes() && !opts.keepReturn) { await openPane({ type, number: n }); return true; }
+
     if (!converted(type)) return false;
 
     /* The merged surface: the record opens as its editable form with a

@@ -18,6 +18,7 @@ import { renderRecordDetail } from "./views/events.js";
 import { renderEightD, renderChange } from "./views/change.js";
 import { openCustomRecord } from "./views/form-record.js";
 import { openRecordPage } from "./views/record-page.js";
+import { openPane, hasPanes } from "./panes/paneManager.js";
 import { el, toast } from "./dom.js";
 
 const TYPE_VIEW = {
@@ -61,7 +62,11 @@ export function looksLikeRecordNumber(value) {
     return typeof value === "string" && RECORD_NUMBER_RX.test(value.trim());
 }
 
-export async function openRecord(number, typeHint) {
+/* opts.pane forces the record into the side-by-side workspace; once a
+   split is open, everything opened afterwards joins it too, so
+   linked-record chips and search results land beside what you are
+   comparing rather than replacing it. */
+export async function openRecord(number, typeHint, { pane = false } = {}) {
     const n = String(number || "").trim();
     if (!n) return;
 
@@ -85,6 +90,10 @@ export async function openRecord(number, typeHint) {
             return;
         }
     }
+
+    /* Side-by-side workspace: on request, or automatically while a
+       split is already open. */
+    if (pane || hasPanes()) { await openPane({ type, number: n }); return; }
 
     /* Full-page record view, where the type is on that path (every
        custom type, and the built-ins converted so far). Anything else

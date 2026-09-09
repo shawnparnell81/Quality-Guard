@@ -578,6 +578,104 @@ body {
     margin-bottom: 2px;
 }
 
+/* ---------- multi-pane workspace (panes/*) ---------- */
+
+#view-multi { display: flex; flex-direction: column; }
+/* the id selector above would otherwise beat [hidden] and leave the
+   workspace showing behind every other screen */
+#view-multi[hidden] { display: none; }
+
+.pane-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 8px;
+}
+
+.pane-row {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: stretch;
+    height: calc(100vh - 188px);
+    min-height: 380px;
+}
+.pane-row-row    { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+.pane-row-column { flex-direction: column; overflow-y: auto; overflow-x: hidden; height: auto; }
+
+.pane {
+    flex: 1 1 0;
+    min-width: 340px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius, 8px);
+    background: var(--surface);
+    overflow: hidden;
+}
+.pane-row-column .pane { min-height: 320px; }
+.pane.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+.pane-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--surface-2);
+}
+.pane-title {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+}
+.pane-status { flex: 0 0 auto; }
+.pane-head-sp { flex: 1 1 auto; }
+
+.pane-btn {
+    flex: 0 0 auto;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: 5px;
+    background: transparent; color: var(--ink-2);
+    font-size: 14px; line-height: 1; cursor: pointer;
+}
+.pane-btn:hover:not(:disabled) { background: var(--hairline); color: var(--ink); }
+.pane-btn:disabled { opacity: .3; cursor: default; }
+.pane-x:hover:not(:disabled) { color: var(--crit); }
+
+.pane-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px; }
+
+.pane-divider {
+    flex: 0 0 8px;
+    position: relative;
+    cursor: col-resize;
+    touch-action: none;
+}
+.pane-row-column .pane-divider { flex-basis: 8px; cursor: row-resize; }
+.pane-divider::after {
+    content: "";
+    position: absolute;
+    inset: 6px 3px;
+    border-radius: 2px;
+    background: var(--hairline);
+}
+.pane-row-column .pane-divider::after { inset: 3px 6px; }
+.pane-divider:hover::after,
+.pane-divider.is-dragging::after { background: var(--accent); }
+
+.pane-empty { padding: 40px 8px; color: var(--ink-2); }
+.pane-empty .view-sub { max-width: 46ch; }
+
+@media print {
+    .pane-row { display: block; height: auto; }
+    .pane { border: none; break-inside: avoid; margin-bottom: 24px; }
+    .pane-divider, .pane-toolbar { display: none; }
+}
+
 .view-title {
     font-size: 22px;
     font-weight: 600;

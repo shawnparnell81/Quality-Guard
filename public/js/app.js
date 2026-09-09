@@ -22,6 +22,7 @@ import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
 import { openRecord } from "./record-nav.js";
 import { trackTab, wireTabs } from "./tabs.js";
+import { wirePanes, render as renderPanes } from "./panes/paneManager.js";
 import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
 import {
     renderDrawings, renderOnboarding, renderOnboardingPacket,
@@ -100,7 +101,8 @@ const LOADERS = {
     forms:       renderForms,
     "form-library": renderFormLibrary,
     "form-record": renderFormRecord,
-    "form-import": renderFormImport
+    "form-import": renderFormImport,
+    multi:        renderPanes
 };
 
 const views = document.querySelectorAll(".view");
@@ -469,15 +471,25 @@ async function start() {
        tab that was active. */
     const restoredView = wireTabs();
 
-    /* Deep link: /app?record=CAPA-2026-0034 opens straight to that
-       record's screen with it selected. */
-    const deepRecord = new URLSearchParams(location.search).get("record");
-    if (deepRecord) {
+    /* Load the multi-pane workspace (from ?panes= or the last visit)
+       before deciding what to show. */
+    wirePanes();
+
+    /* Deep links: ?panes=ncr:NCR-2026-0142,capa:CAPA-2026-0005 opens
+       the side-by-side workspace; ?record=CAPA-2026-0034 opens one
+       record straight on its screen. */
+    const params = new URLSearchParams(location.search);
+    const deepRecord = params.get("record");
+    if (params.get("panes")) {
+        document.title = "Split view · QMS Guardian";
+        show("multi");
+    } else if (deepRecord) {
         document.title = deepRecord + " · QMS Guardian";
         try { await openRecord(deepRecord); }
         catch { show("dashboard"); }
     } else {
-        /* No deep link - reopen whatever tab the person left on. */
+        /* No deep link - reopen whatever tab the person left on.
+           LOADERS.multi rebuilds the panes from the stored workspace. */
         show(restoredView || "dashboard");
     }
 

@@ -21,7 +21,7 @@ import { openEntityForm } from "../entity-form.js";
 import { buildUploader } from "../attach-upload.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
-import { recordLink, recordOpenLink, looksLikeRecordNumber } from "../record-nav.js";
+import { recordLink, recordOpenLink, looksLikeRecordNumber, openRecord } from "../record-nav.js";
 import { openRecordPage, converted } from "./record-page.js";
 import { onStreamEvent } from "../stream.js";
 import {
@@ -756,6 +756,16 @@ export function wireRegisterClicks() {
         tbody.addEventListener("click", (event) => {
             const row = event.target.closest("tr[data-number]");
             if (!row) return;
+
+            /* Alt-click opens the record in the side-by-side workspace,
+               beside anything already there, instead of replacing the
+               current surface. */
+            if (event.altKey) {
+                event.preventDefault();
+                selectRow(tbody, row.dataset.number);
+                openRecord(row.dataset.number, type, { pane: true });
+                return;
+            }
 
             /* A modified click (Ctrl/Cmd/middle/Shift) on the record-
                number link opens the record in its own browser tab -
