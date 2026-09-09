@@ -11,7 +11,10 @@ import { randomUUID } from "node:crypto";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
-import { requirePermission, createPermissionFor, closePermissionFor } from "../auth.js";
+import {
+    requirePermission, createPermissionFor, closePermissionFor,
+    readPermissionFor, unreadableTypes
+} from "../auth.js";
 import { upload } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { fillTemplate, readTemplate } from "../excel-fill.js";
@@ -331,6 +334,20 @@ function buildRecordFilter(request) {
     const conditions = [];
     const params = [request.user.org_id];
 
+    /* Read scoping. A ?type the caller cannot read is a 403; without a
+       ?type, the register is silently narrowed to the types they can
+       read (types with no .read permission are always readable). */
+    if (request.query.type) {
+        const needed = readPermissionFor(request.query.type);
+        if (needed && !request.can(needed)) return { forbidden: needed };
+    } else {
+        const hidden = unreadableTypes(request);
+        if (hidden.length) {
+            params.push(hidden);
+            conditions.push("rt.key <> all($" + params.length + ")");
+        }
+    }
+
     if (request.query.type) {
         params.push(request.query.type);
         conditions.push("rt.key = $" + params.length);
@@ -363,7 +380,15 @@ function sortClause(request) {
 
 records.get("/", async (request, response, next) => {
     try {
-        const { where, params } = buildRecordFilter(request);
+        const filter = buildRecordFilter(request);
+        if (filter.forbidden) {
+            return response.status(403).json({
+                error: "Your role does not permit this",
+                required: filter.forbidden,
+                your_role: request.user.role_name
+            });
+        }
+        const { where, params } = filter;
 
         const limit = Math.min(Number(request.query.limit) || 100, 500);
         const offset = Math.max(Number(request.query.offset) || 0, 0);
@@ -398,7 +423,15 @@ const EXPORT_CAP = 5000;
 
 records.get("/export", async (request, response, next) => {
     try {
-        const { where, params } = buildRecordFilter(request);
+        const filter = buildRecordFilter(request);
+        if (filter.forbidden) {
+            return response.status(403).json({
+                error: "Your role does not permit this",
+                required: filter.forbidden,
+                your_role: request.user.role_name
+            });
+        }
+        const { where, params } = filter;
         const result = await query(
             SELECT_RECORD + where + sortClause(request) + " limit " + EXPORT_CAP, params);
 
@@ -1129,13 +1162,22 @@ records.get("/search", async (request, response, next) => {
         const q = (request.query.q || "").trim();
         if (q.length < 2) return response.json({ records: [] });
 
+        /* Don't surface records the caller could not open. */
+        const hidden = unreadableTypes(request);
+        const params = [request.user.org_id, "%" + q + "%"];
+        let scope = "";
+        if (hidden.length) {
+            params.push(hidden);
+            scope = " and rt.key <> all($" + params.length + ")";
+        }
+
         const result = await query(
             SELECT_RECORD + `
-               and (r.number ilike $2 or r.title ilike $2)
+               and (r.number ilike $2 or r.title ilike $2)` + scope + `
              order by r.opened_at desc
              limit 8
             `,
-            [request.user.org_id, "%" + q + "%"]
+            params
         );
 
         response.json({ records: result.rows });
@@ -1158,6 +1200,15 @@ records.get("/:number", async (request, response, next) => {
         }
 
         const record = found.rows[0];
+
+        const needed = readPermissionFor(record.type);
+        if (needed && !request.can(needed)) {
+            return response.status(403).json({
+                error: "Your role does not permit this",
+                required: needed,
+                your_role: request.user.role_name
+            });
+        }
 
         /* Links run in both directions. A complaint points at its 8D,
            and from the 8D you still want to see the complaint. */
