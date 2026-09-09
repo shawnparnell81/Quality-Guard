@@ -69,3 +69,10 @@ test("plain text passes through; a null field is tolerated", () => {
     assert.equal(formatValue(null, "legacy value"), "legacy value");
     assert.equal(formatValue({ type: "select" }, "Scrap"), "Scrap");
 });
+
+test("signature: a sealed object reads signer/role/date; a legacy string passes through", () => {
+    const sealed = { signer: "Jordan Lee", role: "Quality Manager",
+        at: "2026-09-25T14:03:00Z", data_hash: "abc" };
+    assert.equal(formatValue({ type: "signature" }, sealed), "Jordan Lee (Quality Manager) - 25 Sep 2026");
+    assert.equal(formatValue({ type: "signature" }, "Old Name - Inspector"), "Old Name - Inspector");
+});

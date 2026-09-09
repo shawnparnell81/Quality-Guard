@@ -665,3 +665,59 @@ test("the row-table PATCH and the transition endpoint honour the version too", a
     assert.equal(staleMove.status, 409);
     assert.equal(staleMove.body.code, "stale");
 });
+
+/* ---------- content-bound signatures (audit P2 / M6) ---------- */
+
+test("signing seals who/when + a hash; a later edit is flagged", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Signed Form", prefix: "SGN", clause: "8.5.1",
+        fields: [
+            { key: "finding", label: "Finding", type: "memo" },
+            { key: "signoff", label: "Sign-off", type: "signature" }
+        ]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    /* unsigned: no signature object, no annotation */
+    const draft = await api(adminCookie, "POST", "/api/records", {
+        type: "signed_form", title: "unsigned", data: { finding: "bore oversize" }
+    });
+    const draftGot = await api(adminCookie, "GET", "/api/records/" + draft.body.number);
+    assert.equal(draftGot.body.record.data.signoff, undefined);
+    assert.equal(draftGot.body.signatures, undefined);
+
+    /* sign it by ticking */
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "signed_form", title: "signed", data: { finding: "bore oversize", signoff: true }
+    });
+    const got = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    const sig = got.body.record.data.signoff;
+    assert.equal(typeof sig, "object");
+    assert.ok(sig.signer && sig.at && sig.data_hash, "sealed: who, when, hash");
+    assert.equal(sig.form_version, 1);
+    assert.equal(got.body.signatures.signoff.intact, true);
+    assert.match(got.body.signatures.signoff.note, /unchanged/);
+    const signedAt = sig.at;
+
+    /* edit a different field - the signature is now stale */
+    await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { finding: "bore oversize, MRB use-as-is" }, reason: "MRB" });
+    const after = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    assert.equal(after.body.record.data.signoff.at, signedAt, "the signature itself is untouched");
+    assert.equal(after.body.signatures.signoff.intact, false);
+    assert.match(after.body.signatures.signoff.note, /edited after signing/);
+});
+
+test("an edit never re-signs a sealed signature in whoever made it", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "signed_form", title: "resign test", data: { finding: "x", signoff: true }
+    });
+    const first = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.signoff;
+
+    /* client re-sends the field (as anything) on a later save */
+    await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { finding: "y", signoff: true }, reason: "edit" });
+    const second = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.signoff;
+
+    assert.deepEqual(second, first, "same signer, same timestamp, same hash - not re-signed");
+});

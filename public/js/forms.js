@@ -132,21 +132,37 @@ export function buildField(field, options, currentValue, context = {}) {
         }
 
         case "signature": {
-            /* Editing a record must not silently re-sign it in whoever
-               happens to be making the correction - the stored value,
-               once there is one, wins. Only a brand-new record signs
-               as the person raising it. */
+            /* A signature is sealed by the server - who, when, which
+               form version, and a hash of the rest of the form. Once
+               set it is never re-signed by an edit; until then, the
+               person completing the record ticks to sign as themself. */
             const me = currentUser();
-            const signed = currentValue || (me ? me.name + " - " + me.role_name : "");
-            input = el("input", {
-                type: "text", id, name: field.key, value: signed,
-                readonly: "readonly", class: "readonly"
-            });
-            wrapper.append(input);
-            wrapper.append(el("span", {
-                class: "field-hint",
-                text: currentValue ? "Signed when this record was created." : "Signed as you, with the time, when you save."
-            }));
+            const sealed = currentValue && typeof currentValue === "object" && currentValue.signer
+                ? currentValue
+                : (currentValue ? { signer: String(currentValue), legacy: true } : null);
+
+            if (sealed) {
+                input = el("input", {
+                    type: "text", id, name: field.key, readonly: "readonly", class: "readonly",
+                    value: sealed.signer
+                        + (sealed.role ? " (" + sealed.role + ")" : "")
+                        + (sealed.at ? " - " + new Date(sealed.at).toLocaleString() : "")
+                });
+                wrapper.append(input);
+                wrapper.append(el("span", { class: "field-hint",
+                    text: sealed.legacy
+                        ? "Signed (legacy record)."
+                        : "Signed. Any change to the record after this is flagged on its detail view." }));
+                return { wrapper, input, field };
+            }
+
+            input = el("input", { type: "checkbox", id, name: field.key });
+            wrapper.append(el("label", { class: "check-inline" }, [
+                input,
+                el("span", { text: me ? "Sign as " + me.name + (me.role_name ? " (" + me.role_name + ")" : "") : "Sign" })
+            ]));
+            wrapper.append(el("span", { class: "field-hint",
+                text: "The server records who and when, and seals it against later edits." }));
             return { wrapper, input, field };
         }
 
@@ -618,6 +634,14 @@ export function readValue(entry) {
         return entry.input.checked ? true : undefined;
     }
 
+    /* A signature: an unsigned field is a checkbox - ticked means
+       "sign me", which the server turns into a sealed record. An
+       already-signed field renders read-only and is never sent back
+       (the server keeps the stored signature regardless). */
+    if (entry.field.type === "signature") {
+        return entry.input.type === "checkbox" && entry.input.checked ? true : undefined;
+    }
+
     const raw = entry.input.value;
 
     if (raw === "" || raw === null) return undefined;
@@ -633,7 +657,11 @@ export function fieldProblem(entry) {
     const { field, input } = entry;
     const value = readValue(entry);
 
-    if (field.required && value === undefined && field.type !== "file") {
+    /* an already-signed signature field reads back undefined (it is
+       never re-sent) but is not "missing" */
+    const alreadySigned = field.type === "signature" && input && input.type !== "checkbox";
+
+    if (field.required && value === undefined && field.type !== "file" && !alreadySigned) {
         return field.type === "table"
             ? field.label + " needs at least one row"
             : field.label + " is required";
