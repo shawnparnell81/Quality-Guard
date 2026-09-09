@@ -119,7 +119,8 @@ test("the template list carries metadata and an installed map", async () => {
 
     /* the forms derived from the customer's own spreadsheets bundle
        that file + a cell map, flagged for the catalogue UI */
-    for (const key of ["work_order_form", "calibration_log", "control_plan", "production_log_form"]) {
+    for (const key of ["work_order_form", "calibration_log", "control_plan",
+        "production_log_form", "eight_d_report"]) {
         assert.equal(r.body.templates.find((t) => t.key === key).has_excel_template, true,
             key + " ships its Excel layout");
     }

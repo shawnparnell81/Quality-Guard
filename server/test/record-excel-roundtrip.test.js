@@ -254,6 +254,37 @@ test("a bundled template installs with its own spreadsheet as the layout, and fi
     assert.equal(d.routing[1].operation_desc, "CNC Mill");
 });
 
+test("the bundled 8D form fills from the user's own Blank 8D sheet", async () => {
+    const install = await api(adminCookie, "POST", "/api/form-templates/eight_d_report/install");
+    assert.equal(install.status, 201, JSON.stringify(install.body));
+    assert.equal(install.body.excel_template, true);
+
+    const { status, wb } = await downloadXlsx(adminCookie,
+        "/api/records/excel-template?type=eight_d_report");
+    assert.equal(status, 200);
+    assert.ok(wb.getWorksheet("Blank 8D"), "download is the customer's own 8D sheet");
+
+    const ws = wb.getWorksheet("Blank 8D");
+    ws.getCell("D7").value = "Global Automotive Corp";       // customer
+    ws.getCell("D13").value = "PN-4471";                     // part no / code
+    ws.getCell("F21").value = "Porosity at final inspection, 12 of 400 on lot 88.";
+    ws.getCell("C31").value = "100% sort at outgoing dock; suspect lots held.";
+    ws.getCell("C40").value = "Mould vent blocked - gas entrapment during pour.";
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+
+    const up = await uploadXlsx(adminCookie, "/api/records/excel?type=eight_d_report", buffer);
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+    assert.match(up.body.number, /^D8R-\d{4}-\d{4}$/);
+
+    const rec = await api(adminCookie, "GET", "/api/records/" + up.body.number);
+    const d = rec.body.record.data;
+    assert.equal(d.customer, "Global Automotive Corp");
+    assert.equal(d.part_no_code, "PN-4471");
+    assert.match(d.problem_statement, /Porosity at final inspection/);
+    assert.match(d.containment_actions, /100% sort/);
+    assert.match(d.root_cause, /Mould vent blocked/);
+});
+
 test("dry_run previews without creating", async () => {
     const { wb } = await downloadXlsx(adminCookie, "/api/records/excel-template?type=pfmea");
     const tableSheet = wb.worksheets.map((s) => s.name).find((n) => n !== "Form");
