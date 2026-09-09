@@ -600,3 +600,68 @@ test("an invalid link target is still refused; a bad record_type filter too", as
     });
     assert.equal(badFilter.status, 422);
 });
+
+/* ---------- optimistic concurrency on record writes (audit P2 / M8) ---------- */
+
+test("GET returns a version token; a stale PATCH is 409, a matching one wins", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "concurrency",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }] }
+    });
+    const first = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    assert.equal(typeof first.body.version, "string", "the detail response carries a version");
+    const v0 = first.body.version;
+
+    /* somebody else edits it */
+    const theirs = await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { summary_note: "their change" }, reason: "other user" });
+    assert.equal(theirs.status, 200);
+    assert.notEqual(theirs.body.version, v0, "the version moved");
+
+    /* our save, still holding v0, is rejected */
+    const stale = await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { summary_note: "our change" }, reason: "me", expected_version: v0 });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.code, "stale");
+    assert.equal(stale.body.version, theirs.body.version, "409 tells us the current version");
+
+    /* re-read, save against the fresh version, succeeds */
+    const fresh = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    const ok = await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { summary_note: "our change, rebased" }, reason: "me", expected_version: fresh.body.version });
+    assert.equal(ok.status, 200);
+});
+
+test("a PATCH that sends no version still works (older clients unaffected)", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "no version sent",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }] }
+    });
+    const r = await api(adminCookie, "PATCH", "/api/records/" + rec.body.number,
+        { data: { summary_note: "x" }, reason: "no expected_version" });
+    assert.equal(r.status, 200);
+});
+
+test("the row-table PATCH and the transition endpoint honour the version too", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "concurrency on other writes",
+        data: { checks: [{ nominal: 1, actual: 1, tol: 0.1 }] }
+    });
+    const v0 = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.version;
+    const rowId = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks[0]._id;
+
+    /* move the version on with a plain PATCH */
+    await api(adminCookie, "PATCH", "/api/records/" + rec.body.number, { data: { summary_note: "bump" }, reason: "bump" });
+
+    const staleRow = await api(adminCookie, "PATCH",
+        "/api/records/" + rec.body.number + "/table/checks",
+        { upsert: [{ _id: rowId, actual: 9 }], expected_version: v0 });
+    assert.equal(staleRow.status, 409);
+    assert.equal(staleRow.body.code, "stale");
+
+    const staleMove = await api(adminCookie, "POST",
+        "/api/records/" + rec.body.number + "/transition",
+        { to: "closed", expected_version: v0 });
+    assert.equal(staleMove.status, 409);
+    assert.equal(staleMove.body.code, "stale");
+});

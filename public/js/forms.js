@@ -733,11 +733,13 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
     let definition;
     let existing = null;
 
+    let existingVersion = null;
     try {
         definition = await api.recordForm(typeKey);
         if (number) {
             const result = await api.record(number);
             existing = result.record;
+            existingVersion = result.version || null;
         }
     } catch (error) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
@@ -1025,8 +1027,13 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
                     title: titleInput.value.trim(),
                     severity: severitySelect.value,
                     due_at: dueInput.value || null,
-                    data
+                    data,
+                    /* optimistic concurrency: if someone else saved
+                       since this editor opened, the server 409s rather
+                       than letting one edit quietly bury the other */
+                    ...(existingVersion ? { expected_version: existingVersion } : {})
                 });
+                existingVersion = result.version || existingVersion;
                 toast(result.number + " updated");
             } else {
                 const me = currentUser();
@@ -1050,8 +1057,11 @@ export async function openRecordEditor(typeKey, { number, onSaved, returnView: f
             /* The server validates everything again. When it disagrees,
                it is right, and it names the fields. */
             const fields = error.payload?.fields;
+            const stale = error.payload?.code === "stale";
             errorBox.replaceChildren(
-                el("div", { text: error.message }),
+                el("div", { text: stale
+                    ? "Someone else saved this record while you were editing. Reopen it to see their change, then re-apply yours."
+                    : error.message }),
                 fields ? el("div", { class: "sm", text: "Missing: " + fields.join(", ") }) : null
             );
             errorBox.hidden = false;
