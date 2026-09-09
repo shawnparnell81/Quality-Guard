@@ -40,6 +40,10 @@ export async function renderLpa() {
     auditsBox.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
+        /* Materialise anything now due before we read the board. The
+           server also rolls on a timer, so a failure here is not
+           fatal - it just means the next tick catches it. */
+        await api.lpaRoll().catch(() => {});
         const data = await api.lpa();
         cache = data;
         const canAudit = can("lpa.audit");

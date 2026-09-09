@@ -2,12 +2,16 @@
    Layered Process Audit, IATF 16949 clause 9.2.2.
 
    Templates hold a question bank. Schedules pair a template with a
-   layer, an area and a frequency; each carries next_due. On every
-   GET /api/lpa the server rolls schedules forward - a schedule past
-   due with no open instance gets one and its next_due moves on, and
-   an open instance past its due date is marked missed - so no cron is
-   needed. An auditor answers pass / fail / n-a per question; a fail
-   can carry the number of an NCR raised for it.
+   layer, an area and a frequency; each carries next_due. Rolling a
+   schedule forward - a schedule past due with no open instance gets
+   one and its next_due moves on, and an open instance past its due
+   date is marked missed - is a write, so it no longer rides GET
+   /api/lpa (audit fix C3: a state-changing GET is a CSRF hole and
+   breaks "GET is safe" for caches and crawlers). It runs instead on
+   a self-arming timer (startLpaRollSchedule) and from an explicit
+   POST /api/lpa/roll the screen calls when it opens. An auditor
+   answers pass / fail / n-a per question; a fail can carry the
+   number of an NCR raised for it.
    ============================================================ */
 
 import { Router } from "express";
@@ -59,6 +63,43 @@ async function rollForward(client, orgId) {
     `, [orgId]);
 }
 
+/* Roll every org that has something to roll - a due schedule or an
+   overdue open audit. Used by the timer and reusable in tests. */
+export async function rollForwardAll() {
+    const orgs = await query(`
+        select distinct org_id from (
+            select org_id from lpa_schedules
+             where active and next_due <= current_date
+            union
+            select org_id from lpa_audits
+             where status in ('scheduled', 'in_progress') and due_on < current_date
+        ) t
+    `);
+    for (const row of orgs.rows) {
+        await withTransaction((client) => rollForward(client, row.org_id));
+    }
+    return orgs.rowCount;
+}
+
+/* Self-arming hourly roll. Schedules turn over on date boundaries, so
+   hourly is plenty; the explicit POST /api/lpa/roll keeps a freshly
+   opened screen current between ticks. Single-node, like the digest;
+   a multi-node deploy guards this with a lock. */
+let rollTimer = null;
+
+export function startLpaRollSchedule() {
+    const tick = async () => {
+        try {
+            await rollForwardAll();
+        } catch (error) {
+            console.error("[lpa] roll failed: " + error.message);
+        }
+        rollTimer = setTimeout(tick, 60 * 60 * 1000);
+        if (typeof rollTimer.unref === "function") rollTimer.unref();
+    };
+    tick();
+}
+
 async function recomputeScore(client, auditId) {
     const totals = await client.query(`
         select count(*) filter (where result = 'pass')                as pass,
@@ -71,15 +112,27 @@ async function recomputeScore(client, auditId) {
     );
 }
 
-/* ---------- the screen's one fetch ---------- */
+/* ---------- roll schedules forward ---------- *
+   Idempotent and org-scoped. The screen POSTs this on open; the
+   timer runs it hourly for everyone. A write, so it is a POST, not
+   a side effect of the GET below. */
+lpa.post("/lpa/roll", requirePermission("lpa.read"), async (request, response, next) => {
+    try {
+        await withTransaction((client) => rollForward(client, request.user.org_id));
+        response.json({ rolled: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
+/* ---------- the screen's one fetch ---------- *
+   Read-only: no roll-forward here. */
 
 lpa.get("/lpa", requirePermission("lpa.read"), async (request, response, next) => {
     try {
         const orgId = request.user.org_id;
 
         const data = await withTransaction(async (client) => {
-            await rollForward(client, orgId);
-
             const [templates, schedules, audits, stats] = await Promise.all([
                 client.query(`
                     select t.id, t.name, t.description, t.active,

@@ -12,14 +12,17 @@
    have expired on its own.
    ============================================================ */
 
+import { randomUUID } from "node:crypto";
+
 import { query } from "./db.js";
 
 export const SESSION_COOKIE = "qg_session";
+export const CSRF_COOKIE = "qg_csrf";
 export const SESSION_HOURS = 12;
 
 /* Express does not parse cookies on its own, and the whole job is
    five lines, so no dependency. */
-function readCookie(request, name) {
+export function readCookie(request, name) {
     const header = request.headers.cookie;
     if (!header) return null;
 
@@ -58,10 +61,86 @@ export function setSessionCookie(response, sessionId, hours = SESSION_HOURS) {
 }
 
 export function clearSessionCookie(response) {
-    response.setHeader(
-        "Set-Cookie",
-        SESSION_COOKIE + "=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-    );
+    response.setHeader("Set-Cookie", [
+        SESSION_COOKIE + "=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0",
+        CSRF_COOKIE + "=; Path=/; SameSite=Lax; Max-Age=0"
+    ]);
+}
+
+/* CSRF: the double-submit-cookie half (audit fix C3).
+
+   qg_csrf carries a random token and is deliberately NOT HttpOnly -
+   the SPA reads it and echoes it in an X-CSRF-Token header on every
+   state-changing request (see requireCsrf). A cross-site page can
+   neither read this cookie nor set that header, so it cannot produce
+   a matching pair. SameSite=Lax stays on both cookies as the first
+   line of defence; this is the belt to its braces, and the thing
+   that still holds if a future route is a mutating GET.
+
+   Appended, not set: the session cookie is written in the same
+   response on login, and setHeader would clobber it. */
+export function setCsrfCookie(response, token = randomUUID(), hours = SESSION_HOURS) {
+    const parts = [
+        CSRF_COOKIE + "=" + token,
+        "Path=/",
+        "SameSite=Lax",
+        "Max-Age=" + hours * 3600
+    ];
+    if (process.env.NODE_ENV === "production") parts.push("Secure");
+    response.append("Set-Cookie", parts.join("; "));
+    return token;
+}
+
+const CSRF_SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function hostOf(urlString) {
+    try { return new URL(urlString).host; }
+    catch { return null; }
+}
+
+/* Rejects a state-changing request that looks cross-site (audit fix
+   C3).
+
+   The gate is Origin / Referer. A browser always attaches one to a
+   state-changing request and a page cannot forge another site's
+   value; when present it must be this same host. That, with the
+   SameSite=Lax session cookie (which is not even sent on a
+   cross-site POST) and no CORS, is what stops a forged write.
+
+   For requests that already look like a browser (an Origin or
+   Referer is set) the double-submit token is also required: the SPA
+   reads the non-HttpOnly qg_csrf cookie and echoes it in
+   X-CSRF-Token, and the two must match.
+
+   A caller with no Origin and no Referer is not a browser
+   navigation - a CSRF attack rides a browser - so a script, an
+   integration or a test harness passes here and is gated by
+   requireAuth alone. */
+export function requireCsrf(request, response, next) {
+    if (CSRF_SAFE_METHODS.has(request.method)) return next();
+
+    const stated = request.headers.origin || request.headers.referer || null;
+    if (!stated) return next();
+
+    const from = hostOf(stated);
+    const allowed = [request.headers.host, request.headers["x-forwarded-host"]]
+        .filter(Boolean);
+    if (!from || !allowed.includes(from)) {
+        return response.status(403).json({
+            error: "This request looks cross-site and was refused",
+            code: "csrf"
+        });
+    }
+
+    const cookie = readCookie(request, CSRF_COOKIE);
+    const header = request.headers["x-csrf-token"];
+    if (!cookie || !header || header !== cookie) {
+        return response.status(403).json({
+            error: "Missing or invalid CSRF token", code: "csrf"
+        });
+    }
+
+    next();
 }
 
 /* Finds the person behind a request, or null.
@@ -121,6 +200,18 @@ export async function identify(request, response, next) {
 
             request.user = user;
             request.permissions = new Set(granted.rows.map((row) => row.permission_key));
+
+            /* Hand the SPA a CSRF token to echo on writes (audit fix
+               C3). Set on GETs only - the auth POSTs carry their own
+               credential and a write response is not where the client
+               reads it - and only when the caller does not already
+               hold one. The SPA's first call is GET /api/me, so it
+               always has the token before its first write. */
+            if (request.method === "GET"
+                && !readCookie(request, CSRF_COOKIE)
+                && !request.path.startsWith("/auth/")) {
+                setCsrfCookie(response);
+            }
         }
 
         request.can = (key) => request.permissions.has(key);

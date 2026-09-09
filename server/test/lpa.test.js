@@ -2,10 +2,11 @@
    Layered Process Audit, IATF 16949 clause 9.2.2.
 
    Covers: templates and their question bank, a schedule that rolls
-   forward on GET /api/lpa into an audit instance, answering pass /
-   fail / n-a with a linked NCR on a fail, completing an audit, a
-   past-due schedule producing a missed audit, and the LPA health
-   block on the dashboard.
+   forward on POST /api/lpa/roll into an audit instance (the plain
+   GET is read-only now - audit fix C3), answering pass / fail / n-a
+   with a linked NCR on a fail, completing an audit, a past-due
+   schedule producing a missed audit, and the LPA health block on
+   the dashboard.
 
    Self-contained: provisions a throwaway org, runs the app on a spare
    port, cleans up after itself.
@@ -152,12 +153,16 @@ test("a template and its question bank", async () => {
     assert.equal(full.body.questions.find((q) => q.critical).text.startsWith("Operator can state"), true);
 });
 
-test("a schedule rolls forward into an audit on GET /api/lpa", async () => {
+test("a schedule rolls forward into an audit on POST /api/lpa/roll", async () => {
     const s = await api(adminCookie, "POST", "/api/lpa/schedules", {
         template_id: templateId, layer: "Shift supervisor", area: "Cell 4",
         frequency_days: 7, start_on: localToday()
     });
     assert.equal(s.status, 201, JSON.stringify(s.body));
+
+    /* the plain GET is read-only now - the roll is its own call */
+    const rolled = await api(adminCookie, "POST", "/api/lpa/roll");
+    assert.equal(rolled.status, 200);
 
     const board = await api(adminCookie, "GET", "/api/lpa");
     assert.equal(board.status, 200);
@@ -165,9 +170,10 @@ test("a schedule rolls forward into an audit on GET /api/lpa", async () => {
     assert.ok(audit, "an audit was materialised for the due schedule");
     assert.equal(audit.status, "scheduled");
 
-    /* next_due moved a week out, so a second read does not duplicate. */
+    /* next_due moved a week out, so a second roll does not duplicate. */
     const sched = board.body.schedules.find((x) => x.area === "Cell 4");
     assert.notEqual(sched.next_due.slice(0, 10), localToday());
+    await api(adminCookie, "POST", "/api/lpa/roll");
     const again = await api(adminCookie, "GET", "/api/lpa");
     assert.equal(again.body.audits.filter((a) => a.area === "Cell 4").length, 1);
 });
@@ -224,6 +230,7 @@ test("a past-due schedule produces a missed audit and shows on the dashboard", a
     });
     assert.equal(s.status, 201);
 
+    await api(adminCookie, "POST", "/api/lpa/roll");
     const board = await api(adminCookie, "GET", "/api/lpa");
     const missed = board.body.audits.find((a) => a.area === "Cell 12");
     assert.ok(missed, "the overdue schedule produced an audit");

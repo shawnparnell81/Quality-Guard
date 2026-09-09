@@ -8,13 +8,34 @@
 
 const BASE = "/api";
 
+/* CSRF double-submit (audit fix C3). The server sets a non-HttpOnly
+   qg_csrf cookie on the session; every state-changing request has to
+   echo its value in this header, which a cross-site page cannot do.
+   Reading document.cookie is fine here - this token is not a secret
+   the way the session cookie is, it only has to be unforgeable from
+   another origin. */
+function csrfToken() {
+    const match = document.cookie.match(/(?:^|;\s*)qg_csrf=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+const CSRF_SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function withCsrf(method, headers) {
+    if (!CSRF_SAFE.has(method)) {
+        const token = csrfToken();
+        if (token) headers["X-CSRF-Token"] = token;
+    }
+    return headers;
+}
+
 /* Identity travels in an httpOnly session cookie the browser attaches
    on its own. Nothing here reads or sets it, which is the point: code
    that cannot touch the cookie cannot leak it. */
 async function request(method, path, body) {
     const options = {
         method,
-        headers: {},
+        headers: withCsrf(method, {}),
         credentials: "same-origin"
     };
 
@@ -76,6 +97,7 @@ async function postForm(path, formData, method = "POST") {
         response = await fetch(BASE + path, {
             method,
             credentials: "same-origin",
+            headers: withCsrf(method, {}),
             body: formData
         });
     } catch (cause) {
@@ -450,6 +472,7 @@ export const api = {
                 + "/deliverables/" + encodeURIComponent(slot)),
 
     lpa:            ()      => get("/lpa"),
+    lpaRoll:        ()      => request("POST", "/lpa/roll"),
     lpaTemplate:    (id)    => get("/lpa/templates/" + encodeURIComponent(id)),
     createLpaTemplate: (payload) => request("POST", "/lpa/templates", payload),
     updateLpaTemplate: (id, payload) =>

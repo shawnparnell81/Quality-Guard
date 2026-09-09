@@ -867,12 +867,13 @@ function safeRegexTest(pattern, value) {
    constraints the client renderer enforces but nothing on the server
    did - field.pattern and field.min / field.max.
 
-   Report-only for now (audit fix C1). POST and PATCH log what this
-   finds so the real violation rate is visible in production; a later
-   release promotes it to a 422 on write. Observing first means a
-   schema quirk we have not anticipated cannot lock a customer out of
-   saving a record. Computed columns are skipped - they are
-   server-derived by applyComputedColumns, not sent by the caller. */
+   Enforced on write (audit fix C1): a payload with any problem here
+   is rejected 422. On PATCH the check is narrowed to values the
+   write actually introduces (see introducedProblems) so a schema
+   that changed under an existing record cannot lock its owner out of
+   editing the parts they did not touch. Computed columns are skipped
+   - they are server-derived by applyComputedColumns, not sent by the
+   caller. */
 function validateAgainstSchema(schema, data) {
     const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
     if (!data || typeof data !== "object" || fields.length === 0) return [];
@@ -922,6 +923,27 @@ function validateAgainstSchema(schema, data) {
     }
 
     return problems;
+}
+
+/* Keep only the problems a PATCH actually introduces - where the
+   incoming value for that field differs from what the record already
+   holds. A bad value already living in the record (options changed,
+   an old import) is left alone so its owner can still edit the rest.
+   For a table, any change to the array re-validates the whole thing;
+   an untouched table is skipped wholesale. */
+function introducedProblems(problems, incoming, prior) {
+    const changedTable = new Map();
+    const isChangedTable = (key) => {
+        if (!changedTable.has(key)) {
+            changedTable.set(key,
+                JSON.stringify(incoming?.[key]) !== JSON.stringify(prior?.[key]));
+        }
+        return changedTable.get(key);
+    };
+    return problems.filter((p) => {
+        if (p.column !== undefined) return isChangedTable(p.field);
+        return JSON.stringify(incoming?.[p.field]) !== JSON.stringify(prior?.[p.field]);
+    });
 }
 
 /* Parse the upload into
@@ -2128,13 +2150,18 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             data = ensureRowIds(formRow.rows[0].schema, data);
             data = stampSignatures(formRow.rows[0].schema, data, {}, request.user, formVersion);
 
-            /* Report-only schema check (audit fix C1). Logs bad values,
-               does not reject - see validateAgainstSchema. */
+            /* Schema check (audit fix C1). A create must be clean:
+               every value is new, so every problem counts. Logged as
+               well as rejected so the violation rate stays visible. */
             const schemaProblems = validateAgainstSchema(formRow.rows[0].schema, data);
             if (schemaProblems.length > 0) {
                 log.warn("record_write_schema_mismatch", {
                     phase: "create", type, form_version: formVersion,
                     problems: schemaProblems
+                });
+                return response.status(422).json({
+                    error: "Some values do not fit the form",
+                    schema_violations: schemaProblems
                 });
             }
 
@@ -2268,17 +2295,21 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             merged = stampSignatures(schemaRow.rows[0]?.schema || null, merged,
                 record.data, request.user, record.form_version);
 
-            /* Report-only schema check (audit fix C1). Runs against the
-               caller's own change set, not the merged record, so it
-               flags what this write introduces rather than legacy data
-               it never touched. Logs, does not reject. */
-            const schemaProblems = validateAgainstSchema(schemaRow.rows[0]?.schema || null, data);
+            /* Schema check (audit fix C1). Narrowed to the values this
+               write introduces vs. what the record already holds, so
+               legacy data the caller never touched cannot block the
+               save. Logged and rejected. */
+            const schemaProblems = introducedProblems(
+                validateAgainstSchema(schemaRow.rows[0]?.schema || null, data),
+                data, record.data
+            );
             if (schemaProblems.length > 0) {
                 log.warn("record_write_schema_mismatch", {
                     phase: "update", number: request.params.number,
                     type: record.type, form_version: record.form_version,
                     problems: schemaProblems
                 });
+                return { schemaBlocked: true, schema_violations: schemaProblems };
             }
 
             /* Conditional form rules (audit P3 / L4). */
@@ -2385,6 +2416,13 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
                 error: "This record breaks a form rule",
                 rule_violations: updated.rule_violations,
                 warnings: updated.warnings
+            });
+        }
+
+        if (updated.schemaBlocked) {
+            return response.status(422).json({
+                error: "Some values do not fit the form",
+                schema_violations: updated.schema_violations
             });
         }
 
