@@ -1422,8 +1422,9 @@ export async function renderRecordDetail(type, number, { slot = type } = {}) {
 
 /* Raise a DI from an audit finding: department + what the audit found,
    then land on the new DI. The DI is created and linked to the audit
-   in one call (POST /api/di). */
-function raiseDiFromAudit(audit) {
+   in one call (POST /api/di). Exported so the merged record surface
+   (record-context.js) can offer it from an audit's context panel. */
+export function raiseDiFromAudit(audit) {
     openEntityForm({
         title: "Raise a Discrepancy Investigation",
         fields: [
@@ -1438,9 +1439,6 @@ function raiseDiFromAudit(audit) {
             department: values.department,
             finding: values.finding
         }),
-        onSaved: (di) => {
-            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "di" } }));
-            renderDiDetail(di.number);
-        }
+        onSaved: (di) => { openRecordPage(di.number, { type: "di" }); }
     });
 }

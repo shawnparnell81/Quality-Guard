@@ -565,6 +565,19 @@ body {
    pixels wide is harder to read, not easier. */
 #record-editor-body form { max-width: 640px; }
 
+/* S3 merged surface: the workflow / links / attachments / history the
+   record carries, rendered below the editable form (record-context.js).
+   A hairline rule sets it apart from the fields without making it look
+   like a separate page. */
+.record-context {
+    max-width: 640px;
+    margin-top: 22px;
+}
+.record-context-rule {
+    border-top: 1px solid var(--hairline, #e3e3e0);
+    margin-bottom: 2px;
+}
+
 .view-title {
     font-size: 22px;
     font-weight: 600;

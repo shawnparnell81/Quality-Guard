@@ -1597,11 +1597,18 @@
 
     <!-- ============ RECORD EDITOR (create / edit, full page) ============ -->
     <section class="view" id="view-record-editor" hidden>
-        <div class="view-head">
-            <button class="btn no-print" id="record-editor-back" type="button" style="margin-bottom:10px">&larr; Back</button>
-            <h1 class="view-title" id="record-editor-title">New record</h1>
-            <p class="view-sub" id="record-editor-sub"></p>
+        <div class="view-head record-page-head">
+            <button class="btn no-print" id="record-editor-back" type="button">&larr; Back</button>
+            <div class="record-page-title">
+                <h1 class="view-title" id="record-editor-title">New record</h1>
+                <span id="record-editor-status"></span>
+            </div>
+            <div class="row no-print record-page-actions" id="record-editor-actions" hidden>
+                <button class="btn no-print" type="button" id="record-editor-print">Print</button>
+                <button class="btn no-print" type="button" id="record-editor-pdf">PDF</button>
+            </div>
         </div>
+        <p class="view-sub" id="record-editor-sub" style="margin:-8px 0 16px"></p>
 
         <div class="panel">
             <div class="panel-body" id="record-editor-body"></div>
