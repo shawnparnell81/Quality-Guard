@@ -581,6 +581,59 @@ body {
 .dim-repeater td.row-tools .btn { padding: 1px 7px; }
 .dim-repeater td.row-tools .btn + .btn { margin-left: 3px; }
 
+/* ---------- card-per-row table entry on a tablet / phone (M14) ----------
+   Below this width a wide PFMEA grid is unusable horizontally, so each
+   row stacks into a labelled card. The .table-wrap can stop scrolling
+   because nothing overflows any more. */
+@media (max-width: 820px) {
+    .table-wrap { overflow-x: visible; }
+    .dim-repeater, .dim-repeater tbody { display: block; width: 100%; }
+    .dim-repeater thead { display: none; }
+    .dim-repeater tr {
+        display: block;
+        border: 1px solid var(--hairline);
+        border-radius: var(--radius, 6px);
+        padding: 8px 10px;
+        margin-bottom: 10px;
+        background: var(--surface);
+    }
+    .dim-repeater td {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 4px 0;
+        border: 0;
+    }
+    .dim-repeater td::before {
+        content: attr(data-label);
+        flex: 0 0 40%;
+        max-width: 40%;
+        color: var(--ink-3);
+        font-size: 11px;
+    }
+    .dim-repeater td.row-tools {
+        display: flex;
+        justify-content: flex-end;
+        gap: 6px;
+        width: auto;
+        margin-top: 6px;
+        padding-top: 8px;
+        border-top: 1px solid var(--hairline-2, var(--hairline));
+    }
+    .dim-repeater td.row-tools::before { content: none; }
+    .dim-repeater input,
+    .dim-repeater select,
+    .dim-repeater textarea { min-width: 0; }
+}
+
+/* The record editor's field grids collapse to a single column, and
+   the content gutter tightens, on the same class of screen. */
+@media (max-width: 820px) {
+    .form-section .field-grid { grid-template-columns: 1fr; }
+    .content { padding: 16px; }
+    #record-editor-body form { max-width: none; }
+}
+
 /* A computed cell (RPN and the like): read-only, filled by the form
    as its inputs change, and flagged once it crosses a threshold. */
 .computed-cell {

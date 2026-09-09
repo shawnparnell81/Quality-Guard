@@ -280,7 +280,10 @@ export function buildField(field, options, currentValue, context = {}) {
                 for (const column of columns) {
                     const input = cellInput(column, seed[column.key]);
                     cellByKey[column.key] = input;
-                    const td = el("td", {}, input);
+                    /* data-label drives the card-per-row layout on a
+                       narrow screen (style.css @media) - the header is
+                       hidden there so each cell needs to name itself. */
+                    const td = el("td", { "data-label": column.label || column.key }, input);
                     tdByKey[column.key] = td;
                     tr.append(td);
                 }
