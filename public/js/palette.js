@@ -9,20 +9,8 @@
 
 import { api } from "./api.js";
 import { show } from "./app.js";
-import { renderRecordDetail } from "./views/events.js";
+import { openRecord } from "./record-nav.js";
 import { el } from "./dom.js";
-
-/* Screen a record type's search results should jump to. */
-const TYPE_TO_VIEW = {
-    ncr: "ncr", capa: "capa", complaint: "complaints",
-    audit: "audit", risk: "risk", eightd: "d8", ecn: "change"
-};
-
-/* These five share events.js's generic detail renderer, so the
-   palette can deep-select the exact record. 8D and change control
-   have their own screens (change.js) worth navigating to even though
-   this cannot pick out the specific record within them yet. */
-const DIRECT_JUMP_TYPES = new Set(["ncr", "capa", "complaint", "audit", "risk"]);
 
 let overlay = null;
 let input = null;
@@ -159,12 +147,10 @@ async function activate(index) {
         return;
     }
 
-    const view = TYPE_TO_VIEW[item.type];
-    if (view) await show(view);
-
-    if (DIRECT_JUMP_TYPES.has(item.type)) {
-        await renderRecordDetail(item.type, item.number);
-    }
+    /* record-nav routes to the full-page record view where the type
+       supports it, and falls back to the type's own screen otherwise
+       (8D and change control keep their bespoke screens). */
+    await openRecord(item.number, item.type);
 }
 
 export function openPalette() {

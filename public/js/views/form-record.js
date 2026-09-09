@@ -24,6 +24,7 @@ import {
 } from "../dom.js";
 import { formatValue } from "../format.js";
 import { recordOpenLink } from "../record-nav.js";
+import { openRecordPage } from "./record-page.js";
 
 const BUILT_IN = new Set([
     "ncr", "capa", "eightd", "complaint", "scar", "audit", "ecn", "risk", "apqp", "di"
@@ -66,8 +67,6 @@ export async function renderFormRecord() {
                 ? "Create one with “+ New form type”, or import from Excel."
                 : "No custom forms have been created yet."
         })));
-        document.getElementById("form-record-detail").replaceChildren();
-        document.getElementById("form-record-detail-number").textContent = "Select a record";
         return;
     }
 
@@ -111,12 +110,8 @@ async function renderTypeRecords(typeKey) {
             ? selectedNumber : (records[0] && records[0].number);
         if (target) {
             mark(table, target);
-            await renderCustomDetail(typeKey, target);
         } else {
             selectedNumber = null;
-            document.getElementById("form-record-detail").replaceChildren(
-                el("p", { class: "sm dim", text: "No records of this type yet." }));
-            document.getElementById("form-record-detail-number").textContent = "Select a record";
         }
     } catch (error) {
         errorRow(table, 4, error);
@@ -128,10 +123,16 @@ function mark(table, number) {
         tr.classList.toggle("row-selected", tr.dataset.number === number));
 }
 
-async function renderCustomDetail(typeKey, number) {
+/* `slot` is the id prefix the detail is written into. It is now
+   always the full-page record view ("record-view", passed by
+   record-page.js); the "form-record" default is kept for safety. */
+export async function renderCustomDetail(typeKey, number, { slot = "record-view" } = {}) {
     selectedNumber = number;
-    const panel = document.getElementById("form-record-detail");
-    const head = document.getElementById("form-record-detail-number");
+    const rerender = () => renderCustomDetail(typeKey, number, { slot });
+    const fullPage = slot !== "form-record";
+    const panel = document.getElementById(slot + "-detail");
+    const head = document.getElementById(slot + "-detail-number");
+    if (!panel) return;
     panel.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     let record, transitions, definition, signatures;
@@ -146,7 +147,11 @@ async function renderCustomDetail(typeKey, number) {
         return;
     }
 
-    if (head) head.replaceChildren(recordOpenLink(record.number));
+    if (head) {
+        head.replaceChildren(fullPage
+            ? document.createTextNode(record.number)
+            : recordOpenLink(record.number));
+    }
 
     const children = [
         el("div", { class: "row", style: "gap:6px;margin-bottom:8px" }, [
@@ -241,16 +246,21 @@ async function renderCustomDetail(typeKey, number) {
 
     children.push(buildUploader({
         url: api.recordAttachmentsUrl(number),
-        onComplete: () => renderCustomDetail(typeKey, number)
+        onComplete: () => rerender()
     }));
+
+    const backView = fullPage ? "record" : "form-record";
 
     const edit = el("button", { class: "btn no-print", type: "button", text: "Edit" });
     edit.addEventListener("click", () => {
         document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "record-editor" } }));
         openRecordEditor(typeKey, {
             number: record.number,
-            returnView: "form-record",
-            onSaved: () => { selectedNumber = record.number; }
+            returnView: backView,
+            onSaved: () => {
+                selectedNumber = record.number;
+                if (fullPage) openRecordPage(record.number, { type: typeKey, keepReturn: true });
+            }
         });
     });
 
@@ -263,8 +273,11 @@ async function renderCustomDetail(typeKey, number) {
             selectedNumber = r.number;
             document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "record-editor" } }));
             openRecordEditor(typeKey, {
-                number: r.number, returnView: "form-record",
-                onSaved: () => { selectedNumber = r.number; }
+                number: r.number, returnView: backView,
+                onSaved: () => {
+                    selectedNumber = r.number;
+                    if (fullPage) openRecordPage(r.number, { type: typeKey, keepReturn: true });
+                }
             });
         } catch (error) {
             toast(error.message, "error");
@@ -298,7 +311,8 @@ async function renderCustomDetail(typeKey, number) {
             b.addEventListener("click", async () => {
                 try {
                     await api.transition(record.number, { to: step.to, reason: "" });
-                    await renderTypeRecords(typeKey);
+                    if (fullPage) await rerender();
+                    else await renderTypeRecords(typeKey);
                 } catch (error) { toast(error.message, "error"); }
             });
             row.append(b);
@@ -390,7 +404,7 @@ export function wireFormRecord() {
         const tr = event.target.closest("tr[data-number]");
         if (!tr) return;
         mark(table, tr.dataset.number);
-        renderCustomDetail(currentType, tr.dataset.number);
+        openRecordPage(tr.dataset.number, { type: currentType, returnView: "form-record" });
     });
 
     const newRecord = document.getElementById("form-record-new");

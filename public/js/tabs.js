@@ -34,9 +34,11 @@ const EXTRA_LABELS = {
     "menu-layout": "Menu Layout"
 };
 
-/* Screens that must never get their own tab. */
+/* Screens that must never get their own tab. The full-page record
+   view (#view-record) is transient like the editor - opening a record
+   leaves the strip showing the module tab it was opened from. */
 const NOT_TABBABLE = new Set([
-    "record-editor", "onboarding", "onboarding-packet"
+    "record-editor", "record", "onboarding", "onboarding-packet"
 ]);
 
 let strip = null;

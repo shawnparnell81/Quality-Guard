@@ -11,6 +11,7 @@ import { getOrganization, describeCountdown } from "../org.js";
 import { VENDOR_STATUS } from "./resources.js";
 import { show } from "../app.js";
 import { renderRecordDetail } from "./events.js";
+import { openRecordPage } from "./record-page.js";
 import { can } from "../session.js";
 import { onStreamEvent } from "../stream.js";
 import {
@@ -307,8 +308,11 @@ export function wireDashboard() {
 async function jumpToTrendPoint(type, numbers) {
     if (!numbers || numbers.length === 0) return;
 
-    await show(type);
-    await renderRecordDetail(type, numbers[numbers.length - 1]);
+    const number = numbers[numbers.length - 1];
+    if (!await openRecordPage(number, { type, returnView: type })) {
+        await show(type);
+        await renderRecordDetail(type, number);
+    }
 
     if (numbers.length > 1) {
         toast(numbers.length + " records that week - showing " + numbers[numbers.length - 1]);
