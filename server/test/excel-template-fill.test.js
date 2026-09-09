@@ -262,3 +262,52 @@ test("a Form Builder type with no template still exports the generated grid", as
     const wb = await fetchXlsx(adminCookie, "/api/records/excel-template?type=" + made.body.key);
     assert.ok(wb.getWorksheet("Form"), "falls back to the generated Form sheet");
 });
+
+/* ---- excel_map validation + version reconcile (audit M4) ---- */
+
+test("a structurally broken map is rejected on save", async () => {
+    const good = (await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/excel-map")).body.map;
+
+    const badCell = JSON.parse(JSON.stringify(good));
+    badCell.fields.__title__ = { sheet: "Layout Inspection", cell: "not-a-cell" };
+    let r = await api(adminCookie, "PUT", "/api/record-types/" + typeKey + "/excel-map", { map: badCell });
+    assert.equal(r.status, 422);
+    assert.match(r.body.error, /cell address/i);
+
+    const badRow = JSON.parse(JSON.stringify(good));
+    const tKey = Object.keys(badRow.tables)[0];
+    badRow.tables[tKey].first_data_row = -3;
+    r = await api(adminCookie, "PUT", "/api/record-types/" + typeKey + "/excel-map", { map: badRow });
+    assert.equal(r.status, 422);
+    assert.match(r.body.error, /first_data_row/i);
+});
+
+test("the map carries built_for_version and reports drift once the form changes", async () => {
+    const fresh = (await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/excel-map")).body;
+    assert.equal(typeof fresh.built_for_version, "number");
+    assert.equal(fresh.stale, false, "fresh - built against the current version");
+    assert.deepEqual(fresh.dropped, [], "nothing to drop yet");
+    const wasVersion = fresh.built_for_version;
+
+    /* publish a new form version: one field removed, one added */
+    const form = (await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/form")).body;
+    const dropKey = Object.keys(fresh.map.fields).find(
+        (k) => !k.startsWith("__") && form.fields.some((f) => f.key === k));
+    assert.ok(dropKey, "the map places at least one real field to remove");
+    const nextFields = form.fields
+        .filter((f) => f.key !== dropKey)
+        .concat({ key: "inspector_note", label: "Inspector note", type: "text" });
+    const put = await api(adminCookie, "PUT", "/api/record-types/" + typeKey + "/form", { fields: nextFields });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    assert.equal(put.body.excel_map_carried, true, "the template map came forward");
+    assert.ok(put.body.excel_unmapped.includes("inspector_note"), "the new field is flagged unmapped");
+    assert.ok(put.body.excel_dropped.includes(dropKey), "the removed field's mapping was dropped in the carry-forward");
+
+    /* GET now points at the new version, which carries the reconciled map */
+    const drift = (await api(adminCookie, "GET", "/api/record-types/" + typeKey + "/excel-map")).body;
+    assert.equal(drift.has_template, true, "the map was carried onto the new version");
+    assert.equal(drift.built_for_version, wasVersion, "still anchored to the reviewed version");
+    assert.equal(drift.stale, true, "so the layout screen knows to review it");
+    assert.ok(drift.unmapped.includes("inspector_note"));
+    assert.ok(!(dropKey in drift.map.fields), "the removed field's cell mapping is gone");
+});

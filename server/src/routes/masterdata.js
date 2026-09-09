@@ -16,7 +16,7 @@ import { saveDocumentFile, readDocumentFile } from "../document-storage.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { upload } from "../uploads.js";
 import { publish } from "../stream.js";
-import { buildDefaultMap } from "../excel-fill.js";
+import { buildDefaultMap, mapProblem, reconcileMap } from "../excel-fill.js";
 import { identifiers as exprIdentifiers } from "../../../public/js/expr.js";
 
 const XLSX_EXTENSIONS = new Set([".xlsx"]);
@@ -490,10 +490,13 @@ export function problemWith(fields) {
 /* PUT /api/record-types/ncr/form   { fields: [...] }
 
    Publishing a new version, never overwriting the one records were
-   captured under - unchanged from how the Form Builder already
-   described itself working, now made real. Conditional rules are not
-   editable from here yet, so whatever the previous version had is
-   carried forward untouched rather than silently dropped. */
+   captured under. Conditional rules are carried forward from the
+   previous version (not editable here yet). So is the Excel template
+   map (audit M4): its cell assignments for fields that survived are
+   kept, entries for removed fields are dropped, and the response
+   lists any fields the map does not place - the map is marked as
+   built against the OLD version so the Excel-layout screen shows it
+   needs a review. */
 masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
     async (request, response, next) => {
         try {
@@ -513,9 +516,9 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
 
             const recordTypeId = typeRow.rows[0].id;
 
-            const version = await withTransaction(async (client) => {
+            const outcome = await withTransaction(async (client) => {
                 const previous = await client.query(`
-                    select version, schema from form_versions
+                    select version, schema, excel_map from form_versions
                      where record_type_id = $1
                      order by version desc limit 1
                 `, [recordTypeId]);
@@ -523,10 +526,31 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
                 const nextVersion = previous.rowCount > 0 ? previous.rows[0].version + 1 : 1;
                 const rules = previous.rowCount > 0 ? (previous.rows[0].schema.rules || []) : [];
 
+                /* Carry the Excel template map forward, reconciled. */
+                let excelMap = null;
+                let unmapped = [];
+                let dropped = [];
+                const prevMap = previous.rows[0]?.excel_map;
+                if (prevMap && prevMap.template_path) {
+                    const r = reconcileMap(prevMap, { fields });
+                    excelMap = {
+                        ...r.map,
+                        /* keep built_for_version pointing at the version
+                           the cells were last reviewed against, so GET
+                           reports this map as stale until someone
+                           confirms it on the layout screen */
+                        built_for_version: prevMap.built_for_version || (nextVersion - 1)
+                    };
+                    unmapped = r.unmapped;
+                    dropped = r.dropped;
+                }
+
                 await client.query(`
-                    insert into form_versions (record_type_id, version, schema, published_at, published_by)
-                    values ($1, $2, $3, now(), $4)
-                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules }), request.user.id]);
+                    insert into form_versions
+                        (record_type_id, version, schema, excel_map, published_at, published_by)
+                    values ($1, $2, $3, $4, now(), $5)
+                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules }),
+                    excelMap ? JSON.stringify(excelMap) : null, request.user.id]);
 
                 await client.query(`
                     insert into audit_log
@@ -534,10 +558,15 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
                     values ($1, 'form_versions', $2, 'published', $3, $4)
                 `, [request.user.org_id, recordTypeId, "v" + nextVersion + ", " + fields.length + " fields", request.user.id]);
 
-                return nextVersion;
+                return { version: nextVersion, excel_map_carried: Boolean(excelMap), unmapped, dropped };
             });
 
-            response.json({ key: request.params.key, version, field_count: fields.length });
+            response.json({
+                key: request.params.key, version: outcome.version, field_count: fields.length,
+                excel_map_carried: outcome.excel_map_carried,
+                excel_unmapped: outcome.unmapped,
+                excel_dropped: outcome.dropped
+            });
         } catch (error) {
             next(error);
         }
@@ -571,11 +600,26 @@ masterdata.get("/record-types/:key/excel-map", requirePermission("forms.manage")
             const fv = await latestVersionRow(request.user.org_id, request.params.key);
             if (!fv) return response.status(404).json({ error: "No such record type" });
             const map = fv.excel_map || null;
+
+            /* What the map and the current schema disagree about (audit
+               M4), so the review screen can show it. */
+            let drift = { dropped: [], unmapped: [], stale: false };
+            if (map && map.template_path) {
+                const r = reconcileMap(map, fv.schema || { fields: [] });
+                drift = {
+                    dropped: r.dropped,
+                    unmapped: r.unmapped,
+                    stale: Boolean(map.built_for_version) && map.built_for_version !== fv.version
+                };
+            }
+
             response.json({
                 version: fv.version,
                 has_template: Boolean(map && map.template_path),
+                built_for_version: (map && map.built_for_version) || null,
                 map,
-                schema: fv.schema
+                schema: fv.schema,
+                ...drift
             });
         } catch (error) {
             next(error);
@@ -600,7 +644,11 @@ masterdata.post("/record-types/:key/excel-template", requirePermission("forms.ma
                 "excel-templates", XLSX_EXTENSIONS, request.file.originalname, request.file.buffer);
 
             const guess = buildDefaultMap(workbook, fv.schema || { fields: [] });
-            const map = { template_path: templatePath, template_name: request.file.originalname, ...guess };
+            const map = {
+                template_path: templatePath, template_name: request.file.originalname,
+                built_for_version: fv.version,   // the schema this guess was made against (audit M4)
+                ...guess
+            };
 
             await query("update form_versions set excel_map = $1 where id = $2",
                 [JSON.stringify(map), fv.id]);
@@ -627,20 +675,27 @@ masterdata.put("/record-types/:key/excel-map", requirePermission("forms.manage")
             if (!fv) return response.status(404).json({ error: "No such record type" });
 
             /* Keep the stored template_path - the client edits cell
-               assignments, not where the file lives. */
+               assignments, not where the file lives. A save re-anchors
+               the map to the current form version (audit M4). */
             const current = fv.excel_map || {};
             const map = {
                 ...incoming,
                 template_path: current.template_path || incoming.template_path,
-                template_name: current.template_name || incoming.template_name
+                template_name: current.template_name || incoming.template_name,
+                built_for_version: fv.version
             };
             if (!map.template_path) {
                 return response.status(422).json({ error: "Upload a template file first" });
             }
 
+            const bad = mapProblem(map);
+            if (bad) return response.status(422).json({ error: bad });
+
             await query("update form_versions set excel_map = $1 where id = $2",
                 [JSON.stringify(map), fv.id]);
-            response.json({ version: fv.version, map });
+
+            const drift = reconcileMap(map, fv.schema || { fields: [] });
+            response.json({ version: fv.version, map, unmapped: drift.unmapped });
         } catch (error) {
             next(error);
         }

@@ -18,7 +18,7 @@ import {
 import { upload } from "../uploads.js";
 import { log } from "../logger.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
-import { fillTemplate, readTemplate } from "../excel-fill.js";
+import { fillTemplate, readTemplate, reconcileMap } from "../excel-fill.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { formatValue, isEmpty } from "../../../public/js/format.js";
 import { evaluate as evalExpr } from "../../../public/js/expr.js";
@@ -1461,11 +1461,23 @@ records.get("/:number/excel", async (request, response, next) => {
             'attachment; filename="' + record.number + '.xlsx"');
 
         /* If this form version has the customer's own layout mapped,
-           the export is that spreadsheet with the values dropped in. */
+           the export is that spreadsheet with the values dropped in.
+           Reconcile the map against the schema first (audit M4): drop
+           entries for fields the form no longer has, and tell the
+           caller in the response headers what the map and the schema
+           now disagree about, so a form edit does not silently send a
+           field to the wrong cell or nowhere. */
         const fill = await loadTemplateFill(record.record_type_id, record.form_version);
         if (fill) {
+            const { map, dropped, unmapped } = reconcileMap(fill.map, fill.schema);
+            const stale = Boolean(fill.map.built_for_version)
+                && fill.map.built_for_version !== record.form_version;
+            response.setHeader("X-Excel-Map-Stale", stale ? "true" : "false");
+            if (dropped.length) response.setHeader("X-Excel-Map-Dropped", dropped.join(","));
+            if (unmapped.length) response.setHeader("X-Excel-Unmapped-Fields", unmapped.join(","));
+
             const { buffer } = await fillTemplate(
-                fill.templateBuffer, fill.map, fill.schema,
+                fill.templateBuffer, map, fill.schema,
                 { title: record.title, data: record.data });
             response.send(Buffer.from(buffer));
             return;

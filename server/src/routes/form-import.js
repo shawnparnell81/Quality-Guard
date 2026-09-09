@@ -729,7 +729,7 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
                         values ($1, 'record_types', $2, 'created_from_import', $3, $4)
                     `, [request.user.org_id, recordTypeId, key + " (" + prefix + ")", request.user.id]);
 
-                    return { applied_key: key, created: true, name, prefix };
+                    return { applied_key: key, created: true, name, prefix, version: 1 };
                 }
 
                 /* publish a new version of an existing type */
@@ -783,7 +783,11 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
                 const templatePath = await saveUploadedFile(
                     "excel-templates", XLSX_EXTENSIONS, "template.xlsx", buf);
                 const guess = buildDefaultMap(wb, { fields });
-                const map = { template_path: templatePath, template_name: imp.rows[0].name + ".xlsx", ...guess };
+                const map = {
+                    template_path: templatePath, template_name: imp.rows[0].name + ".xlsx",
+                    built_for_version: result.version,   // audit M4
+                    ...guess
+                };
 
                 await query(`
                     update form_versions set excel_map = $1
