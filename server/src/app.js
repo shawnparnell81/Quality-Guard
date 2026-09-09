@@ -64,6 +64,45 @@ async function checkDatabase() {
 
 app.use(express.json({ limit: "1mb" }));
 
+/* Security headers on every response - the static pages, the app
+   shell and the API alike. Hand-rolled rather than pull in a
+   dependency for a handful of setHeader calls, the same posture the
+   cookie parser in auth.js takes.
+
+   The CSP ships Report-Only: it blocks nothing, but a browser reports
+   any resource the policy would have refused, so the inline <script>
+   blocks still in login.html / change-password.html / landing.html
+   show up as the work to do before it can be enforced. style-src
+   keeps 'unsafe-inline' on purpose - the front end leans on style=""
+   attributes and dynamically built inline styles, and style injection
+   is a far smaller risk than script. HSTS is only sent in production,
+   never over plain http in development. */
+const CONTENT_SECURITY_POLICY = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "script-src 'self'",
+    "connect-src 'self'",
+    "img-src 'self' data: https://images.pexels.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com"
+].join("; ");
+
+app.use((request, response, next) => {
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader("X-Frame-Options", "DENY");
+    response.setHeader("Referrer-Policy", "same-origin");
+    response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    response.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+    response.setHeader("Content-Security-Policy-Report-Only", CONTENT_SECURITY_POLICY);
+    if (process.env.NODE_ENV === "production") {
+        response.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+    }
+    next();
+});
+
 /* The public address is the pitch, not the product. Visiting the bare
    domain shows the landing page; the working application only lives
    at /app, which nobody reaches without going through sign-in first
@@ -271,6 +310,21 @@ const server = app.listen(PORT, () => {
     console.log("  App:     http://localhost:" + PORT + "/app");
     console.log("  Health:  http://localhost:" + PORT + "/api/health");
     console.log("  Ready:   http://localhost:" + PORT + "/api/ready");
+
+    /* Several protections are gated on NODE_ENV=production and default
+       to OFF: the Secure flag on the session cookie, hiding 5xx detail
+       from clients, HSTS, and the guard that ignores the 30-day
+       "remember me" session. Silent in dev is fine; silent on a real
+       deployment is the foot-gun. Say so, loudly, once. */
+    if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
+        console.warn(
+            "\n  !!  NODE_ENV is not \"production\".\n"
+            + "  !!  Secure cookies, 5xx-detail suppression, HSTS and the\n"
+            + "  !!  remember-me guard are ALL DISABLED. Set NODE_ENV=production\n"
+            + "  !!  for any deployment reachable off localhost.\n"
+        );
+    }
+
     log.info("server_started", { port: PORT, version: VERSION, node: process.version });
     startDigestSchedule();
 });
