@@ -38,7 +38,10 @@ export function slotOf(pane) { return "pane-" + pane.id; }
 /* The body element for a pane - the cached one (already rendered) or
    a fresh empty div. paneLayout calls this while building shells. */
 export function bodyFor(pane) {
-    const key = pane.type + ":" + (pane.number || "new");
+    /* mode is in the key so switching a pane to "edit" gets a fresh
+       body (the form, not the read-only detail) and switching back
+       gets a fresh read-only body with the saved values. */
+    const key = pane.type + ":" + (pane.number || "new") + ":" + (pane.mode || "view");
     const cached = bodyCache.get(pane.id);
     if (cached && cached.dataset.paneKey === key) return cached;
     const fresh = el("div", { class: "pane-body", id: slotOf(pane) + "-detail" });
@@ -47,10 +50,14 @@ export function bodyFor(pane) {
     return fresh;
 }
 
-/* Load a pane's record into its body, unless it is already loaded. */
-export async function mountPane(pane) {
+/* Load a pane's content into its body, unless it is already loaded.
+   onEditDone (from paneManager) is what an in-pane editor calls on
+   save or cancel. */
+export async function mountPane(pane, onEditDone) {
     const body = document.getElementById(slotOf(pane) + "-detail");
     if (!body || body.dataset.loaded === "1") { restoreScroll(pane, body); return; }
+
+    if (pane.mode === "edit") return mountEditor(pane, body, onEditDone);
 
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading…" }));
     const slot = slotOf(pane);
@@ -67,6 +74,23 @@ export async function mountPane(pane) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
     }
     restoreScroll(pane, body);
+}
+
+async function mountEditor(pane, body, onEditDone) {
+    body.replaceChildren(el("p", { class: "sm dim", text: "Loading…" }));
+    try {
+        const { openRecordEditor } = await import("../forms.js");
+        await openRecordEditor(pane.type, {
+            number: pane.number,
+            host: body,
+            headerless: true,
+            custom: !BUILT_IN.has(pane.type),
+            onDone: () => { if (onEditDone) onEditDone(); }
+        });
+        body.dataset.loaded = "1";
+    } catch (error) {
+        body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
+    }
 }
 
 function restoreScroll(pane, body) {

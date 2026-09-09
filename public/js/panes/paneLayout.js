@@ -36,8 +36,11 @@ function emptyState() {
 
 function shell(pane, index, ws, cb, body) {
     const last = index === ws.panes.length - 1;
+    const editing = pane.mode === "edit";
     const s = el("section", {
-        class: "pane" + (pane.id === ws.active ? " is-active" : ""),
+        class: "pane"
+            + (pane.id === ws.active ? " is-active" : "")
+            + (editing ? " is-editing" : ""),
         "data-pane-id": pane.id, tabindex: "0",
         style: "flex-grow:" + pane.weight
     });
@@ -52,6 +55,14 @@ function shell(pane, index, ws, cb, body) {
         el("span", { class: "pane-title", id: "pane-" + pane.id + "-detail-number", text: pane.title }),
         el("span", { id: "pane-" + pane.id + "-detail-status", class: "pane-status" }),
         el("span", { class: "pane-head-sp" }),
+        editing
+            ? el("span", { class: "pane-editing-tag", text: "editing" })
+            : (pane.number ? el("button", {
+                class: "pane-btn pane-edit", type: "button", title: "Edit this record",
+                "aria-label": "Edit " + (pane.title || "record"),
+                disabled: (ws.editing && ws.editing !== pane.id) ? "disabled" : undefined,
+                onClick: () => cb.onEdit(pane.id)
+            }, "✎") : null),
         el("button", {
             class: "pane-btn", type: "button", title: "Move right",
             disabled: last ? "disabled" : undefined,

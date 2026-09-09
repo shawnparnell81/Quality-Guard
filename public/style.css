@@ -646,6 +646,19 @@ body {
 .pane-btn:hover:not(:disabled) { background: var(--hairline); color: var(--ink); }
 .pane-btn:disabled { opacity: .3; cursor: default; }
 .pane-x:hover:not(:disabled) { color: var(--crit); }
+.pane-edit:hover:not(:disabled) { color: var(--accent); }
+
+.pane.is-editing { border-color: var(--accent); }
+.pane.is-editing .pane-head { background: var(--accent-tint); }
+.pane-editing-tag {
+    flex: 0 0 auto;
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding: 2px 6px;
+}
+.pane-body form { max-width: 640px; }
 
 .pane-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px; }
 
