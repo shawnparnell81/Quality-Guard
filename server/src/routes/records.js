@@ -398,7 +398,72 @@ const SORT_COLUMNS = {
    severity / open / q filters, so an exported sheet is exactly what
    the register shows. Returns the fragment (leading " and ", or "")
    and the params array starting with the org id - no limit/offset. */
-function buildRecordFilter(request) {
+/* ---------- data.<key> register filters (audit P2 / M13) ----------
+   ?filter=key:op:value  (repeatable). `key` is a published field key,
+   or "<tablekey>.<colkey>" to match ANY row of a table field. Every
+   value is a bound parameter; every key is checked against the form
+   schema and a strict charset, so no caller text is interpolated into
+   SQL. Requires ?type - that is where the schema comes from. */
+const FILTER_OPS = new Set(["eq", "ne", "gt", "gte", "lt", "lte", "contains", "present", "absent"]);
+const SQL_CMP = { gt: ">", gte: ">=", lt: "<", lte: "<=" };
+const FILTER_KEY_RX = /^[a-z0-9_]+$/i;
+
+function fieldCondition(colExpr, op, value, params) {
+    if (op === "present") return colExpr + " is not null and " + colExpr + " <> ''";
+    if (op === "absent")  return "(" + colExpr + " is null or " + colExpr + " = '')";
+    params.push(value);
+    const p = "$" + params.length;
+    if (op === "eq")       return colExpr + " = " + p;
+    if (op === "ne")       return "(" + colExpr + " is distinct from " + p + ")";
+    if (op === "contains") return colExpr + " ilike ('%' || " + p + " || '%')";
+    /* gt/gte/lt/lte - only compare cells that actually look numeric,
+       so a stray text value cannot 500 the query on a bad cast */
+    return colExpr + " ~ '^-?[0-9]+(\\.[0-9]+)?$' and (" + colExpr + ")::numeric "
+        + SQL_CMP[op] + " " + p + "::numeric";
+}
+
+function parseDataFilters(rawList, schema, params) {
+    const fields = (schema && schema.fields) || [];
+    const flat = new Set(fields.filter((f) => f.type !== "table").map((f) => f.key));
+    const tables = new Map(fields.filter((f) => f.type === "table")
+        .map((f) => [f.key, new Set((f.columns || []).map((c) => c.key))]));
+
+    const conditions = [];
+    const rejected = [];
+
+    for (const raw of rawList) {
+        const parts = String(raw).split(":");
+        const key = parts[0];
+        const op = parts[1];
+        const value = parts.slice(2).join(":");
+
+        if (!op || !FILTER_OPS.has(op)) { rejected.push(raw + " (unknown operator)"); continue; }
+        if (op !== "present" && op !== "absent" && value === "") {
+            rejected.push(raw + " (missing value)"); continue;
+        }
+
+        const dot = key.indexOf(".");
+        if (dot === -1) {
+            if (!FILTER_KEY_RX.test(key) || !flat.has(key)) {
+                rejected.push(raw + " (no such field)"); continue;
+            }
+            conditions.push(fieldCondition("(r.data->>'" + key + "')", op, value, params));
+        } else {
+            const tkey = key.slice(0, dot);
+            const ckey = key.slice(dot + 1);
+            if (!FILTER_KEY_RX.test(tkey) || !FILTER_KEY_RX.test(ckey)
+                || !(tables.get(tkey) && tables.get(tkey).has(ckey))) {
+                rejected.push(raw + " (no such table column)"); continue;
+            }
+            const inner = fieldCondition("(e->>'" + ckey + "')", op, value, params);
+            conditions.push("exists (select 1 from jsonb_array_elements("
+                + "coalesce(r.data->'" + tkey + "', '[]'::jsonb)) e where " + inner + ")");
+        }
+    }
+    return { conditions, rejected };
+}
+
+async function buildRecordFilter(request) {
     const conditions = [];
     const params = [request.user.org_id];
 
@@ -437,7 +502,31 @@ function buildRecordFilter(request) {
         conditions.push("(r.number ilike $" + params.length + " or r.title ilike $" + params.length + ")");
     }
 
-    return { where: conditions.length ? " and " + conditions.join(" and ") : "", params };
+    /* data.<key> filters, if any - need the type's published schema */
+    let filterWarnings = [];
+    const rawFilters = [].concat(request.query.filter || []).filter(Boolean);
+    if (rawFilters.length) {
+        if (!request.query.type) {
+            filterWarnings = ["field filters were ignored: add ?type to say which form's fields"];
+        } else {
+            const schemaRow = await query(`
+                select fv.schema from form_versions fv
+                  join record_types rt on rt.id = fv.record_type_id
+                 where rt.org_id = $1 and rt.key = $2 and fv.published_at is not null
+                 order by fv.version desc limit 1
+            `, [request.user.org_id, request.query.type]);
+            const { conditions: dataConds, rejected } =
+                parseDataFilters(rawFilters, schemaRow.rows[0]?.schema, params);
+            conditions.push(...dataConds);
+            filterWarnings = rejected;
+        }
+    }
+
+    return {
+        where: conditions.length ? " and " + conditions.join(" and ") : "",
+        params,
+        filterWarnings
+    };
 }
 
 function sortClause(request) {
@@ -448,7 +537,7 @@ function sortClause(request) {
 
 records.get("/", async (request, response, next) => {
     try {
-        const filter = buildRecordFilter(request);
+        const filter = await buildRecordFilter(request);
         if (filter.forbidden) {
             return response.status(403).json({
                 error: "Your role does not permit this",
@@ -473,7 +562,9 @@ records.get("/", async (request, response, next) => {
         response.json({
             count: rows.rowCount,
             total: totals.rows[0].total,
-            records: rows.rows
+            records: rows.rows,
+            ...(filter.filterWarnings && filter.filterWarnings.length
+                ? { filter_warnings: filter.filterWarnings } : {})
         });
     } catch (error) {
         next(error);
@@ -491,7 +582,7 @@ const EXPORT_CAP = 5000;
 
 records.get("/export", async (request, response, next) => {
     try {
-        const filter = buildRecordFilter(request);
+        const filter = await buildRecordFilter(request);
         if (filter.forbidden) {
             return response.status(403).json({
                 error: "Your role does not permit this",
