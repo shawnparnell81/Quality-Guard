@@ -16,6 +16,7 @@ import { show } from "./app.js";
 import { api } from "./api.js";
 import { renderRecordDetail } from "./views/events.js";
 import { renderEightD, renderChange } from "./views/change.js";
+import { openCustomRecord } from "./views/form-record.js";
 import { el, toast } from "./dom.js";
 
 const TYPE_VIEW = {
@@ -90,8 +91,10 @@ export async function openRecord(number, typeHint) {
             /* scar - a real type, but with no screen to open it on. */
             toast(n + " has no dedicated screen yet", "error");
         } else if (viewExists("form-record")) {
-            /* A type someone created: the generic Custom Forms screen. */
-            document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "form-record" } }));
+            /* A type someone created: the generic Custom Forms screen,
+               with this record picked. */
+            await show("form-record");
+            await openCustomRecord(type, n);
         } else {
             toast(n + " - open it from its own screen", "error");
         }

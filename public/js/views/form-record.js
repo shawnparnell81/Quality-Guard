@@ -32,6 +32,17 @@ const BUILT_IN = new Set([
 let currentType = null;
 let selectedNumber = null;
 
+/* Deep link (record-nav.js): open the Custom Forms screen with a
+   specific custom-type record already picked. renderFormRecord keeps
+   currentType if it is still valid, and renderTypeRecords keeps
+   selectedNumber if it is still in the list, so setting both here is
+   enough to land on the right row. */
+export async function openCustomRecord(typeKey, number) {
+    currentType = typeKey;
+    selectedNumber = number;
+    await renderFormRecord();
+}
+
 export async function renderFormRecord() {
     const select = document.getElementById("form-record-type");
     const table = document.getElementById("form-record-table");
