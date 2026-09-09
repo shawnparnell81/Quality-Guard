@@ -14,8 +14,8 @@
        (the same starting matrix Ridgeline has - a company edits its
        own copy afterwards through the permission matrix screen,
        which can never again affect any other company's)
-     - all eight record types, each with a working workflow and a
-       plain default form
+     - every built-in record type (src/record-definitions/), each with
+       a working workflow and a plain default form
      - one admin account, holding every permission, with a temporary
        password that must be replaced on first sign-in
 
@@ -27,6 +27,7 @@
 
 import { pool, withTransaction } from "../src/db.js";
 import { hashPassword, generateTemporaryPassword } from "../src/passwords.js";
+import { allDefinitions } from "../src/record-definitions/index.js";
 
 /* ---------- the starting role list and what each one may do ----------
    Exactly the matrix Ridgeline was seeded with. A new company gets
@@ -143,431 +144,9 @@ const GRANTS = {
        a list that could drift from it. */
 };
 
-/* ---------- record types, workflows and default forms ----------
-   Every state key and permission used here already exists (states are
-   defined right alongside their type; permissions come from the
-   catalog seeded once, globally, by db/seed.sql). Nothing invented. */
-
-const RECORD_TYPES = [
-    { key: "ncr",       name: "Nonconformance",      prefix: "NCR",  clause: "8.7" },
-    { key: "capa",      name: "Corrective Action",   prefix: "CAPA", clause: "10.2" },
-    { key: "eightd",    name: "8D Investigation",    prefix: "8D",   clause: "10.2" },
-    { key: "complaint", name: "Customer Complaint",  prefix: "COMP", clause: "8.2.1" },
-    { key: "scar",      name: "Supplier Corrective", prefix: "SCAR", clause: "8.4" },
-    { key: "audit",     name: "Internal Audit",      prefix: "AUD",  clause: "9.2" },
-    { key: "ecn",       name: "Engineering Change",  prefix: "ECN",  clause: "8.5.6" },
-    { key: "risk",      name: "Risk or Opportunity", prefix: "R",    clause: "6.1" },
-    { key: "apqp",      name: "APQP Program",        prefix: "APQP", clause: "8.3" },
-    { key: "di",        name: "Discrepancy Investigation", prefix: "DI", clause: "9.2" },
-    { key: "fair",      name: "First Article Inspection",  prefix: "FAIR", clause: "8.5.1" },
-    { key: "ppap",      name: "PPAP Submission",           prefix: "PPAP", clause: "8.3.4.4" }
-];
-
-const WORKFLOWS = {
-    ncr: {
-        states: [
-            ["draft", "Draft", 1, false], ["containment", "Containment", 2, false],
-            ["mrb", "MRB review", 3, false], ["disposition", "Disposition executed", 4, false],
-            ["verify", "Verification", 5, false], ["closed", "Closed", 6, true]
-        ],
-        transitions: [
-            ["draft", "containment", "ncr.contain"], ["containment", "mrb", "ncr.disposition"],
-            ["mrb", "disposition", "ncr.disposition"], ["disposition", "verify", "ncr.contain"],
-            ["verify", "closed", "ncr.close"]
-        ]
-    },
-    /* Five-phase CAPA process (clause 10.2) - see migration 046, which
-       brings existing orgs to the same shape. */
-    capa: {
-        states: [
-            ["initiation", "Initiation & evaluation", 1, false],
-            ["investigation", "Investigation & root cause", 2, false],
-            ["planning", "Action planning", 3, false],
-            ["implementation", "Implementation & monitoring", 4, false],
-            ["effectiveness", "Effectiveness verification", 5, false],
-            ["closed", "Closed", 6, true],
-            ["escalated", "Escalated", 7, true]
-        ],
-        transitions: [
-            ["initiation", "investigation", "capa.create"],
-            ["initiation", "closed", "capa.close"],
-            ["investigation", "planning", "capa.create"],
-            ["planning", "implementation", "capa.create"],
-            ["implementation", "effectiveness", "capa.create"],
-            ["effectiveness", "closed", "capa.close"],
-            ["effectiveness", "planning", "capa.create"],
-            ["effectiveness", "escalated", "capa.close"]
-        ]
-    },
-    eightd: {
-        states: [
-            ["d1", "D1 Team formed", 1, false], ["d2", "D2 Problem described", 2, false],
-            ["d3", "D3 Interim containment", 3, false], ["d4", "D4 Root cause", 4, false],
-            ["d5", "D5 Corrective action", 5, false], ["d6", "D6 Implement and validate", 6, false],
-            ["d7", "D7 Prevent recurrence", 7, false], ["d8", "D8 Recognise the team", 8, false],
-            ["closed", "Closed", 9, true]
-        ],
-        transitions: [
-            ["d1", "d2", "capa.create"], ["d2", "d3", "ncr.contain"], ["d3", "d4", "capa.create"],
-            ["d4", "d5", "capa.create"], ["d5", "d6", "capa.create"], ["d6", "d7", "capa.create"],
-            ["d7", "d8", "capa.create"], ["d8", "closed", "capa.close"]
-        ]
-    },
-    complaint: {
-        states: [
-            ["draft", "Draft", 1, false], ["investigating", "Investigating", 2, false],
-            ["with_logistics", "With logistics", 3, false], ["response_drafted", "Response drafted", 4, false],
-            ["response_received", "Customer response in", 5, false], ["closed", "Closed", 6, true]
-        ],
-        transitions: [
-            ["draft", "investigating", "complaint.create"], ["investigating", "with_logistics", "complaint.create"],
-            ["investigating", "response_drafted", "complaint.respond"], ["with_logistics", "response_drafted", "complaint.respond"],
-            ["response_drafted", "response_received", "complaint.respond"], ["response_received", "closed", "complaint.respond"]
-        ]
-    },
-    scar: {
-        states: [
-            ["draft", "Draft", 1, false], ["awaiting_8d", "Awaiting supplier 8D", 2, false],
-            ["response_received", "Response received", 3, false], ["closed", "Closed", 4, true]
-        ],
-        transitions: [
-            ["draft", "awaiting_8d", "scar.issue"], ["awaiting_8d", "response_received", "scar.issue"],
-            ["response_received", "closed", "scar.issue"]
-        ]
-    },
-    audit: {
-        states: [
-            ["draft", "Draft", 1, false], ["scheduled", "Scheduled", 2, false],
-            ["overdue", "Overdue", 3, false], ["closed", "Closed", 4, true]
-        ],
-        transitions: [
-            ["draft", "scheduled", "audit.schedule"], ["scheduled", "overdue", "audit.schedule"],
-            ["scheduled", "closed", "audit.close"], ["overdue", "closed", "audit.close"]
-        ]
-    },
-    ecn: {
-        states: [
-            ["draft", "Draft", 1, false], ["impact", "Impact assessment", 2, false],
-            ["review", "In review", 3, false], ["approved", "Approved", 4, false],
-            ["implemented", "Implemented", 5, true]
-        ],
-        transitions: [
-            ["draft", "impact", "change.create"], ["impact", "review", "change.create"],
-            ["review", "approved", "change.approve"], ["approved", "implemented", "change.approve"]
-        ]
-    },
-    risk: {
-        states: [
-            ["draft", "Draft", 1, false], ["unmitigated", "Unmitigated", 2, false],
-            ["opportunity", "Opportunity", 3, false], ["in_progress", "In progress", 4, false],
-            ["controlled", "Controlled", 5, true]
-        ],
-        transitions: [
-            ["draft", "unmitigated", "risk.manage"], ["draft", "opportunity", "risk.manage"],
-            ["unmitigated", "in_progress", "risk.manage"], ["opportunity", "in_progress", "risk.manage"],
-            ["in_progress", "controlled", "risk.manage"]
-        ]
-    },
-    /* The five states here are the five APQP phases themselves - a
-       program's workflow position on screen IS its phase, nothing
-       else tracks that separately. */
-    apqp: {
-        states: [
-            ["draft", "Draft", 1, false],
-            ["plan_define", "Phase 1 - Plan & Define Program", 2, false],
-            ["product_design", "Phase 2 - Product Design & Dev.", 3, false],
-            ["process_design", "Phase 3 - Process Design & Dev.", 4, false],
-            ["validation", "Phase 4 - Product & Process Validation", 5, false],
-            ["production", "Phase 5 - Feedback & Corrective Action", 6, false],
-            ["closed", "Closed", 7, true]
-        ],
-        transitions: [
-            ["draft", "plan_define", "apqp.manage"],
-            ["plan_define", "product_design", "apqp.manage"],
-            ["product_design", "process_design", "apqp.manage"],
-            ["process_design", "validation", "apqp.manage"],
-            ["validation", "production", "apqp.manage"],
-            ["production", "closed", "apqp.manage"]
-        ]
-    },
-
-    di: {
-        states: [
-            ["open", "Open", 1, false],
-            ["investigating", "Investigating", 2, false],
-            ["linked_closure", "Awaiting form closure", 3, false],
-            ["closed", "Closed", 4, true]
-        ],
-        transitions: [
-            ["open", "investigating", "di.manage"],
-            ["investigating", "linked_closure", "di.manage"],
-            ["linked_closure", "investigating", "di.manage"],
-            ["linked_closure", "closed", "di.close"]
-        ]
-    },
-
-    fair: {
-        states: [
-            ["draft", "Draft", 1, false],
-            ["in_progress", "In progress", 2, false],
-            ["complete", "Complete", 3, false],
-            ["approved", "Approved", 4, true],
-            ["rejected", "Rejected", 5, true]
-        ],
-        transitions: [
-            ["draft", "in_progress", "fair.manage"],
-            ["in_progress", "complete", "fair.manage"],
-            ["complete", "in_progress", "fair.manage"],
-            ["complete", "approved", "fair.manage"],
-            ["complete", "rejected", "fair.manage"]
-        ]
-    },
-
-    ppap: {
-        states: [
-            ["draft", "Draft", 1, false],
-            ["assembling", "Assembling package", 2, false],
-            ["submitted", "Submitted", 3, false],
-            ["interim", "Interim approval", 4, false],
-            ["approved", "Approved", 5, true],
-            ["rejected", "Rejected", 6, true]
-        ],
-        transitions: [
-            ["draft", "assembling", "ppap.manage"],
-            ["assembling", "submitted", "ppap.manage"],
-            ["submitted", "interim", "ppap.manage"],
-            ["submitted", "approved", "ppap.manage"],
-            ["submitted", "rejected", "ppap.manage"],
-            ["interim", "approved", "ppap.manage"],
-            ["interim", "rejected", "ppap.manage"],
-            ["rejected", "assembling", "ppap.manage"]
-        ]
-    }
-};
-
-/* Plain, generic default forms - free-text where Ridgeline's own forms
-   link to master data (parts, gages, lots) that a brand new company
-   has not entered yet. A company can move a field to a link once it
-   has something for that field to link to. */
-const FORMS = {
-    ncr: [
-        { key: "part_number",   label: "Part number",       type: "text" },
-        { key: "lot_number",    label: "Lot or serial",     type: "text" },
-        { key: "qty_affected",  label: "Quantity affected", type: "number", min: 0 },
-        { key: "characteristic", label: "Characteristic",   type: "text" },
-        { key: "measured",      label: "Measured value",    type: "text" },
-        { key: "gage_id",       label: "Gage used",         type: "text" },
-        { key: "disposition",   label: "Disposition",       type: "select", required: true,
-          options: ["Rework", "Scrap", "Use-as-is", "Return to supplier", "Regrade"] },
-        { key: "containment",   label: "Containment",       type: "memo" }
-    ],
-    /* Grouped by CAPA phase (section). Only problem_statement is
-       required at creation; the workflow enforces the rest. Matches
-       the form migration 046 publishes for existing orgs. */
-    capa: [
-        { key: "source",               label: "Source",                     type: "text", section: "Initiation & evaluation" },
-        { key: "problem_statement",    label: "Problem statement",          type: "memo", required: true, section: "Initiation & evaluation" },
-        { key: "trigger_event",        label: "Trigger event",              type: "memo", section: "Initiation & evaluation" },
-        { key: "preliminary_findings", label: "Preliminary investigation",  type: "memo", section: "Initiation & evaluation" },
-        { key: "significance",         label: "Significance",               type: "select", options: ["Low", "Medium", "High", "Critical"], section: "Initiation & evaluation" },
-        { key: "capa_warranted",       label: "CAPA warranted",             type: "boolean", section: "Initiation & evaluation" },
-        { key: "necessity_rationale",  label: "Necessity determination",    type: "memo", section: "Initiation & evaluation" },
-
-        { key: "investigation_team",   label: "Investigation team",         type: "text", section: "Investigation & root cause" },
-        { key: "rca_method",           label: "RCA method",                 type: "select", options: ["5 Why", "Fishbone", "Fault Tree", "Human Factors", "FMEA", "Other"], section: "Investigation & root cause" },
-        { key: "why_1",                label: "Why 1",                      type: "memo", section: "Investigation & root cause" },
-        { key: "why_2",                label: "Why 2",                      type: "memo", section: "Investigation & root cause" },
-        { key: "why_3",                label: "Why 3",                      type: "memo", section: "Investigation & root cause" },
-        { key: "why_4",                label: "Why 4",                      type: "memo", section: "Investigation & root cause" },
-        { key: "why_5",                label: "Why 5",                      type: "memo", section: "Investigation & root cause" },
-        { key: "root_cause",           label: "Root cause",                 type: "memo", section: "Investigation & root cause" },
-        { key: "risk_ref",             label: "Linked risk record",         type: "text", section: "Investigation & root cause" },
-
-        { key: "actions", label: "Action plan", type: "table", rowAttachments: true, section: "Action planning", columns: [
-            { key: "action", label: "Action", type: "text" },
-            { key: "type",   label: "Type",   type: "select", options: ["Containment", "Corrective", "Preventive"] },
-            { key: "owner",  label: "Owner",  type: "text" },
-            { key: "due",    label: "Due",    type: "date" },
-            { key: "status", label: "Status", type: "select", options: ["Open", "In progress", "Done"] }
-        ] },
-        { key: "resources_required",   label: "Resources required",         type: "memo", section: "Action planning" },
-
-        { key: "implementation_notes",    label: "Implementation notes",     type: "memo", section: "Implementation & monitoring" },
-        { key: "implementation_complete", label: "Implementation complete",  type: "boolean", section: "Implementation & monitoring" },
-
-        { key: "verification_plan",       label: "Verification plan (method, sample, acceptance)", type: "memo", section: "Effectiveness verification" },
-        { key: "effectiveness_criterion", label: "How effectiveness is judged", type: "memo", section: "Effectiveness verification" },
-        { key: "verification_result",     label: "Verification result",     type: "memo", section: "Effectiveness verification" },
-        { key: "effectiveness_outcome",   label: "Effectiveness outcome",    type: "select", options: ["Effective", "Not effective - re-plan", "Not effective - escalate"], section: "Effectiveness verification" },
-        { key: "closure_summary",         label: "Closure summary",          type: "memo", section: "Effectiveness verification" }
-    ],
-    eightd: [
-        { key: "customer", label: "Customer", type: "text" },
-        { key: "summary",  label: "Summary",  type: "memo" }
-    ],
-    complaint: [
-        { key: "customer",    label: "Customer",       type: "text", required: true },
-        { key: "contact",     label: "Contact",        type: "text" },
-        { key: "part_number", label: "Part number",    type: "text" },
-        { key: "qty",         label: "Quantity",       type: "number", min: 0 },
-        { key: "description", label: "Description",    type: "memo", required: true }
-    ],
-    /* Laid out as a supplier 8D (see migration 034_scar_form_expansion). */
-    scar: [
-        { key: "supplier",          label: "Supplier",             type: "text", required: true, section: "Supplier & part" },
-        { key: "supplier_contact",  label: "Supplier contact",     type: "text", section: "Supplier & part" },
-        { key: "supplier_code",     label: "Supplier code",        type: "text", section: "Supplier & part" },
-        { key: "part_number",       label: "Part number",          type: "text", required: true, section: "Supplier & part" },
-        { key: "po_or_lot",         label: "PO / lot / shipment",  type: "text", section: "Supplier & part" },
-        { key: "receiving_report",  label: "Receiving report no.", type: "text", section: "Supplier & part" },
-
-        { key: "defect_description", label: "Defect description",   type: "memo", required: true, section: "Problem (D2)" },
-        { key: "qty_received",      label: "Quantity received",    type: "number", min: 0, section: "Problem (D2)" },
-        { key: "qty_rejected",      label: "Quantity rejected",    type: "number", min: 0, section: "Problem (D2)" },
-        { key: "detection_point",  label: "Detection point",      type: "select", section: "Problem (D2)",
-          options: ["Incoming inspection", "In-process", "Final inspection", "Customer return", "Line down"] },
-        { key: "triggered_by",     label: "Triggered by (NCR / record no.)", type: "text", section: "Problem (D2)" },
-
-        { key: "containment_action", label: "Interim containment action", type: "memo", section: "Interim containment (D3)" },
-        { key: "containment_scope",  label: "Containment scope",   type: "select", section: "Interim containment (D3)",
-          options: ["Supplier stock", "In-transit", "Your stock", "All of the above", "Not required"] },
-        { key: "containment_date",   label: "Containment date",    type: "date", section: "Interim containment (D3)" },
-
-        { key: "root_cause",         label: "Root cause",          type: "memo", section: "Root cause (D4)" },
-        { key: "root_cause_method",  label: "Analysis method",     type: "select", section: "Root cause (D4)",
-          options: ["5 Why", "Fishbone / Ishikawa", "Full 8D", "Other"] },
-        { key: "escape_point",       label: "Escape point (why it was not caught)", type: "memo", section: "Root cause (D4)" },
-
-        { key: "corrective_action",       label: "Corrective action", type: "memo", section: "Corrective action (D5-D6)" },
-        { key: "corrective_action_owner", label: "Owner at supplier", type: "text", section: "Corrective action (D5-D6)" },
-        { key: "corrective_action_date",  label: "Implementation date", type: "date", section: "Corrective action (D5-D6)" },
-        { key: "effectiveness",           label: "% effective",     type: "number", min: 0, section: "Corrective action (D5-D6)" },
-
-        { key: "systemic_action",     label: "Read-across to similar parts / processes", type: "memo", section: "Prevent recurrence (D7)" },
-        { key: "control_plan_updated", label: "Control plan updated", type: "select", section: "Prevent recurrence (D7)",
-          options: ["Yes", "No", "N/A"] },
-        { key: "pfmea_updated",       label: "PFMEA updated",       type: "select", section: "Prevent recurrence (D7)",
-          options: ["Yes", "No", "N/A"] },
-
-        { key: "response_due",        label: "Supplier response due", type: "date", section: "Verification & closure" },
-        { key: "verification_method", label: "Verification method", type: "select", section: "Verification & closure",
-          options: ["Next-lot inspection", "On-site audit", "Data review", "Layout / dimensional"] },
-        { key: "verified_by",         label: "Verified by",         type: "signature", section: "Verification & closure" },
-        { key: "verification_date",   label: "Verified date",       type: "date", section: "Verification & closure" },
-        { key: "reject_disposition",  label: "Disposition of rejects", type: "select", section: "Verification & closure",
-          options: ["Return to supplier", "Sort", "Rework", "Scrap at supplier cost", "Use-as-is (concession)"] },
-        { key: "cost_recovered",      label: "Cost recovered from supplier", type: "select", section: "Verification & closure",
-          options: ["Yes", "No", "Waived"] }
-    ],
-    audit: [
-        { key: "scope",   label: "Scope",   type: "text", required: true },
-        { key: "auditor", label: "Auditor", type: "text" },
-        { key: "planned", label: "Planned date", type: "date" }
-    ],
-    ecn: [
-        { key: "part_number", label: "Part number", type: "text", required: true },
-        { key: "from_rev",    label: "From revision", type: "text" },
-        { key: "to_rev",      label: "To revision",   type: "text" },
-        { key: "reason",      label: "Reason for change", type: "memo", required: true }
-    ],
-    risk: [
-        { key: "process",    label: "Process",    type: "text" },
-        { key: "severity",   label: "Severity (1-10)",   type: "number", min: 1 },
-        { key: "occurrence", label: "Occurrence (1-10)", type: "number", min: 1 },
-        { key: "detection",  label: "Detection (1-10)",  type: "number", min: 1 },
-        { key: "action",     label: "Planned action",    type: "memo" }
-    ],
-    apqp: [
-        { key: "customer",             label: "Customer",                    type: "text", required: true },
-        { key: "part_number",          label: "Part number",                 type: "text" },
-        { key: "target_sop",           label: "Target start of production",  type: "date" },
-        { key: "ppap_level",           label: "PPAP submission level",       type: "select",
-          options: ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] },
-        { key: "psw_status",           label: "PSW status",                  type: "select",
-          options: ["Not submitted", "Submitted", "Interim Approval", "Approved", "Rejected"] },
-        { key: "program_risk_summary", label: "Top program risks",           type: "memo" },
-        { key: "lessons_learned",      label: "Lessons learned",             type: "memo" }
-    ],
-    di: [
-        { key: "department",      label: "Department under review",       type: "text", required: true },
-        { key: "finding",         label: "What the audit found",          type: "memo", required: true },
-        { key: "investigator",    label: "Investigator",                  type: "text" },
-        { key: "root_cause",      label: "Root cause",                    type: "memo" },
-        { key: "containment",     label: "Containment / interim action",  type: "memo" },
-        { key: "corrective_plan", label: "Corrective plan",               type: "memo" }
-    ],
-
-    /* First Article Inspection - see migration 035. The "result"
-       column and the conforming counts are filled in server-side by
-       applyFairResults, not typed. */
-    fair: [
-        { key: "part_number", label: "Part number",           type: "text", required: true, section: "Part" },
-        { key: "part_name",   label: "Part name",             type: "text", section: "Part" },
-        { key: "revision",    label: "Revision",              type: "text", required: true, section: "Part" },
-        { key: "drawing",     label: "Drawing / spec no.",    type: "text", section: "Part" },
-        { key: "customer",    label: "Customer",              type: "text", section: "Part" },
-        { key: "po_number",   label: "Customer PO / contract", type: "text", section: "Part" },
-
-        { key: "process",          label: "Manufacturing process / cell", type: "text", section: "Manufacturing" },
-        { key: "serial_or_lot",    label: "Serial / lot no.",             type: "text", section: "Manufacturing" },
-        { key: "material_cert",    label: "Raw material cert no.",         type: "text", section: "Manufacturing" },
-        { key: "special_processes", label: "Special process certifications", type: "memo", section: "Manufacturing" },
-
-        { key: "fai_type",       label: "FAI type",   type: "select", section: "Inspection",
-          options: ["Full FAI", "Partial FAI", "Delta FAI"] },
-        { key: "inspection_date", label: "Inspection date", type: "date", section: "Inspection" },
-        { key: "inspected_by",   label: "Inspected by", type: "signature", section: "Inspection" },
-        { key: "equipment_used", label: "Gauges & equipment used", type: "memo", section: "Inspection" },
-
-        { key: "characteristics", label: "Characteristics", type: "table", section: "Characteristics",
-          columns: [
-              { key: "balloon",    label: "Balloon #",     type: "text" },
-              { key: "feature",    label: "Characteristic", type: "text" },
-              { key: "char_class", label: "Class",         type: "select",
-                options: ["Standard", "Key", "Critical", "Major", "Minor"] },
-              { key: "nominal",    label: "Nominal",       type: "number" },
-              { key: "tol_minus",  label: "Tol −",    type: "number" },
-              { key: "tol_plus",   label: "Tol +",         type: "number" },
-              { key: "method",     label: "Method",        type: "text" },
-              { key: "actual",     label: "Actual",        type: "number" },
-              { key: "result",     label: "Result",        type: "text" },
-              { key: "notes",      label: "Notes",         type: "text" }
-          ] },
-
-        { key: "disposition",        label: "Disposition", type: "select", required: true, section: "Disposition",
-          options: ["Accepted", "Accepted with deviation", "Rejected"] },
-        { key: "deviation_reference", label: "Deviation / concession no.", type: "text", section: "Disposition" },
-        { key: "nonconformances",    label: "Nonconformance detail", type: "memo", section: "Disposition" },
-        { key: "reviewed_by",        label: "Reviewed by", type: "signature", section: "Disposition" },
-        { key: "review_date",        label: "Review date", type: "date", section: "Disposition" }
-    ],
-
-    /* PPAP submission - see migration 037. The 18 elements are slots
-       (ppap_elements), not form fields; the screen renders them. */
-    ppap: [
-        { key: "part_number", label: "Part number", type: "text", required: true, section: "Part" },
-        { key: "part_name",   label: "Part name",   type: "text", section: "Part" },
-        { key: "revision",    label: "Revision / change level", type: "text", required: true, section: "Part" },
-        { key: "customer",    label: "Customer",    type: "text", required: true, section: "Part" },
-        { key: "customer_part_number", label: "Customer part number", type: "text", section: "Part" },
-        { key: "drawing",     label: "Drawing / spec no.", type: "text", section: "Part" },
-
-        { key: "submission_level", label: "Submission level", type: "select", required: true, section: "Submission",
-          options: ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"] },
-        { key: "reason", label: "Reason for submission", type: "select", section: "Submission",
-          options: ["Initial submission", "Engineering change",
-              "Tooling: transfer / replacement / refurbishment", "Material or sub-supplier change",
-              "Process change", "Correction of discrepancy", "Annual revalidation", "Other"] },
-        { key: "part_weight", label: "Part weight", type: "text", section: "Submission" },
-        { key: "psw_number",  label: "PSW number",  type: "text", section: "Submission" },
-
-        { key: "submitted_on", label: "Submitted on", type: "date", section: "Approval" },
-        { key: "submitted_by", label: "Submitted by", type: "signature", section: "Approval" },
-        { key: "customer_disposition", label: "Customer disposition", type: "select", section: "Approval",
-          options: ["Not submitted", "Submitted", "Interim Approval", "Full Approval", "Rejected"] },
-        { key: "customer_signoff", label: "Customer approver / date", type: "text", section: "Approval" }
-    ]
-};
+/* Record types, their workflows and their default forms are defined
+   once in src/record-definitions/ - see allDefinitions(). This
+   provisioner and the db seed both build from that single source. */
 
 function deriveInitials(fullName) {
     const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -624,21 +203,20 @@ export async function provisionOrganization({ companyName, adminEmail, adminName
              where action = 'read' or resource in ('user', 'roles', 'forms', 'layout')
         `, [orgId]);
 
-        for (const type of RECORD_TYPES) {
+        for (const def of allDefinitions()) {
             const inserted = await client.query(
                 "insert into record_types (org_id, key, name, prefix, clause) values ($1, $2, $3, $4, $5) returning id",
-                [orgId, type.key, type.name, type.prefix, type.clause]
+                [orgId, def.key, def.name, def.prefix, def.clause]
             );
             const recordTypeId = inserted.rows[0].id;
 
-            const workflow = WORKFLOWS[type.key];
-            for (const [key, name, position, isTerminal] of workflow.states) {
+            for (const [key, name, position, isTerminal] of def.states) {
                 await client.query(
                     "insert into workflow_states (record_type_id, key, name, position, is_terminal) values ($1, $2, $3, $4, $5)",
                     [recordTypeId, key, name, position, isTerminal]
                 );
             }
-            for (const [fromState, toState, permission] of workflow.transitions) {
+            for (const [fromState, toState, permission] of def.transitions) {
                 await client.query(
                     "insert into workflow_transitions (record_type_id, from_state, to_state, required_permission) values ($1, $2, $3, $4)",
                     [recordTypeId, fromState, toState, permission]
@@ -648,7 +226,7 @@ export async function provisionOrganization({ companyName, adminEmail, adminName
             await client.query(
                 `insert into form_versions (record_type_id, version, schema, published_at)
                  values ($1, 1, $2, now())`,
-                [recordTypeId, JSON.stringify({ fields: FORMS[type.key], rules: [] })]
+                [recordTypeId, JSON.stringify({ fields: def.form.fields, rules: def.form.rules })]
             );
         }
 
