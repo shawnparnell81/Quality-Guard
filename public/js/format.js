@@ -80,6 +80,17 @@ export function formatValue(field, value, opts = {}) {
         return name ? name + " (" + value + ")" : String(value);
     }
 
+    if (type === "signature") {
+        /* a sealed signature ({signer, at, ...}); legacy ones are a
+           plain "Name - Role" string */
+        if (value && typeof value === "object" && value.signer) {
+            return value.signer
+                + (value.role ? " (" + value.role + ")" : "")
+                + (value.at ? " - " + formatDateValue(value.at) : "");
+        }
+        return String(value);
+    }
+
     if (value && typeof value === "object") return JSON.stringify(value);
 
     /* spreadsheet mode keeps a numeric value native so exceljs types

@@ -7,7 +7,7 @@
    ============================================================ */
 
 import { Router } from "express";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
@@ -214,6 +214,87 @@ function tableRowAudits(fieldKey, beforeRows, afterRows) {
         }
     }
     return lines;
+}
+
+/* ---------- content-bound signatures (audit P2 / M6) ----------
+   A signature stops being a free string and becomes a sealed record:
+   who signed, when, which form version, and a hash of the rest of the
+   form data at that moment. On read the hash is recomputed; if it no
+   longer matches, the record was edited after signing and the detail
+   view / PDF say so. Legacy string signatures are left untouched. */
+function stableJson(value) {
+    if (Array.isArray(value)) return value.map(stableJson);
+    if (value && typeof value === "object") {
+        return Object.keys(value).sort().reduce((o, k) => { o[k] = stableJson(value[k]); return o; }, {});
+    }
+    return value;
+}
+
+function hashData(schema, data) {
+    const sigKeys = new Set(((schema && schema.fields) || [])
+        .filter((f) => f.type === "signature").map((f) => f.key));
+    const bare = {};
+    for (const k of Object.keys(data || {})) if (!sigKeys.has(k)) bare[k] = data[k];
+    return createHash("sha256").update(JSON.stringify(stableJson(bare))).digest("hex");
+}
+
+/* Replace any signature field the caller is completing (was empty,
+   now truthy) with a sealed object. An already-sealed signature is
+   kept exactly - an edit never re-signs in whoever made it. */
+function stampSignatures(schema, data, before, user, formVersion) {
+    const sigFields = ((schema && schema.fields) || []).filter((f) => f.type === "signature");
+    if (!sigFields.length || !data || typeof data !== "object") return data;
+
+    let out = data;
+    for (const f of sigFields) {
+        const prior = before && before[f.key];
+        if (prior && typeof prior === "object" && prior.data_hash) {
+            if (out[f.key] !== prior) {
+                if (out === data) out = { ...data };
+                out[f.key] = prior;
+            }
+            continue;
+        }
+        const asked = out[f.key];
+        const wantsSign = asked !== undefined && asked !== null && asked !== "" && asked !== false;
+        if (!wantsSign) continue;
+
+        if (out === data) out = { ...data };
+        out[f.key] = {
+            signer: user.full_name,
+            initials: user.initials,
+            role: user.role_name || user.role || null,
+            at: new Date().toISOString(),
+            form_version: formVersion,
+            data_hash: hashData(schema, out)
+        };
+    }
+    return out;
+}
+
+/* For the detail view / PDF: per signature field, who signed and
+   whether the rest of the record is unchanged since. undefined when
+   the form has no signatures. */
+function checkSignatures(schema, data) {
+    const out = {};
+    for (const f of ((schema && schema.fields) || [])) {
+        if (f.type !== "signature") continue;
+        const v = data && data[f.key];
+        if (v === undefined || v === null || v === "") continue;
+
+        if (typeof v !== "object" || !v.data_hash) {
+            out[f.key] = { signer: String(v), legacy: true };
+            continue;
+        }
+        const intact = v.data_hash === hashData(schema, data);
+        out[f.key] = {
+            signer: v.signer, initials: v.initials, role: v.role,
+            at: v.at, form_version: v.form_version,
+            intact,
+            note: intact ? "unchanged since signing" : "record edited after signing"
+        };
+    }
+    return Object.keys(out).length ? out : undefined;
 }
 
 /* First Article Inspection: a measured characteristic conforms when
@@ -1543,9 +1624,21 @@ records.get("/:number", async (request, response, next) => {
         const version = recordVersion(record.updated_at);
         if (version) response.setHeader("ETag", '"' + version + '"');
 
+        /* content-bound signatures: was the rest of the form edited
+           after each one was signed? (audit P2 / M6) */
+        let signatures;
+        {
+            const sigSchema = await query(
+                "select schema from form_versions where record_type_id = $1 and version = $2",
+                [record.record_type_id, record.form_version]
+            );
+            signatures = checkSignatures(sigSchema.rows[0]?.schema || null, record.data);
+        }
+
         response.json({
             record,
             version,
+            ...(signatures ? { signatures } : {}),
             links: links.rows,
             history: history.rows,
             transitions
@@ -1671,9 +1764,10 @@ function drawTableField(doc, field, rows, userNames) {
    is not dropped - it still happened, and this is meant to carry ALL
    of a record's information, not just what the current form asks
    for - it prints last, under "Additional details". */
-function drawFormFields(doc, data, schema, userNames) {
+function drawFormFields(doc, data, schema, userNames, signatures) {
     const values = data || {};
     const fields = (schema && Array.isArray(schema.fields)) ? schema.fields : [];
+    const sigs = signatures || {};
 
     if (fields.length === 0) {
         drawGenericFields(doc, values);
@@ -1709,7 +1803,12 @@ function drawFormFields(doc, data, schema, userNames) {
             continue;
         }
 
-        const text = formatValue(field, value, { users: userNames });
+        let text = formatValue(field, value, { users: userNames });
+        if (field.type === "signature" && sigs[field.key] && !sigs[field.key].legacy) {
+            text += sigs[field.key].intact
+                ? "   [unchanged since signing]"
+                : "   [RECORD EDITED AFTER SIGNING]";
+        }
 
         if (field.type === "memo") {
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2).text(label + ":");
@@ -1810,7 +1909,7 @@ records.get("/:number/pdf", async (request, response, next) => {
 
         drawLetterhead(doc, orgName);
         drawRecordHeader(doc, record);
-        drawFormFields(doc, record.data, schema, userNames);
+        drawFormFields(doc, record.data, schema, userNames, checkSignatures(schema, record.data));
         drawHistory(doc, history.rows);
 
         const pageRange = doc.bufferedPageRange();
@@ -1971,6 +2070,7 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             data = applyComputedColumns(formRow.rows[0].schema, data);
             data = applyFairResults(type, data);
             data = ensureRowIds(formRow.rows[0].schema, data);
+            data = stampSignatures(formRow.rows[0].schema, data, {}, request.user, formVersion);
 
             /* Report-only schema check (audit fix C1). Logs bad values,
                does not reject - see validateAgainstSchema. */
@@ -2092,6 +2192,8 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             merged = applyComputedColumns(schemaRow.rows[0]?.schema || null, merged);
             merged = applyFairResults(record.type, merged);
             merged = ensureRowIds(schemaRow.rows[0]?.schema || null, merged);
+            merged = stampSignatures(schemaRow.rows[0]?.schema || null, merged,
+                record.data, request.user, record.form_version);
 
             /* Report-only schema check (audit fix C1). Runs against the
                caller's own change set, not the merged record, so it

@@ -122,11 +122,12 @@ async function renderCustomDetail(typeKey, number) {
     const head = document.getElementById("form-record-detail-number");
     panel.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
-    let record, transitions, definition;
+    let record, transitions, definition, signatures;
     try {
         const got = await api.record(number);
         record = got.record;
         transitions = got.transitions;
+        signatures = got.signatures || {};
         definition = await api.recordForm(typeKey).catch(() => null);
     } catch (error) {
         panel.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
@@ -172,10 +173,18 @@ async function renderCustomDetail(typeKey, number) {
             ])));
         } else {
             if (!kv) kv = el("dl", { class: "kv" });
-            kv.append(
-                el("dt", { text: field.label }),
-                el("dd", { text: formatValue(field, value) })
-            );
+            const dd = el("dd", { text: formatValue(field, value) });
+            const sig = field.type === "signature" ? signatures[field.key] : null;
+            if (sig && !sig.legacy) {
+                dd.append(el("span", {
+                    class: "chip sm",
+                    style: "margin-left:6px;" + (sig.intact
+                        ? "background:var(--ok-bg,#e6f4ea);color:var(--ok,#1a7f37)"
+                        : "background:var(--crit-bg,#fdeaea);color:var(--crit,#b3261e)"),
+                    text: sig.intact ? "✓ unchanged since signing" : "⚠ record edited after signing"
+                }));
+            }
+            kv.append(el("dt", { text: field.label }), dd);
         }
     }
     flushKv();
