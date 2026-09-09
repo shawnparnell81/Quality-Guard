@@ -57,8 +57,16 @@ export function severity(level) {
     return el("span", { class: "sev sev-" + (level || "ok") });
 }
 
+/* The record number in a register row. A real link to the record's
+   own screen (/app?record=NNN) so Ctrl / middle / Shift click opens
+   it in a new browser tab; a plain click is intercepted by the row
+   handler and stays on the in-page side panel. */
 export function recordId(number) {
-    return el("span", { class: "rec-id", text: number });
+    return el("a", {
+        class: "rec-id",
+        href: "/app?record=" + encodeURIComponent(number),
+        text: number
+    });
 }
 
 /* ---------- table rendering ---------- */

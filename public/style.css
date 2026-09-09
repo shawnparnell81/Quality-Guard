@@ -1073,7 +1073,9 @@ th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
     color: var(--brand);
     font-weight: 500;
     white-space: nowrap;
+    text-decoration: none;
 }
+.rec-id:hover { text-decoration: underline; }
 
 /* Severity stripe - encodes state in form, not colour alone */
 .sev {

@@ -748,6 +748,14 @@ export function wireRegisterClicks() {
             const row = event.target.closest("tr[data-number]");
             if (!row) return;
 
+            /* A modified click (Ctrl/Cmd/middle/Shift) on the record-
+               number link opens the record in its own browser tab -
+               let the browser do that and leave the side panel alone.
+               A plain click stays on the fast in-page side panel. */
+            const onIdLink = event.target.closest("a.rec-id");
+            if (onIdLink && (event.ctrlKey || event.metaKey || event.shiftKey)) return;
+            if (onIdLink) event.preventDefault();
+
             selectRow(tbody, row.dataset.number);
             renderRecordDetail(type, row.dataset.number);
         });
