@@ -1,0 +1,32 @@
+{
+  "primary_sheet": "Master Calibration Log",
+  "sheets": [
+    "Master Calibration Log",
+    "Daily Production Log"
+  ],
+  "fields": {},
+  "tables": {
+    "equipment": {
+      "sheet": "Master Calibration Log",
+      "first_data_row": 7,
+      "columns": {
+        "equipment_id": "A",
+        "item_description": "B",
+        "manufacturer": "C",
+        "model": "D",
+        "serial_number": "E",
+        "location": "F",
+        "last_cal_date": "G",
+        "interval_months": "H",
+        "next_cal_due_date": "I",
+        "days_until_due": "J",
+        "calibration_status": "K",
+        "calibrated_by": "L",
+        "cert_report_number": "M",
+        "record_status": "N"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "A"
+    }
+  }
+}

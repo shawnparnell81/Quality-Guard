@@ -1,0 +1,70 @@
+{
+  "primary_sheet": "Control Plan",
+  "sheets": [
+    "Control Plan"
+  ],
+  "fields": {
+    "control_plan_number": {
+      "sheet": "Control Plan",
+      "cell": "C3"
+    },
+    "part_number": {
+      "sheet": "Control Plan",
+      "cell": "C4"
+    },
+    "part_name": {
+      "sheet": "Control Plan",
+      "cell": "C5"
+    },
+    "organization_plant": {
+      "sheet": "Control Plan",
+      "cell": "C6"
+    },
+    "supplier_code": {
+      "sheet": "Control Plan",
+      "cell": "C7"
+    },
+    "key_contact": {
+      "sheet": "Control Plan",
+      "cell": "J3"
+    },
+    "core_team": {
+      "sheet": "Control Plan",
+      "cell": "J4"
+    },
+    "customer_engineering_approval": {
+      "sheet": "Control Plan",
+      "cell": "J5"
+    },
+    "customer_quality_approval": {
+      "sheet": "Control Plan",
+      "cell": "J6"
+    },
+    "other_approval": {
+      "sheet": "Control Plan",
+      "cell": "J7"
+    }
+  },
+  "tables": {
+    "process_controls": {
+      "sheet": "Control Plan",
+      "first_data_row": 11,
+      "columns": {
+        "part_proc_num": "A",
+        "process_name": "B",
+        "machine_device": "C",
+        "char_no": "D",
+        "product_characteristic": "E",
+        "process_characteristic": "F",
+        "special_char_class": "G",
+        "spec_tolerance": "H",
+        "measurement_technique": "I",
+        "sample_size": "J",
+        "sample_freq": "K",
+        "reaction_plan": "L"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "A"
+    }
+  }
+}

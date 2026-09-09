@@ -1,0 +1,90 @@
+{
+  "primary_sheet": "Work Order Template",
+  "sheets": [
+    "Work Order Template"
+  ],
+  "fields": {
+    "work_order_number": {
+      "sheet": "Work Order Template",
+      "cell": "B5"
+    },
+    "date_issued": {
+      "sheet": "Work Order Template",
+      "cell": "D5"
+    },
+    "part_number": {
+      "sheet": "Work Order Template",
+      "cell": "F5"
+    },
+    "revision": {
+      "sheet": "Work Order Template",
+      "cell": "H5"
+    },
+    "customer": {
+      "sheet": "Work Order Template",
+      "cell": "B6"
+    },
+    "target_date": {
+      "sheet": "Work Order Template",
+      "cell": "D6"
+    },
+    "part_description": {
+      "sheet": "Work Order Template",
+      "cell": "F6"
+    },
+    "drawing_ref": {
+      "sheet": "Work Order Template",
+      "cell": "H6"
+    },
+    "order_qty": {
+      "sheet": "Work Order Template",
+      "cell": "B7"
+    },
+    "priority_level": {
+      "sheet": "Work Order Template",
+      "cell": "D7"
+    },
+    "lot_batch_number": {
+      "sheet": "Work Order Template",
+      "cell": "F7"
+    },
+    "special_class": {
+      "sheet": "Work Order Template",
+      "cell": "H7"
+    }
+  },
+  "tables": {
+    "materials": {
+      "sheet": "Work Order Template",
+      "first_data_row": 11,
+      "columns": {
+        "item_mat_id": "A",
+        "description": "B",
+        "required_qty": "C",
+        "allocated_lot": "D",
+        "heat_mill_cert": "E",
+        "inspected_by": "F",
+        "release_date": "G",
+        "status": "H"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "A"
+    },
+    "routing": {
+      "sheet": "Work Order Template",
+      "first_data_row": 16,
+      "columns": {
+        "op_number": "A",
+        "operation_desc": "B",
+        "work_center": "C",
+        "special_class_symbol": "D",
+        "control_plan_ref": "E",
+        "inspection_method": "F",
+        "operator_sign": "G",
+        "qa_sign": "H"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "A"
+    }
+  }
+}

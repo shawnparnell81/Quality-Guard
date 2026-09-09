@@ -1,0 +1,37 @@
+{
+  "primary_sheet": "Production Log",
+  "sheets": [
+    "Production Log"
+  ],
+  "fields": {},
+  "tables": {
+    "entries": {
+      "sheet": "Production Log",
+      "first_data_row": 6,
+      "columns": {
+        "work_order_number": "A",
+        "po_number": "B",
+        "customer_name": "C",
+        "product_description": "D",
+        "part_sku": "E",
+        "revision": "F",
+        "order_confirm_date": "G",
+        "plan_ship_date": "H",
+        "target_qty": "I",
+        "scheduled_line": "J",
+        "setup_time_hrs": "K",
+        "actual_qty_produced": "L",
+        "scrap_qty": "M",
+        "yield_pct": "N",
+        "actual_start_date": "O",
+        "actual_end_date": "P",
+        "quality_signoff": "Q",
+        "ncr_hold_ref": "R",
+        "shipped_qty": "S",
+        "fulfillment_status": "T"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "A"
+    }
+  }
+}

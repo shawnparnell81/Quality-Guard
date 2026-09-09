@@ -209,20 +209,49 @@ export function buildDefaultMap(workbook, schema) {
         let found = null;
         for (const s of ordered) {
             const labels = f.columns.map((col) => norm(col.label || col.key));
+            /* Score a header candidate over a two-row band: an AIAG grid
+               often splits its header into a merged category row
+               ("Characteristics", "Methods") above a row of real column
+               labels, and readGrid leaves the vertically-merged cells
+               (Part No., Reaction Plan) only in the top row. Count a
+               label as present if it sits in row r OR row r+1. */
+            const bandPresent = (r) => {
+                const set = new Set();
+                for (const t of (s.grid.rows[r] || [])) { const n = norm(t); if (n) set.add(n); }
+                for (const t of (s.grid.rows[r + 1] || [])) { const n = norm(t); if (n) set.add(n); }
+                return set;
+            };
             let bestRow = -1;
             let bestCount = 0;
             s.grid.rows.forEach((row, r) => {
-                const present = new Set(row.map((t) => norm(t)).filter(Boolean));
+                const present = bandPresent(r);
                 const count = labels.filter((l) => present.has(l)).length;
                 if (count > bestCount) { bestCount = count; bestRow = r; }
             });
             if (bestCount < Math.max(2, Math.ceil(labels.length / 2))) continue;
 
-            const headerRow = s.grid.rows[bestRow];
+            /* Resolve each column against the header row, then fill any
+               gap from the row just above or below (the other half of a
+               split band). first_data_row is anchored to whichever of
+               the two band rows carries the most plain column labels. */
+            const rowAbove = s.grid.rows[bestRow - 1] || [];
+            const rowBelow = s.grid.rows[bestRow + 1] || [];
+            const labelsIn = (row) => labels.filter(
+                (l) => row.some((t) => norm(t) === l)).length;
+            const headerIdx = labelsIn(rowBelow) > labelsIn(s.grid.rows[bestRow])
+                ? bestRow + 1 : bestRow;
+            const headerRow = s.grid.rows[headerIdx];
+            const otherRows = [s.grid.rows[headerIdx - 1] || [], s.grid.rows[headerIdx + 1] || []];
             const columns = {};
             for (const col of f.columns) {
                 const want = norm(col.label || col.key);
-                const idx = headerRow.findIndex((t) => norm(t) === want);
+                let idx = headerRow.findIndex((t) => norm(t) === want);
+                if (idx < 0) {
+                    for (const r of otherRows) {
+                        const i = r.findIndex((t) => norm(t) === want);
+                        if (i >= 0) { idx = i; break; }
+                    }
+                }
                 if (idx >= 0) columns[col.key] = colToLetter(idx + 1);
             }
             const colIdxs = Object.values(columns).map(letterToCol);
@@ -231,7 +260,7 @@ export function buildDefaultMap(workbook, schema) {
 
             /* the first grid column often numbers the rows 1,2,3... */
             let rowNumberCol = null;
-            const under = s.grid.rows[bestRow + 1] || [];
+            const under = s.grid.rows[headerIdx + 1] || [];
             for (let c = 0; c <= hi; c++) {
                 if (String(under[c] || "").trim() === "1") { rowNumberCol = colToLetter(c + 1); break; }
             }
@@ -239,7 +268,7 @@ export function buildDefaultMap(workbook, schema) {
             /* how many template rows sit below the header before real
                content or the sheet runs out */
             let capacity = 0;
-            for (let r = bestRow + 1; r < s.grid.rows.length; r++) {
+            for (let r = headerIdx + 1; r < s.grid.rows.length; r++) {
                 const span = (s.grid.rows[r] || []).slice(lo, hi + 1);
                 const solid = span.some((t) => t !== "" && !/^-?\d+(\.\d+)?$/.test(String(t))
                     && !String(t).startsWith("="));
@@ -250,7 +279,7 @@ export function buildDefaultMap(workbook, schema) {
 
             found = {
                 sheet: s.ws.name,
-                first_data_row: bestRow + 2,
+                first_data_row: headerIdx + 2,
                 columns,
                 ...(rowNumberCol ? { row_number_col: rowNumberCol } : {}),
                 capacity: Math.max(capacity, 25)
@@ -326,6 +355,10 @@ export function mapProblem(map) {
             if (spec.capacity !== undefined
                 && (!Number.isInteger(spec.capacity) || spec.capacity < 1)) {
                 return "table \"" + key + "\" has a bad capacity";
+            }
+            if (spec.stop_on_blank_col !== undefined
+                && (typeof spec.stop_on_blank_col !== "string" || !COL_RE.test(spec.stop_on_blank_col))) {
+                return "table \"" + key + "\" has a bad stop_on_blank_col";
             }
             if (spec.columns === undefined || typeof spec.columns !== "object" || Array.isArray(spec.columns)) {
                 return "table \"" + key + "\" needs a columns object";
@@ -605,9 +638,18 @@ export async function readTemplate(templateBuffer, map, schema) {
 
         const out = [];
         /* Read to the first fully-empty row (a clean grid may have grown
-           past t.capacity on fill); 5000 is just a runaway guard. */
+           past t.capacity on fill); 5000 is just a runaway guard.
+           `stop_on_blank_col` (a column letter, set on bundled maps
+           whose template ends in a totals / summary row) also stops the
+           read as soon as that key column is blank, so a "Totals" line
+           below the data is not mistaken for a record row. */
         for (let i = 0; i < 5000; i++) {
             const excelRowNo = Number(t.first_data_row) + i;
+            if (t.stop_on_blank_col) {
+                const keyCell = readCellValue({ type: "text" },
+                    master(ws, String(t.stop_on_blank_col) + excelRowNo).value);
+                if (keyCell === undefined || keyCell === "") break;
+            }
             const obj = {};
             let any = false;
             for (const [colKey, letter] of Object.entries(readColumns)) {
