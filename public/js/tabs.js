@@ -25,6 +25,7 @@ const HOME = "dashboard";
 /* Labels for views a menu leaf does not name. */
 const EXTRA_LABELS = {
     dashboard: "Dashboard",
+    multi: "Split view",
     readiness: "Audit Readiness",
     "form-library": "Forms",
     "form-record": "Custom Forms",

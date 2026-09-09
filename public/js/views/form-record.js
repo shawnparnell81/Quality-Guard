@@ -400,10 +400,16 @@ export function wireFormRecord() {
     });
 
     const table = document.getElementById("form-record-table");
-    if (table) table.addEventListener("click", (event) => {
+    if (table) table.addEventListener("click", async (event) => {
         const tr = event.target.closest("tr[data-number]");
         if (!tr) return;
         mark(table, tr.dataset.number);
+        if (event.altKey) {
+            event.preventDefault();
+            const { openRecord } = await import("../record-nav.js");
+            openRecord(tr.dataset.number, currentType, { pane: true });
+            return;
+        }
         openRecordPage(tr.dataset.number, { type: currentType, returnView: "form-record" });
     });
 

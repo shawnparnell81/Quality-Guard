@@ -219,6 +219,13 @@ export function wirePpap() {
         const view = document.getElementById(viewId);
         if (view) view.addEventListener("click", (event) => handlePpapClick(event, slot));
     }
+    /* In the side-by-side workspace each pane is its own slot; work it
+       out from the pane the click landed in. */
+    const multi = document.getElementById("view-multi");
+    if (multi) multi.addEventListener("click", (event) => {
+        const pane = event.target.closest(".pane[data-pane-id]");
+        if (pane) handlePpapClick(event, "pane-" + pane.dataset.paneId);
+    });
 }
 
 function handlePpapClick(event, slot) {

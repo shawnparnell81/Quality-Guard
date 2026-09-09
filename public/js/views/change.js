@@ -442,6 +442,12 @@ export function wireChangeScreens() {
             const row = event.target.closest("tr[data-number]");
             if (!row) return;
             markSelected(tbody, row.dataset.number);
+            if (event.altKey) {
+                event.preventDefault();
+                const { openRecord } = await import("../record-nav.js");
+                openRecord(row.dataset.number, type, { pane: true });
+                return;
+            }
             if (!await openRecordPage(row.dataset.number, { type, returnView })) {
                 await renderDetail(row.dataset.number);
             }
