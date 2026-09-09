@@ -1369,10 +1369,16 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
             let data = applyComputedColumns(schema, withComputedRpn(type, parsed.data));
             data = applyFairResults(type, data);
 
-            const missing = (schema.fields || [])
+            /* A required field the sheet did not fill is a warning, not a
+               block: "Fill from Excel" is for getting a partly-done form
+               into the app, then finishing it here. The in-app editor
+               and the workflow still enforce completeness before the
+               record can move on. Errors (a cell that could not be
+               read, a bad number) still stop the import. */
+            const warnings = (schema.fields || [])
                 .filter((f) => f.required && FLAT_FIELD_TYPES.has(f.type) && data[f.key] === undefined)
-                .map((f) => (f.label || f.key) + " is required");
-            const errors = [...parsed.errors, ...missing];
+                .map((f) => (f.label || f.key) + " still to fill");
+            const errors = [...parsed.errors];
 
             const title = parsed.title
                 || (recordType.name + " - " + new Date().toISOString().slice(0, 10));
@@ -1382,7 +1388,7 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
                 for (const f of (schema.fields || [])) {
                     if (f.type === "table") tables[f.label || f.key] = Array.isArray(data[f.key]) ? data[f.key].length : 0;
                 }
-                return response.json({ type, dry_run: true, title, header: data, tables, errors });
+                return response.json({ type, dry_run: true, title, header: data, tables, errors, warnings });
             }
 
             if (errors.length) {
@@ -1395,7 +1401,7 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
             }));
 
             publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
-            response.status(201).json({ number: created.number, created_count: 1 });
+            response.status(201).json({ number: created.number, created_count: 1, warnings });
         } catch (error) {
             next(error);
         }
