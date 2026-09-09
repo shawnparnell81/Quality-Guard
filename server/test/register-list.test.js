@@ -239,3 +239,73 @@ test("export respects tenant isolation", async () => {
     const { sheet } = await exportSheet(otherCookie, "/api/records/export?type=ncr&q=" + TAG);
     assert.equal(sheet.rowCount, 1, "header only - none of org A's rows");
 });
+
+/* ---------- data.<key> register filters (audit P2 / M13) ---------- */
+
+const FTAG = "FF" + (Date.now() % 100000);
+
+test("?filter narrows the register by a flat data field", async () => {
+    for (const [n, disp] of [[40, "Rework"], [120, "Scrap"], [300, "Scrap"]]) {
+        const r = await api(adminCookie, "POST", "/api/records", {
+            type: "ncr", title: "qty " + n + " [" + FTAG + "]",
+            data: { disposition: disp, qty_affected: n }
+        });
+        assert.equal(r.status, 201, JSON.stringify(r.body));
+    }
+
+    const big = await api(adminCookie, "GET",
+        "/api/records?type=ncr&q=" + FTAG + "&filter=qty_affected:gte:100");
+    assert.equal(big.status, 200, JSON.stringify(big.body));
+    assert.equal(big.body.total, 2, "only qty >= 100");
+
+    const scrap = await api(adminCookie, "GET",
+        "/api/records?type=ncr&q=" + FTAG + "&filter=disposition:eq:Scrap&filter=qty_affected:lt:200");
+    assert.equal(scrap.body.total, 1, "Scrap AND qty < 200");
+
+    const has = await api(adminCookie, "GET",
+        "/api/records?type=ncr&q=" + FTAG + "&filter=qty_affected:present:1");
+    assert.equal(has.body.total, 3);
+});
+
+test("a bad filter key, or a filter with no ?type, is reported not silently applied", async () => {
+    const noType = await api(adminCookie, "GET", "/api/records?q=" + FTAG + "&filter=qty_affected:gte:1");
+    assert.ok((noType.body.filter_warnings || []).some((w) => /add \?type/.test(w)));
+
+    const badKey = await api(adminCookie, "GET",
+        "/api/records?type=ncr&q=" + FTAG + "&filter=not_a_field:eq:x");
+    assert.ok((badKey.body.filter_warnings || []).some((w) => /no such field/.test(w)));
+    assert.equal(badKey.body.total, 3, "the unknown filter is dropped, not applied as always-false");
+});
+
+test("?filter can match any row of a table field (PFMEA RPN >= 100)", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Filter FMEA " + FTAG, prefix: "FFM" + (Date.now() % 100),
+        fields: [{ key: "analysis", label: "Analysis", type: "table", columns: [
+            { key: "mode", label: "Mode", type: "text" },
+            { key: "sev", label: "S", type: "number" },
+            { key: "occ", label: "O", type: "number" },
+            { key: "det", label: "D", type: "number" },
+            { key: "rpn", label: "RPN", type: "computed", compute: "product", inputs: ["sev", "occ", "det"] }
+        ] }]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const typeKey = made.body.key;
+
+    await api(adminCookie, "POST", "/api/records", {
+        type: typeKey, title: "low risk [" + FTAG + "]",
+        data: { analysis: [{ mode: "a", sev: 2, occ: 2, det: 2 }] }
+    });
+    await api(adminCookie, "POST", "/api/records", {
+        type: typeKey, title: "one hot row [" + FTAG + "]",
+        data: { analysis: [
+            { mode: "b", sev: 3, occ: 3, det: 3 },
+            { mode: "c", sev: 8, occ: 5, det: 4 }
+        ] }
+    });
+
+    const hot = await api(adminCookie, "GET",
+        "/api/records?type=" + typeKey + "&q=" + FTAG + "&filter=analysis.rpn:gte:100");
+    assert.equal(hot.status, 200, JSON.stringify(hot.body));
+    assert.equal(hot.body.total, 1, "only the record with a row over 100");
+    assert.match(hot.body.records[0].title, /one hot row/);
+});
