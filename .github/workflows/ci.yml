@@ -18,6 +18,24 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      # Blocks only on a CRITICAL advisory in a runtime dependency -
+      # rare and genuinely stop-ship. HIGH and below are reported by
+      # Dependabot PRs (.github/dependabot.yml) without gating CI.
+      - name: npm audit (server runtime deps)
+        working-directory: server
+        run: npm audit --omit=dev --audit-level=critical
+      - name: npm audit (server, advisory)
+        working-directory: server
+        run: npm audit --audit-level=low || true
+
   schema-drift:
     name: Schema drift check
     runs-on: ubuntu-latest
