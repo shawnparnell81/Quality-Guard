@@ -52,6 +52,59 @@ jobs:
         working-directory: server
         run: node scripts/schema-check.js
 
-  # The full server test suite also needs a live PostgreSQL (schema +
-  # seed + migrations). Same setup as above, larger; wiring it in is
-  # a follow-up.
+  test:
+    name: Server test suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: qualityguard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+      # The test runner loads config from server/.env (node --env-file).
+      # CI has none, so write one from the job's PG* vars. NODE_ENV=test
+      # keeps the boot warning quiet.
+      - name: Write server/.env for the test runner
+        working-directory: server
+        run: |
+          {
+            echo "PGHOST=localhost"
+            echo "PGPORT=5432"
+            echo "PGUSER=postgres"
+            echo "PGPASSWORD=postgres"
+            echo "PGDATABASE=qualityguard"
+            echo "PORT=3001"
+            echo "NODE_ENV=test"
+          } > .env
+      # Build the database the way the deploy entrypoint does:
+      # schema.sql, then seed.sql, then every migration in order.
+      - name: Create database, schema, seed, migrations
+        working-directory: server
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -c 'create database qualityguard'
+          npm run db:schema
+          npm run db:seed
+          npm run db:migrate
+      - name: Run tests
+        working-directory: server
+        run: npm test
