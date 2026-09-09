@@ -218,3 +218,29 @@ const CLOSE_PERMISSION = {
 export function closePermissionFor(type) {
     return CLOSE_PERMISSION[type] || null;
 }
+
+/* Which permission a record type needs before someone may read one.
+   Only the types the permission catalogue actually defines a ".read"
+   for are listed - every other type stays readable by any signed-in
+   user in the org, which is the behaviour before this map existed. 8D
+   reads on capa.read, matching how its create borrows capa.create. */
+const READ_PERMISSION = {
+    ncr:       "ncr.read",
+    capa:      "capa.read",
+    eightd:    "capa.read",
+    complaint: "complaint.read",
+    audit:     "audit.read",
+    risk:      "risk.read"
+};
+
+export function readPermissionFor(type) {
+    return READ_PERMISSION[type] || null;
+}
+
+/* The record-type keys a caller may NOT read - used to scope the
+   register when no ?type filter pins it to one. */
+export function unreadableTypes(request) {
+    return Object.entries(READ_PERMISSION)
+        .filter(([, permission]) => !request.can(permission))
+        .map(([type]) => type);
+}
