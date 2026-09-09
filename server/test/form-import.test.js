@@ -185,6 +185,39 @@ test("an uploaded workbook infers sections, field types and a table", async () =
     assert.equal(table.columns.find((c) => c.label === "Severity").type, "number");
 });
 
+test("the inference carries a confidence and a reason for the review screen", async () => {
+    const up = await upload(adminCookie, await makeWorkbook());
+    const fields = up.body.fields;
+    const byLabel = (l) => fields.find((f) => f.label === l);
+
+    for (const f of fields) {
+        assert.equal(typeof f._confidence, "number", f.label + " has a confidence");
+        assert.ok(f._confidence >= 0 && f._confidence <= 1);
+        assert.equal(typeof f._reason, "string");
+    }
+    /* a typed-from-data column should be more confident than a
+       name-only guess */
+    const sevCol = byLabel("Analysis rows")?.columns?.find((c) => c.label === "Severity")
+        || fields.find((f) => f.type === "table").columns.find((c) => c.label === "Severity");
+    assert.ok(sevCol._confidence >= 0.8, "Severity typed from numeric samples");
+});
+
+test("apply strips the _confidence / _reason hints from the published schema", async () => {
+    const up = await upload(adminCookie, await makeWorkbook());
+    const applied = await api(adminCookie, "POST", "/api/forms/imports/" + up.body.import_id + "/apply", {
+        target: "new", name: "Hints Stripped", prefix: "HST", fields: up.body.fields
+    });
+    assert.equal(applied.status, 200, JSON.stringify(applied.body));
+
+    const form = await api(adminCookie, "GET", "/api/record-types/hints_stripped/form");
+    const bad = [];
+    for (const f of form.body.fields) {
+        for (const k of Object.keys(f)) if (k.startsWith("_")) bad.push(f.label + "." + k);
+        for (const c of (f.columns || [])) for (const k of Object.keys(c)) if (k.startsWith("_")) bad.push(c.label + "." + k);
+    }
+    assert.deepEqual(bad, [], "no advisory keys survive into form_versions");
+});
+
 test("the import is listed and its schema fetched", async () => {
     const up = await upload(adminCookie, await makeWorkbook());
     const id = up.body.import_id;

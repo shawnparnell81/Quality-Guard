@@ -146,31 +146,53 @@ const BOOL_YES = new Set(["true", "yes", "y", "x", "✓", "✔", "checked"]);
    sharpen the guess from the header text. Returns { type, options? } -
    options is set only when the body cells themselves spell out a small
    fixed set. */
+/* Also returns a rough confidence (0-1) and a one-line reason, so the
+   import review screen can flag the guesses worth a second look. These
+   ride on the column as _confidence / _reason and are stripped before
+   the schema is published (see /forms/imports/:id/apply). */
 function columnType(label, samples, listOpts) {
-    if (listOpts && listOpts.length) return { type: "select", options: listOpts };
+    if (listOpts && listOpts.length) {
+        return { type: "select", options: listOpts, _confidence: 0.95,
+            _reason: "a data-validation dropdown in the sheet" };
+    }
 
     const nonEmpty = samples.filter((s) => s !== "");
-    if (nonEmpty.length >= 2) {
-        if (nonEmpty.every((s) => /^-?\d+(\.\d+)?$/.test(s))) return { type: "number" };
-        if (nonEmpty.every((s) => !Number.isNaN(Date.parse(s)) && /\d{4}|[/-]/.test(s))) return { type: "date" };
+    const n = nonEmpty.length;
+
+    if (n >= 2) {
+        if (nonEmpty.every((s) => /^-?\d+(\.\d+)?$/.test(s))) {
+            return { type: "number", _confidence: 0.9, _reason: "all " + n + " sampled cells are numbers" };
+        }
+        if (nonEmpty.every((s) => !Number.isNaN(Date.parse(s)) && /\d{4}|[/-]/.test(s))) {
+            return { type: "date", _confidence: 0.85, _reason: "all " + n + " sampled cells parse as dates" };
+        }
 
         const low = nonEmpty.map((s) => s.toLowerCase());
         if (low.every((s) => BOOL_TOKENS.has(s)) && low.some((s) => BOOL_YES.has(s))) {
-            return { type: "boolean" };
+            return { type: "boolean", _confidence: 0.85, _reason: "sampled cells are all yes/no values" };
         }
 
         /* A short, repeating set of words in the body is a pick list
            the form never bothered to make a real dropdown. */
         const distinct = [...new Set(nonEmpty)];
-        if (nonEmpty.length >= 3 && distinct.length >= 2 && distinct.length <= 6
-            && distinct.length < nonEmpty.length
+        if (n >= 3 && distinct.length >= 2 && distinct.length <= 6
+            && distinct.length < n
             && distinct.every((s) => s.length <= 24 && !/^-?\d/.test(s))) {
-            return { type: "select", options: distinct };
+            return { type: "select", options: distinct, _confidence: 0.6,
+                _reason: distinct.length + " distinct values repeating over " + n + " rows" };
         }
     }
 
     const t = fieldType(label, null);
-    return { type: COLUMN_TYPES.has(t) ? t : "text" };
+    const known = COLUMN_TYPES.has(t) && t !== "text";
+    return {
+        type: known ? t : "text",
+        _confidence: known ? 0.45 : (n === 0 ? 0.3 : 0.4),
+        _reason: known
+            ? "guessed \"" + t + "\" from the column name"
+            : (n === 0 ? "no data under the header - defaulted to text"
+                       : "only " + n + " sample cell(s) - defaulted to text")
+    };
 }
 
 function numToCol(n) {
@@ -245,6 +267,20 @@ const SKIP_LABEL_RX = /^(x{1,3}|n\/?a|na|tbd|none|\d+([.)])?)$/i;
 
 function cleanLabel(text) {
     return String(text).replace(/\s+/g, " ").replace(/\s*[:.]\s*$/, "").trim();
+}
+
+/* Drop every advisory "_"-prefixed key (the inference's _confidence /
+   _reason) from a field list and its columns, so what gets published
+   is a clean schema. */
+function stripHints(fields) {
+    if (!Array.isArray(fields)) return fields;
+    const clean = (obj) => Object.fromEntries(
+        Object.entries(obj).filter(([k]) => !k.startsWith("_")));
+    return fields.map((f) => {
+        const out = clean(f);
+        if (Array.isArray(f.columns)) out.columns = f.columns.map(clean);
+        return out;
+    });
 }
 
 /* Section headings in these forms are sometimes a whole paragraph of
@@ -420,6 +456,8 @@ export function inferSchema(sheetName, grid, shared = {}) {
                 const ct = columnType(label, samples, listOpts);
                 const col = { key: slugColumn(label, colKeys), label, type: ct.type };
                 if (ct.options && ct.options.length) col.options = ct.options;
+                col._confidence = ct._confidence;
+                col._reason = ct._reason;
                 return col;
             });
             /* A repeater 6+ columns wide has no room for textareas. */
@@ -427,15 +465,25 @@ export function inferSchema(sheetName, grid, shared = {}) {
 
             /* "=E2*F2*G2" columns become computed (RPN, and the like). */
             applyFormulaColumns(columns, head, r, formulas);
+            for (const col of columns) {
+                if (col.type === "computed") {
+                    col._confidence = 0.9;
+                    col._reason = "a spreadsheet formula over sibling columns";
+                }
+            }
 
             const sig = columns.map((c) => c.label.toLowerCase()).join("|");
             if (columns.length >= 2 && !tableSigs.has(sig)) {
                 tableSigs.add(sig);
+                const hasData = dataUnder(r, head);
                 fields.push({
                     key: slugColumn((section || sheetName || "table") + " rows", usedKeys),
                     label: (section ? cleanLabel(section) : (sheetName || "Line")) + " rows",
                     type: "table",
                     ...(section ? { section } : {}),
+                    _confidence: hasData ? 0.8 : 0.55,
+                    _reason: "a header row of " + columns.length + " columns"
+                        + (hasData ? " with data under it" : " (no data rows sampled)"),
                     columns
                 });
                 if (columns.length >= 6) bigTables++;
@@ -468,6 +516,11 @@ export function inferSchema(sheetName, grid, shared = {}) {
                 ...(section ? { section } : {})
             };
             if (options) field.options = options;
+            field._confidence = options ? 0.8 : (field.type !== "text" ? 0.5 : 0.35);
+            field._reason = options
+                ? "a data-validation dropdown beside the label"
+                : (field.type !== "text" ? "guessed \"" + field.type + "\" from the field name"
+                                         : "no strong signal - defaulted to text");
             fields.push(field);
         }
         r++;
@@ -620,7 +673,10 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
     async (request, response, next) => {
         try {
             const body = request.body || {};
-            const fields = body.fields;
+            /* The inference attaches _confidence / _reason hints for the
+               review screen; they are advisory and must not end up in
+               the published schema. */
+            const fields = stripHints(body.fields);
             const bad = problemWith(fields);
             if (bad) return response.status(422).json({ error: bad });
 
