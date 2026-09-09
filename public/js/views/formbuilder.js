@@ -281,6 +281,9 @@ export function buildFieldRow(field) {
                 cExtra.append(el("input", { type: "text", class: "col-inputs",
                     placeholder: "From columns (labels, comma separated)",
                     value: (column._inputLabels || []).join(", ") }));
+                cExtra.append(el("input", { type: "text", class: "col-expr",
+                    placeholder: "…or a formula, e.g. Actual − Nominal, or max(A, B) / 2",
+                    value: column.expr || "" }));
                 const t = column.thresholds || {};
                 cExtra.append(el("input", { type: "text", class: "col-thresholds",
                     placeholder: "Amber, red (optional) — e.g. 100, 150",
@@ -414,10 +417,23 @@ export function readFieldRow(row, takenKeys) {
                 col.options = (c.cr.querySelector(".col-options")?.value || "")
                     .split(",").map((s) => s.trim()).filter(Boolean);
             } else if (c.type === "computed") {
-                col.compute = c.cr.querySelector(".col-compute")?.value === "sum" ? "sum" : "product";
-                col.inputs = (c.cr.querySelector(".col-inputs")?.value || "")
-                    .split(",").map((s) => s.trim()).filter(Boolean)
-                    .map((lbl) => labelToKey[lbl.toLowerCase()]).filter(Boolean);
+                const rawExpr = (c.cr.querySelector(".col-expr")?.value || "").trim();
+                if (rawExpr) {
+                    /* let the author write sibling column *labels*; swap each
+                       whole-word label occurrence for its key before storing */
+                    let expr = rawExpr;
+                    for (const [label, key] of Object.entries(labelToKey)) {
+                        expr = expr.replace(
+                            new RegExp("(^|[^A-Za-z0-9_])" + label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![A-Za-z0-9_])", "gi"),
+                            "$1" + key);
+                    }
+                    col.expr = expr;
+                } else {
+                    col.compute = c.cr.querySelector(".col-compute")?.value === "sum" ? "sum" : "product";
+                    col.inputs = (c.cr.querySelector(".col-inputs")?.value || "")
+                        .split(",").map((s) => s.trim()).filter(Boolean)
+                        .map((lbl) => labelToKey[lbl.toLowerCase()]).filter(Boolean);
+                }
                 const nums = (c.cr.querySelector(".col-thresholds")?.value || "")
                     .split(",").map((s) => s.trim()).filter((s) => s !== "")
                     .map(Number).filter((n) => Number.isFinite(n));
@@ -486,10 +502,12 @@ function openFieldEditor(definition) {
         }
         const badComputed = fields
             .flatMap((f) => (f.type === "table" ? f.columns || [] : []))
-            .find((c) => c.type === "computed" && (!c.inputs || c.inputs.length === 0));
+            .find((c) => c.type === "computed"
+                && !(typeof c.expr === "string" && c.expr.trim())
+                && (!c.inputs || c.inputs.length === 0));
         if (badComputed) {
             errorBox.textContent = "\"" + badComputed.label
-                + "\" must compute from at least one number column - check the column labels you listed.";
+                + "\" needs a formula, or at least one column to add or multiply - check the labels you listed.";
             errorBox.hidden = false;
             return;
         }

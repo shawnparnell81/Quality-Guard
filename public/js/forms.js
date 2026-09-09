@@ -17,6 +17,7 @@ import { el, toast } from "./dom.js";
 import { beginEditing } from "./presence.js";
 import { buildUploader } from "./attach-upload.js";
 import { openFileWindow } from "./doc-windows.js";
+import { evaluate as evalExpr, identifiers as exprIdentifiers } from "./expr.js";
 
 /* ---------- one dialog, reused ---------- */
 
@@ -235,16 +236,28 @@ export function buildField(field, options, currentValue, context = {}) {
                 let recompute = null;
                 if (hasComputed) {
                     recompute = () => {
+                        /* the numbers this row currently holds, by column key */
+                        const scope = {};
+                        for (const c of columns) {
+                            const v = Number(cellByKey[c.key]?.value);
+                            if (Number.isFinite(v)) scope[c.key] = v;
+                        }
                         for (const column of columns) {
                             if (column.type !== "computed") continue;
                             const cell = cellByKey[column.key];
-                            const nums = (column.inputs || []).map((k) => Number(cellByKey[k]?.value));
-                            const ready = nums.length > 0 && nums.every((n) => Number.isFinite(n));
-                            const out = !ready ? "" : column.compute === "sum"
-                                ? nums.reduce((a, b) => a + b, 0)
-                                : nums.reduce((a, b) => a * b, 1);
-                            cell.value = out === "" ? "" : String(out);
-                            paintThreshold(cell, column, out);
+                            let out;
+                            if (typeof column.expr === "string" && column.expr.trim()) {
+                                out = evalExpr(column.expr, scope);
+                            } else {
+                                const nums = (column.inputs || []).map((k) => scope[k]);
+                                out = nums.length > 0 && nums.every((n) => Number.isFinite(n))
+                                    ? (column.compute === "sum"
+                                        ? nums.reduce((a, b) => a + b, 0)
+                                        : nums.reduce((a, b) => a * b, 1))
+                                    : undefined;
+                            }
+                            cell.value = out === undefined ? "" : String(out);
+                            paintThreshold(cell, column, out === undefined ? "" : out);
                         }
                     };
                     tr.addEventListener("input", recompute);
@@ -511,9 +524,21 @@ function describePattern(pattern) {
 }
 
 /* "RPN = Severity x Occurrence x Detection" - the tooltip on a
-   computed cell so a reader knows where its number comes from. */
+   computed cell so a reader knows where its number comes from. Works
+   for both an expr column and a compute/inputs column. */
 function describeComputed(column, columns) {
     const labelOf = (k) => (columns.find((c) => c.key === k) || {}).label || k;
+
+    if (typeof column.expr === "string" && column.expr.trim()) {
+        let text = column.expr;
+        try {
+            for (const id of exprIdentifiers(column.expr)) {
+                text = text.replace(new RegExp("\\b" + id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"), labelOf(id));
+            }
+        } catch { /* unparseable - show it verbatim */ }
+        return column.label + " = " + text.replace(/\*/g, " × ").replace(/\//g, " ÷ ");
+    }
+
     const join = column.compute === "sum" ? " + " : " × ";
     return column.label + " = " + (column.inputs || []).map(labelOf).join(join);
 }
