@@ -146,6 +146,27 @@ export function movePane(id, dir) {
     focusPane(id);
 }
 
+/* toIndex is the drop slot in the current array (0..length); the
+   drag-reorder handler passes it from the cursor position. */
+export function reorderPane(id, toIndex) {
+    const from = ws.panes.findIndex((p) => p.id === id);
+    if (from === -1) return;
+    let to = Math.max(0, Math.min(ws.panes.length, toIndex));
+    if (from < to) to -= 1;
+    if (to === from) return;
+    const [pane] = ws.panes.splice(from, 1);
+    ws.panes.splice(to, 0, pane);
+    persist();
+    render();
+    focusPane(id);
+}
+
+export async function comparePanes() {
+    if (ws.panes.length !== 2) return;
+    const { openCompare } = await import("./paneCompare.js");
+    openCompare(ws.panes[0], ws.panes[1]);
+}
+
 /* delta: a fraction of the row (from a divider drag) or "even". */
 export function resize(leftId, rightId, delta) {
     const L = ws.panes.find((p) => p.id === leftId);
@@ -213,9 +234,9 @@ export async function render() {
     const node = root();
     if (!node) return;
     paintAll(node, ws, {
-        onClose: closePane, onMove: movePane, onActivate: setActive,
+        onClose: closePane, onMove: movePane, onReorder: reorderPane, onActivate: setActive,
         onResize: resize, onResizeEnd: resizeEnd, onEdit: editPane,
-        onCollapse: collapseToSingle, onLayout: setLayout
+        onCollapse: collapseToSingle, onLayout: setLayout, onCompare: comparePanes
     }, bodyFor);
     await Promise.all(ws.panes.map((p) => mountPane(p, () => finishEdit(p.id))));
 }
