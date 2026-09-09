@@ -59,16 +59,36 @@ export function publish(orgId, event) {
         .catch((error) => log.warn("stream_notify_failed", { err: error }));
 }
 
-/* ---------- the LISTEN side ---------- */
+/* ---------- the LISTEN side ----------
+
+   One dedicated connection for the whole process, LISTENing on the
+   change channel plus any extra channel a feature registers (the
+   export worker's wake channel, say). Keeping it to a single
+   connection matters - a deployment runs several instances and the
+   test suite runs dozens. */
 
 let listener = null;
 let stopped = false;
+
+/* channel -> handler(payload). The change channel's handler is fixed;
+   others register through listenOn(). */
+const channelHandlers = new Map([[CHANNEL, fanOut]]);
 
 function fanOut(json) {
     let frame;
     try { frame = JSON.parse(json); } catch { return; }
     for (const stream of localStreams) {
         if (stream.orgId === frame.orgId) stream.send(frame);
+    }
+}
+
+/* Register interest in another NOTIFY channel on the shared listener.
+   Safe to call before or after startChangeBus(). */
+export function listenOn(channel, handler) {
+    channelHandlers.set(channel, handler);
+    if (listener) {
+        listener.query("LISTEN " + channel).catch(
+            (error) => log.warn("stream_listen_failed", { channel, err: error }));
     }
 }
 
@@ -84,7 +104,8 @@ async function connectListener() {
     });
 
     client.on("notification", (msg) => {
-        if (msg.channel === CHANNEL && msg.payload) fanOut(msg.payload);
+        const handler = channelHandlers.get(msg.channel);
+        if (handler) handler(msg.payload || "");
     });
     client.on("error", (error) => {
         log.warn("stream_listener_error", { err: error });
@@ -97,9 +118,11 @@ async function connectListener() {
 
     try {
         await client.connect();
-        await client.query("LISTEN " + CHANNEL);
+        for (const channel of channelHandlers.keys()) {
+            await client.query("LISTEN " + channel);
+        }
         listener = client;
-        log.info("stream_listener_ready", { channel: CHANNEL });
+        log.info("stream_listener_ready", { channels: [...channelHandlers.keys()] });
     } catch (error) {
         log.warn("stream_listener_connect_failed", { err: error });
         try { await client.end(); } catch { /* already down */ }

@@ -781,9 +781,9 @@ export function wireRecordEditor() {
     const pdfBtn = document.getElementById("record-editor-pdf");
     if (pdfBtn) {
         pdfBtn.addEventListener("click", () => {
-            if (editorRecordNumber) {
-                window.location.href = "/api/records/" + encodeURIComponent(editorRecordNumber) + "/pdf";
-            }
+            if (!editorRecordNumber) return;
+            api.downloadRecordPdf(editorRecordNumber, { onWait: () => toast("Preparing the PDF…") })
+                .catch((error) => toast(error.message, "error"));
         });
     }
 }
@@ -845,9 +845,10 @@ export async function openRecordEditor(typeKey, {
                     openRecordEditor(typeKey, { number: r.number, returnView, stayOnSave, custom, host, headerless, onDone, onEditor });
                 } catch (error) { toast(error.message, "error"); dup.disabled = false; }
             });
-            const excel = el("a", {
-                class: "btn no-print editor-extra", text: "Excel",
-                href: api.recordExcelUrl(number)
+            const excel = el("button", {
+                class: "btn no-print editor-extra", type: "button", text: "Excel",
+                onClick: () => api.downloadRecordExcel(number, { onWait: () => toast("Preparing the workbook…") })
+                    .catch((error) => toast(error.message, "error"))
             });
             actionsEl.append(dup, excel);
         }

@@ -19,7 +19,7 @@
 
 import { show } from "../app.js";
 import { api } from "../api.js";
-import { el } from "../dom.js";
+import { el, toast } from "../dom.js";
 import { openRecordEditor } from "../forms.js";
 import { renderRecordDetail } from "./events.js";
 import { renderCustomDetail } from "./form-record.js";
@@ -193,8 +193,9 @@ function wireActions() {
             "/api/records/" + encodeURIComponent(current.number) + "/pdf?inline=1", "_blank");
     });
     document.getElementById(SLOT + "-pdf").addEventListener("click", () => {
-        if (current) window.location.href =
-            "/api/records/" + encodeURIComponent(current.number) + "/pdf";
+        if (!current) return;
+        api.downloadRecordPdf(current.number, { onWait: () => toast("Preparing the PDF…") })
+            .catch((error) => toast(error.message, "error"));
     });
     document.getElementById(SLOT + "-edit").addEventListener("click", () => {
         if (!current) return;

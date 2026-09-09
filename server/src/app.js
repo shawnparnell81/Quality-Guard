@@ -19,6 +19,7 @@ import { records } from "./routes/records.js";
 import { masterdata } from "./routes/masterdata.js";
 import { dashboard } from "./routes/dashboard.js";
 import { metrics } from "./routes/metrics.js";
+import { jobs } from "./routes/jobs.js";
 import { access, meHandler } from "./routes/access.js";
 import { production } from "./routes/production.js";
 import { change } from "./routes/change.js";
@@ -37,6 +38,7 @@ import { formImport } from "./routes/form-import.js";
 import { notifications } from "./routes/notifications.js";
 import { formTemplates } from "./routes/form-templates.js";
 import { streamHandler, startChangeBus, stopChangeBus } from "./stream.js";
+import { startExportWorker, stopExportWorker } from "./export-jobs.js";
 import { startDigestSchedule } from "./digest.js";
 import { startLpaRollSchedule } from "./routes/lpa.js";
 import { startAuditPruneSchedule } from "./audit-retention.js";
@@ -301,6 +303,7 @@ app.use("/api/dashboard", dashboard);
 
 /* cross-cutting */
 app.use("/api", metrics);
+app.use("/api", jobs);
 app.use("/api", access);
 app.use("/api", production);
 app.use("/api", change);
@@ -382,6 +385,7 @@ const server = app.listen(PORT, () => {
 
     log.info("server_started", { port: PORT, version: VERSION, node: process.version });
     startChangeBus();          // the cross-instance SSE fan-out (LISTEN qms_change)
+    startExportWorker();       // the async export queue (audit M9)
     startDigestSchedule();
     startLpaRollSchedule();
     startAuditPruneSchedule();
@@ -416,6 +420,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
         console.log("\nShutting down.");
         server.close(async () => {
             await stopChangeBus();
+            await stopExportWorker();
             await pool.end();
             process.exit(0);
         });

@@ -169,3 +169,38 @@ test("a presence heartbeat on instance A pushes a frame to instance B's stream",
 
     streamB.close();
 });
+
+test("an export job enqueued on instance A can be finished and served by instance B (audit M9)", async () => {
+    const type = await api(BASE_A, "POST", "/api/record-types", {
+        name: "XInst Grid", prefix: "XG",
+        fields: [{ key: "rows", label: "Rows", type: "table",
+            columns: [{ key: "item", label: "Item", type: "text" }] }]
+    });
+    assert.equal(type.status, 201, JSON.stringify(type.body));
+
+    /* one instance forces async at a low threshold via env; the other
+       does not - but the job row is shared, so whichever worker is
+       free claims it. Make the record big enough that the default
+       threshold defers it on either. */
+    const rows = Array.from({ length: 400 }, (_, i) => ({ item: "r" + i }));
+    const rec = await api(BASE_A, "POST", "/api/records",
+        { type: type.body.key, title: "big", data: { rows } });
+    assert.equal(rec.status, 201, JSON.stringify(rec.body));
+
+    const queued = await api(BASE_A, "GET", "/api/records/" + rec.body.number + "/excel");
+    assert.equal(queued.status, 202, JSON.stringify(queued.body));
+    const jobId = queued.body.job_id;
+
+    let job;
+    const deadline = Date.now() + 20000;
+    do {
+        await sleep(400);
+        job = (await api(BASE_B, "GET", "/api/jobs/" + jobId)).body;
+    } while (job && job.status !== "done" && job.status !== "error" && Date.now() < deadline);
+    assert.equal(job.status, "done", JSON.stringify(job));
+
+    const dl = await fetch(BASE_B + "/api/jobs/" + jobId + "/download", { headers: { Cookie: cookie } });
+    assert.equal(dl.status, 200);
+    const buf = Buffer.from(await dl.arrayBuffer());
+    assert.deepEqual(buf.subarray(0, 2), Buffer.from("PK"), "instance B served a real xlsx");
+});

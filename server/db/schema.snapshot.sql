@@ -224,6 +224,23 @@ CREATE TABLE public.drawings (
     CONSTRAINT drawings_access_level_check CHECK ((access_level = ANY (ARRAY['all_plant'::text, 'eng_qa'::text, 'eng_only'::text]))),
     CONSTRAINT drawings_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_review'::text, 'released'::text, 'obsolete'::text])))
 );
+CREATE TABLE public.export_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    requested_by uuid,
+    kind text NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    filename text,
+    content_type text,
+    storage_path text,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    CONSTRAINT export_jobs_kind_check CHECK ((kind = ANY (ARRAY['record_pdf'::text, 'record_excel'::text]))),
+    CONSTRAINT export_jobs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'error'::text])))
+);
 CREATE TABLE public.first_article_results (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     work_order_id uuid NOT NULL,
@@ -905,6 +922,8 @@ ALTER TABLE ONLY public.drawings
     ADD CONSTRAINT drawings_org_id_drawing_number_key UNIQUE (org_id, drawing_number);
 ALTER TABLE ONLY public.drawings
     ADD CONSTRAINT drawings_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.export_jobs
+    ADD CONSTRAINT export_jobs_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.first_article_results
     ADD CONSTRAINT first_article_results_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.first_article_results
@@ -1075,6 +1094,8 @@ CREATE INDEX idx_docreq_role ON public.document_requirements USING btree (org_id
 CREATE INDEX idx_docrev_document ON public.document_revisions USING btree (document_id);
 CREATE INDEX idx_documents_category ON public.documents USING btree (org_id, category);
 CREATE INDEX idx_drawing_revs ON public.drawing_revisions USING btree (drawing_id);
+CREATE INDEX idx_export_jobs_claim ON public.export_jobs USING btree (created_at) WHERE (status = 'queued'::text);
+CREATE INDEX idx_export_jobs_org ON public.export_jobs USING btree (org_id, created_at DESC);
 CREATE INDEX idx_fai_order ON public.first_article_results USING btree (work_order_id, characteristic_no);
 CREATE INDEX idx_gage_calibrations_gage ON public.gage_calibrations USING btree (gage_id, performed_at DESC);
 CREATE INDEX idx_gages_due ON public.gages USING btree (org_id, next_due);
@@ -1183,6 +1204,10 @@ ALTER TABLE ONLY public.drawings
     ADD CONSTRAINT drawings_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.drawings
     ADD CONSTRAINT drawings_part_id_fkey FOREIGN KEY (part_id) REFERENCES public.parts(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.export_jobs
+    ADD CONSTRAINT export_jobs_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.export_jobs
+    ADD CONSTRAINT export_jobs_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.first_article_results
     ADD CONSTRAINT first_article_results_measured_by_fkey FOREIGN KEY (measured_by) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.first_article_results

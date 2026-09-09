@@ -27,6 +27,7 @@ import { ppapMissing } from "./ppap.js";
 import { notify } from "./notifications.js";
 import { publish } from "../stream.js";
 import { heartbeat, leaveEditing } from "../presence.js";
+import { enqueueExport, registerExporter } from "../export-jobs.js";
 
 export const records = Router();
 
@@ -1448,50 +1449,79 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
         }
     });
 
+/* How many table rows a record's biggest table carries - the cheap
+   proxy for "this export is heavy" (audit M9). */
+function biggestTable(data) {
+    let n = 0;
+    for (const value of Object.values(data || {})) {
+        if (Array.isArray(value) && value.length > n) n = value.length;
+    }
+    return n;
+}
+const ASYNC_EXPORT_ROWS = Number(process.env.EXPORT_ASYNC_ROWS) > 0
+    ? Number(process.env.EXPORT_ASYNC_ROWS) : 300;
+
+const XLSX_CONTENT_TYPE =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/* Build a record's .xlsx as a Buffer - the customer's mapped layout
+   when there is one, else the generated grid. Returns the map-drift
+   headers too so the sync route can still surface them. Used by both
+   the GET route and the async worker. */
+async function recordExcelBuffer(orgId, number) {
+    const found = await query(SELECT_RECORD + " and r.number = $2", [orgId, number]);
+    if (found.rowCount === 0) { const e = new Error("Record not found"); e.status = 404; throw e; }
+    const record = found.rows[0];
+    const headers = {};
+
+    const fill = await loadTemplateFill(record.record_type_id, record.form_version);
+    if (fill) {
+        const { map, dropped, unmapped } = reconcileMap(fill.map, fill.schema);
+        headers["X-Excel-Map-Stale"] =
+            (Boolean(fill.map.built_for_version) && fill.map.built_for_version !== record.form_version)
+                ? "true" : "false";
+        if (dropped.length) headers["X-Excel-Map-Dropped"] = dropped.join(",");
+        if (unmapped.length) headers["X-Excel-Unmapped-Fields"] = unmapped.join(",");
+
+        const { buffer } = await fillTemplate(
+            fill.templateBuffer, map, fill.schema, { title: record.title, data: record.data });
+        return { buffer: Buffer.from(buffer), filename: record.number + ".xlsx",
+            contentType: XLSX_CONTENT_TYPE, headers };
+    }
+
+    const form = await query(
+        "select schema from form_versions where record_type_id = $1 and version = $2",
+        [record.record_type_id, record.form_version]);
+    const schema = form.rows[0]?.schema || { fields: [] };
+    const { workbook } = buildFormWorkbook(schema, { title: record.title, data: record.data });
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    return { buffer, filename: record.number + ".xlsx", contentType: XLSX_CONTENT_TYPE, headers };
+}
+
+registerExporter("record_excel", ({ orgId, number }) => recordExcelBuffer(orgId, number));
+
 records.get("/:number/excel", async (request, response, next) => {
     try {
-        const found = await query(SELECT_RECORD + " and r.number = $2",
+        const found = await query(
+            "select r.data from records r where r.org_id = $1 and r.number = $2",
             [request.user.org_id, request.params.number]);
         if (found.rowCount === 0) return response.status(404).json({ error: "Record not found" });
-        const record = found.rows[0];
 
-        response.setHeader("Content-Type",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setHeader("Content-Disposition",
-            'attachment; filename="' + record.number + '.xlsx"');
-
-        /* If this form version has the customer's own layout mapped,
-           the export is that spreadsheet with the values dropped in.
-           Reconcile the map against the schema first (audit M4): drop
-           entries for fields the form no longer has, and tell the
-           caller in the response headers what the map and the schema
-           now disagree about, so a form edit does not silently send a
-           field to the wrong cell or nowhere. */
-        const fill = await loadTemplateFill(record.record_type_id, record.form_version);
-        if (fill) {
-            const { map, dropped, unmapped } = reconcileMap(fill.map, fill.schema);
-            const stale = Boolean(fill.map.built_for_version)
-                && fill.map.built_for_version !== record.form_version;
-            response.setHeader("X-Excel-Map-Stale", stale ? "true" : "false");
-            if (dropped.length) response.setHeader("X-Excel-Map-Dropped", dropped.join(","));
-            if (unmapped.length) response.setHeader("X-Excel-Unmapped-Fields", unmapped.join(","));
-
-            const { buffer } = await fillTemplate(
-                fill.templateBuffer, map, fill.schema,
-                { title: record.title, data: record.data });
-            response.send(Buffer.from(buffer));
-            return;
+        /* A big grid runs exceljs off the request thread (audit M9). */
+        if (biggestTable(found.rows[0].data) > ASYNC_EXPORT_ROWS) {
+            const { id } = await enqueueExport(request.user.org_id, request.user.id,
+                "record_excel", { orgId: request.user.org_id, number: request.params.number });
+            return response.status(202).json({ job_id: id, poll: "/api/jobs/" + id });
         }
 
-        const form = await query(
-            "select schema from form_versions where record_type_id = $1 and version = $2",
-            [record.record_type_id, record.form_version]);
-        const schema = form.rows[0]?.schema || { fields: [] };
-
-        const { workbook } = buildFormWorkbook(schema, { title: record.title, data: record.data });
-        await workbook.xlsx.write(response);
-        response.end();
+        const { buffer, filename, contentType, headers } =
+            await recordExcelBuffer(request.user.org_id, request.params.number);
+        for (const [k, v] of Object.entries(headers)) response.setHeader(k, v);
+        response.setHeader("Content-Type", contentType);
+        response.setHeader("Content-Disposition", 'attachment; filename="' + filename + '"');
+        response.send(buffer);
     } catch (error) {
+        if (error.status === 404) return response.status(404).json({ error: error.message });
         next(error);
     }
 });
@@ -1966,70 +1996,90 @@ function drawHistory(doc, rows) {
     }
 }
 
+function pdfDocToBuffer(doc) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        doc.on("data", (chunk) => chunks.push(chunk));
+        doc.on("end", () => resolve(Buffer.concat(chunks)));
+        doc.on("error", reject);
+    });
+}
+
+/* Build a record's evidence PDF as a Buffer. Used by the GET route
+   and by the async worker (audit M9). */
+async function recordPdfBuffer(orgId, number) {
+    const found = await query(SELECT_RECORD + " and r.number = $2", [orgId, number]);
+    if (found.rowCount === 0) { const e = new Error("Record not found"); e.status = 404; throw e; }
+    const record = found.rows[0];
+
+    const [org, history, formVersion, users] = await Promise.all([
+        query("select name from organizations where id = $1", [orgId]),
+        query(`
+            select a.field, a.new_value, a.changed_at, u.full_name as changed_by
+              from audit_log a
+         left join users u on u.id = a.changed_by
+             where a.record_id = $1
+             order by a.changed_at desc
+             limit 15
+        `, [record.id]),
+        query("select schema from form_versions where record_type_id = $1 and version = $2",
+            [record.record_type_id, record.form_version]),
+        query("select initials, full_name from users where org_id = $1", [orgId])
+    ]);
+
+    const orgName = org.rows[0]?.name || "";
+    const schema = formVersion.rows[0]?.schema || null;
+    const userNames = new Map(users.rows.map((row) => [row.initials, row.full_name]));
+
+    /* bufferPages holds every page until doc.end() so the footer can
+       be stamped onto all of them afterward. */
+    const doc = new PDFDocument({ size: "letter", margin: 54, bufferPages: true });
+    const done = pdfDocToBuffer(doc);
+
+    drawLetterhead(doc, orgName);
+    drawRecordHeader(doc, record);
+    drawFormFields(doc, record.data, schema, userNames, checkSignatures(schema, record.data));
+    drawHistory(doc, history.rows);
+
+    const pageRange = doc.bufferedPageRange();
+    for (let i = pageRange.start; i < pageRange.start + pageRange.count; i++) {
+        doc.switchToPage(i);
+        drawFooter(doc, orgName);
+    }
+    doc.end();
+
+    return { buffer: await done, filename: record.number + ".pdf", contentType: "application/pdf" };
+}
+
+registerExporter("record_pdf", ({ orgId, number }) => recordPdfBuffer(orgId, number));
+
 records.get("/:number/pdf", async (request, response, next) => {
     try {
         const found = await query(
-            SELECT_RECORD + " and r.number = $2",
-            [request.user.org_id, request.params.number]
-        );
-
-        if (found.rowCount === 0) {
-            return response.status(404).json({ error: "Record not found" });
-        }
-
-        const record = found.rows[0];
-
-        const [org, history, formVersion, users] = await Promise.all([
-            query("select name from organizations where id = $1", [request.user.org_id]),
-            query(`
-                select a.field, a.new_value, a.changed_at, u.full_name as changed_by
-                  from audit_log a
-             left join users u on u.id = a.changed_by
-                 where a.record_id = $1
-                 order by a.changed_at desc
-                 limit 15
-            `, [record.id]),
-            query(
-                "select schema from form_versions where record_type_id = $1 and version = $2",
-                [record.record_type_id, record.form_version]
-            ),
-            query("select initials, full_name from users where org_id = $1", [request.user.org_id])
-        ]);
-
-        const orgName = org.rows[0]?.name || "";
-        const schema = formVersion.rows[0]?.schema || null;
-        const userNames = new Map(users.rows.map((row) => [row.initials, row.full_name]));
+            "select r.data from records r where r.org_id = $1 and r.number = $2",
+            [request.user.org_id, request.params.number]);
+        if (found.rowCount === 0) return response.status(404).json({ error: "Record not found" });
 
         /* ?inline=1 previews the PDF in a browser tab (what the Print
            button uses); the default downloads it as a file. */
         const inline = request.query.inline === "1" || request.query.inline === "true";
-        response.setHeader("Content-Type", "application/pdf");
-        response.setHeader("Content-Disposition",
-            (inline ? "inline" : "attachment") + "; filename=\"" + record.number + ".pdf\"");
 
-        /* bufferPages holds every page until doc.end() instead of
-           flushing each as it fills, so the footer can be stamped onto
-           all of them afterward - a full-detail NCR routinely runs
-           past one page now, and a footer drawn only once, on
-           whichever page happened to be current when the content
-           ended, used to mean the first page had none and a second,
-           otherwise empty page had nothing else on it. */
-        const doc = new PDFDocument({ size: "letter", margin: 54, bufferPages: true });
-        doc.pipe(response);
-
-        drawLetterhead(doc, orgName);
-        drawRecordHeader(doc, record);
-        drawFormFields(doc, record.data, schema, userNames, checkSignatures(schema, record.data));
-        drawHistory(doc, history.rows);
-
-        const pageRange = doc.bufferedPageRange();
-        for (let i = pageRange.start; i < pageRange.start + pageRange.count; i++) {
-            doc.switchToPage(i);
-            drawFooter(doc, orgName);
+        /* A record with a big grid renders pdfkit off the request
+           thread (audit M9) - but not for an inline preview, which a
+           person is watching for right now. */
+        if (!inline && biggestTable(found.rows[0].data) > ASYNC_EXPORT_ROWS) {
+            const { id } = await enqueueExport(request.user.org_id, request.user.id,
+                "record_pdf", { orgId: request.user.org_id, number: request.params.number });
+            return response.status(202).json({ job_id: id, poll: "/api/jobs/" + id });
         }
 
-        doc.end();
+        const { buffer } = await recordPdfBuffer(request.user.org_id, request.params.number);
+        response.setHeader("Content-Type", "application/pdf");
+        response.setHeader("Content-Disposition",
+            (inline ? "inline" : "attachment") + "; filename=\"" + request.params.number + ".pdf\"");
+        response.send(buffer);
     } catch (error) {
+        if (error.status === 404) return response.status(404).json({ error: error.message });
         next(error);
     }
 });

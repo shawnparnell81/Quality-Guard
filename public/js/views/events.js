@@ -830,7 +830,9 @@ export function wireRegisterClicks() {
         if (pdfButton) {
             pdfButton.addEventListener("click", () => {
                 const number = pdfButton.dataset.number;
-                if (number) window.location.href = "/api/records/" + encodeURIComponent(number) + "/pdf";
+                if (!number) return;
+                api.downloadRecordPdf(number, { onWait: () => toast("Preparing the PDF…") })
+                    .catch((error) => toast(error.message, "error"));
             });
         }
     }
