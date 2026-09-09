@@ -22,6 +22,7 @@ import { buildUploader } from "../attach-upload.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
 import { recordLink, recordOpenLink, looksLikeRecordNumber } from "../record-nav.js";
+import { openRecordPage, converted } from "./record-page.js";
 import { onStreamEvent } from "../stream.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
@@ -736,6 +737,14 @@ function clearDetail(type) {
     if (editButton) delete editButton.dataset.number;
 }
 
+/* Open a register row. A converted type (record-page.js) takes over
+   the whole content area; a type still on the old layout renders into
+   its side panel as before. */
+async function openRow(type, tbody, number) {
+    if (await openRecordPage(number, { type, returnView: type })) return;
+    renderRecordDetail(type, number);
+}
+
 /* One listener per register, attached once when this module loads.
    Rows are replaced on every fetch, so a listener per row would have
    to be rebuilt each time; these never are. */
@@ -757,7 +766,7 @@ export function wireRegisterClicks() {
             if (onIdLink) event.preventDefault();
 
             selectRow(tbody, row.dataset.number);
-            renderRecordDetail(type, row.dataset.number);
+            openRow(type, tbody, row.dataset.number);
         });
 
         /* Arrow keys walk the register, Home/End jump to the ends,
@@ -777,7 +786,7 @@ export function wireRegisterClicks() {
             else if (event.key === "End") next = rows[rows.length - 1];
             else if (event.key === "Enter" && current) {
                 event.preventDefault();
-                renderRecordDetail(type, current.dataset.number);
+                openRow(type, tbody, current.dataset.number);
                 return;
             } else {
                 return;
@@ -902,10 +911,12 @@ export function wireRegisterClicks() {
                         await renderRegister(type);
 
                         /* Land on the thing that was just created rather
-                           than leaving somebody to hunt for it. */
+                           than leaving somebody to hunt for it - the
+                           register still selects it, and clicking opens
+                           the full-page view for a converted type. */
                         const register = document.getElementById(REGISTERS[type].tbody);
                         if (register) selectRow(register, created.number);
-                        await renderRecordDetail(type, created.number);
+                        if (!converted(type)) await renderRecordDetail(type, created.number);
                     }
                 }
             });
@@ -921,9 +932,11 @@ export function wireRegisterClicks() {
             document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "record-editor" } }));
             openRecordEditor(type, {
                 number,
-                returnView: TYPE_VIEW[type] || type,
+                returnView: converted(type) ? "record" : (TYPE_VIEW[type] || type),
                 onSaved: async (updated) => {
-                    if (OWN_SCREEN_REFRESH[type]) {
+                    if (converted(type)) {
+                        await openRecordPage(updated.number, { type, keepReturn: true });
+                    } else if (OWN_SCREEN_REFRESH[type]) {
                         await OWN_SCREEN_REFRESH[type](updated.number);
                     } else if (REGISTERS[type]) {
                         await renderRegister(type);
@@ -975,20 +988,30 @@ const DETAIL_FIELDS = [
     ["Lessons learned",       (d) => d.lessons_learned]
 ];
 
-export async function renderRecordDetail(type, number) {
+/* `slot` is the id prefix the detail is written into. It defaults to
+   `type`, so a register's own side panel (#complaint-detail,
+   #complaint-pdf, ...) is unchanged. The full-page record view
+   (record-page.js) passes slot:"record-view" to render into
+   #view-record instead - the path NCR, CAPA and every custom type now
+   take. */
+export async function renderRecordDetail(type, number, { slot = type } = {}) {
+    /* Re-render this same record in the same place - used by the
+       in-panel mutators (link, unlink, attach, change due date). */
+    const rerender = () => renderRecordDetail(type, number, { slot });
+
     /* APQP is not the generic key/value detail - it is built around its
        three deliverable documents and a phase gate (apqp.js). */
     if (type === "apqp") {
-        const pdfButton = document.getElementById("apqp-pdf");
+        const pdfButton = document.getElementById(slot + "-pdf");
         if (pdfButton) pdfButton.dataset.number = number;
-        const editButton = document.getElementById("apqp-edit");
+        const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = number;
         return renderApqpDetail(number);
     }
 
     /* A DI is built around its three investigation-form slots (di.js). */
     if (type === "di") {
-        const pdfButton = document.getElementById("di-pdf");
+        const pdfButton = document.getElementById(slot + "-pdf");
         if (pdfButton) pdfButton.dataset.number = number;
         return renderDiDetail(number);
     }
@@ -996,9 +1019,9 @@ export async function renderRecordDetail(type, number) {
     /* A FAIR renders its characteristic table with computed pass/fail
        (fair.js). */
     if (type === "fair") {
-        const pdfButton = document.getElementById("fair-pdf");
+        const pdfButton = document.getElementById(slot + "-pdf");
         if (pdfButton) pdfButton.dataset.number = number;
-        const editButton = document.getElementById("fair-edit");
+        const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = number;
         return renderFairDetail(number);
     }
@@ -1006,16 +1029,16 @@ export async function renderRecordDetail(type, number) {
     /* A PPAP is built around its 18 element slots and the submit gate
        (ppap.js). */
     if (type === "ppap") {
-        const pdfButton = document.getElementById("ppap-pdf");
+        const pdfButton = document.getElementById(slot + "-pdf");
         if (pdfButton) pdfButton.dataset.number = number;
-        const editButton = document.getElementById("ppap-edit");
+        const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = number;
         return renderPpapDetail(number);
     }
 
-    const panel = document.getElementById(type + "-detail");
-    const heading = document.getElementById(type + "-detail-number");
-    const statusSlot = document.getElementById(type + "-detail-status");
+    const panel = document.getElementById(slot + "-detail");
+    const heading = document.getElementById(slot + "-detail-number");
+    const statusSlot = document.getElementById(slot + "-detail-status");
 
     if (!panel) return;
 
@@ -1029,12 +1052,19 @@ export async function renderRecordDetail(type, number) {
         ]);
         const attachments = attachData.attachments;
 
-        if (heading) heading.replaceChildren(recordOpenLink(record.number));
+        /* On a register side panel the heading doubles as an
+           open-in-new-tab link; on the full-page view it is the page
+           <h1>, so just the number. */
+        if (heading) {
+            heading.replaceChildren(slot === type
+                ? recordOpenLink(record.number)
+                : document.createTextNode(record.number));
+        }
 
-        const pdfButton = document.getElementById(type + "-pdf");
+        const pdfButton = document.getElementById(slot + "-pdf");
         if (pdfButton) pdfButton.dataset.number = record.number;
 
-        const editButton = document.getElementById(type + "-edit");
+        const editButton = document.getElementById(slot + "-edit");
         if (editButton) editButton.dataset.number = record.number;
 
         /* Only apqp has a Documents panel in the markup today - this
@@ -1042,8 +1072,8 @@ export async function renderRecordDetail(type, number) {
            the type, so any other record type that gets one later
            (an 8D's own, added below in change.js, or a future type)
            picks this up with no change here. */
-        if (document.getElementById(type + "-documents-panel")) {
-            renderDocumentsPanel(record.number, type + "-documents-panel");
+        if (document.getElementById(slot + "-documents-panel")) {
+            renderDocumentsPanel(record.number, slot + "-documents-panel");
         }
 
         if (statusSlot) {
@@ -1070,6 +1100,8 @@ export async function renderRecordDetail(type, number) {
                 currentValue: record.due_at,
                 onSave: async (value) => {
                     await api.updateRecord(record.number, { due_at: value });
+
+                    if (slot !== type) { await rerender(); return; }
 
                     /* renderRegister re-selects its own first row, so
                        the just-edited record - not necessarily first -
@@ -1207,7 +1239,8 @@ export async function renderRecordDetail(type, number) {
                         confirmLabel: "Move to " + step.label,
                         onConfirm: async (reason) => {
                             await api.transition(record.number, { to: step.to, reason });
-                            await renderRegister(type);
+                            if (slot === type) await renderRegister(type);
+                            else await rerender();
                         }
                     });
                 });
@@ -1236,7 +1269,7 @@ export async function renderRecordDetail(type, number) {
                         onClick: async () => {
                             try {
                                 await api.unlinkRecord(record.number, link.number);
-                                await renderRecordDetail(type, number);
+                                await rerender();
                             } catch (error) { toast(error.message, "error"); }
                         }
                     }, "×")
@@ -1257,7 +1290,7 @@ export async function renderRecordDetail(type, number) {
             if (!to) { toast("Enter a record number", "error"); return; }
             try {
                 await api.linkRecord(record.number, { to, link_type: linkKind.value });
-                await renderRecordDetail(type, number);
+                await rerender();
             } catch (error) { toast(error.message, "error"); }
         });
         children.push(el("div", {
@@ -1305,7 +1338,7 @@ export async function renderRecordDetail(type, number) {
            the panel refreshes once the batch settles. */
         children.push(buildUploader({
             url: "/records/" + encodeURIComponent(record.number) + "/attachments",
-            onComplete: () => renderRecordDetail(type, number)
+            onComplete: () => rerender()
         }));
 
         /* Or point at a file kept on a network share. */
@@ -1324,7 +1357,7 @@ export async function renderRecordDetail(type, number) {
 
             try {
                 await api.addAttachment(record.number, { filename, storage_key: location });
-                await renderRecordDetail(type, number);
+                await rerender();
             } catch (error) {
                 toast(error.message, "error");
             }

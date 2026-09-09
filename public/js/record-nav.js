@@ -17,6 +17,7 @@ import { api } from "./api.js";
 import { renderRecordDetail } from "./views/events.js";
 import { renderEightD, renderChange } from "./views/change.js";
 import { openCustomRecord } from "./views/form-record.js";
+import { openRecordPage } from "./views/record-page.js";
 import { el, toast } from "./dom.js";
 
 const TYPE_VIEW = {
@@ -84,6 +85,11 @@ export async function openRecord(number, typeHint) {
             return;
         }
     }
+
+    /* Full-page record view, where the type is on that path (every
+       custom type, and the built-ins converted so far). Anything else
+       falls through to its own screen below. */
+    if (await openRecordPage(n, { type })) return;
 
     const view = TYPE_VIEW[type];
     if (!view) {

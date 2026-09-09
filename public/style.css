@@ -538,6 +538,28 @@ body {
 
 .view-head { margin-bottom: 20px; }
 
+/* Full-page record view (record-page.js). Back button, then the
+   record number as the page title with its status pill, then the
+   Edit / Print / PDF actions pushed to the right. */
+.record-page-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.record-page-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+}
+.record-page-title .view-title { margin: 0; }
+.record-page-actions {
+    margin-left: auto;
+    gap: 6px;
+}
+.record-page-actions[hidden] { display: none; }
+
 /* The record editor's fields would otherwise stretch across the
    full content column on a wide screen - a text input a thousand
    pixels wide is harder to read, not easier. */

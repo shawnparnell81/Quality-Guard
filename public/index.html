@@ -343,38 +343,25 @@
             <p class="view-sub">Control of nonconforming outputs. Segregation, disposition, and MRB record.</p>
         </div>
 
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">NCR register</h2>
-                    <div class="row">
-                        <select class="filter-severity" data-type="ncr" title="Filter by severity">
-                            <option value="">All severities</option>
-                            <option value="crit">Critical</option>
-                            <option value="warn">Warning</option>
-                            <option value="ok">OK</option>
-                        </select>
-                        <label class="filter-open"><input type="checkbox" data-type="ncr"> Open only</label>
-                        <button class="btn btn-primary" data-requires="ncr.create" data-new-record="ncr">New NCR</button>
-                    </div>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>NCR</th><th>Part</th><th>Defect</th><th class="num">Qty</th><th>Disposition</th><th>Status</th></tr></thead>
-                        <tbody id="ncr-register"></tbody>
-                    </table>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">NCR register</h2>
+                <div class="row">
+                    <select class="filter-severity" data-type="ncr" title="Filter by severity">
+                        <option value="">All severities</option>
+                        <option value="crit">Critical</option>
+                        <option value="warn">Warning</option>
+                        <option value="ok">OK</option>
+                    </select>
+                    <label class="filter-open"><input type="checkbox" data-type="ncr"> Open only</label>
+                    <button class="btn btn-primary" data-requires="ncr.create" data-new-record="ncr">New NCR</button>
                 </div>
             </div>
-
-            <div class="panel" id="ncr-detail-panel">
-                <div class="panel-head">
-                    <h2 class="panel-title" id="ncr-detail-number">Select a record</h2>
-                    <span id="ncr-detail-status"></span>
-                    <button type="button" class="btn btn-primary no-print" id="ncr-edit" data-edit-record="ncr">Edit</button>
-                    <button type="button" class="btn no-print" id="ncr-print">Print</button>
-                    <button type="button" class="btn no-print" id="ncr-pdf">PDF</button>
-                </div>
-                <div class="panel-body" id="ncr-detail"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>NCR</th><th>Part</th><th>Defect</th><th class="num">Qty</th><th>Disposition</th><th>Status</th></tr></thead>
+                    <tbody id="ncr-register"></tbody>
+                </table>
             </div>
         </div>
     </section>
@@ -386,38 +373,25 @@
             <p class="view-sub">Root cause, action plan, and the effectiveness check that closes the loop. A CAPA cannot close without verified effectiveness.</p>
         </div>
 
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head">
-                    <h2 class="panel-title">CAPA register</h2>
-                    <div class="row">
-                        <select class="filter-severity" data-type="capa" title="Filter by severity">
-                            <option value="">All severities</option>
-                            <option value="crit">Critical</option>
-                            <option value="warn">Warning</option>
-                            <option value="ok">OK</option>
-                        </select>
-                        <label class="filter-open"><input type="checkbox" data-type="capa"> Open only</label>
-                        <button class="btn btn-primary" data-requires="capa.create" data-new-record="capa">New CAPA</button>
-                    </div>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>CAPA</th><th>Trigger</th><th>Owner</th><th>Due</th><th>Stage</th></tr></thead>
-                        <tbody id="capa-register"></tbody>
-                    </table>
+        <div class="panel">
+            <div class="panel-head">
+                <h2 class="panel-title">CAPA register</h2>
+                <div class="row">
+                    <select class="filter-severity" data-type="capa" title="Filter by severity">
+                        <option value="">All severities</option>
+                        <option value="crit">Critical</option>
+                        <option value="warn">Warning</option>
+                        <option value="ok">OK</option>
+                    </select>
+                    <label class="filter-open"><input type="checkbox" data-type="capa"> Open only</label>
+                    <button class="btn btn-primary" data-requires="capa.create" data-new-record="capa">New CAPA</button>
                 </div>
             </div>
-
-            <div class="panel" id="capa-detail-panel">
-                <div class="panel-head">
-                    <h2 class="panel-title" id="capa-detail-number">Select a record</h2>
-                    <span id="capa-detail-status"></span>
-                    <button type="button" class="btn btn-primary no-print" id="capa-edit" data-edit-record="capa">Edit</button>
-                    <button type="button" class="btn no-print" id="capa-print">Print</button>
-                    <button type="button" class="btn no-print" id="capa-pdf">PDF</button>
-                </div>
-                <div class="panel-body" id="capa-detail"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>CAPA</th><th>Trigger</th><th>Owner</th><th>Due</th><th>Stage</th></tr></thead>
+                    <tbody id="capa-register"></tbody>
+                </table>
             </div>
         </div>
     </section>
@@ -1650,19 +1624,13 @@
                 <button class="btn btn-primary no-print" type="button" id="form-record-new">New record</button>
             </div>
         </div>
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-head"><h2 class="panel-title">Records</h2><span class="panel-note" id="form-record-note"></span></div>
-                <div class="table-wrap">
-                    <table>
-                        <thead><tr><th>Number</th><th>Summary</th><th>Status</th><th>Opened</th></tr></thead>
-                        <tbody id="form-record-table"></tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="panel">
-                <div class="panel-head"><h2 class="panel-title" id="form-record-detail-number">Select a record</h2></div>
-                <div class="panel-body" id="form-record-detail"></div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Records</h2><span class="panel-note" id="form-record-note"></span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Number</th><th>Summary</th><th>Status</th><th>Opened</th></tr></thead>
+                    <tbody id="form-record-table"></tbody>
+                </table>
             </div>
         </div>
     </section>
@@ -1786,6 +1754,11 @@
             <div class="panel-body" id="record-editor-body"></div>
         </div>
     </section>
+
+    <!-- Full-page record view. Built and populated by
+         public/js/views/record-page.js; opening any record anywhere
+         lands here rather than in a side panel. -->
+    <section class="view" id="view-record" hidden></section>
 
     </div>
 </div>
