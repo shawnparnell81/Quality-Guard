@@ -45,9 +45,10 @@ const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "boolean", "co
    list for real (LINK_SOURCES in masterdata.js); this copy only has
    to be good enough to build a sensible dropdown. */
 const LINK_TARGETS = [
-    ["parts", "Parts"],
-    ["gages", "Gages"],
-    ["lots",  "Lots"]
+    ["parts",  "Parts"],
+    ["gages",  "Gages"],
+    ["lots",   "Lots"],
+    ["record", "Another record"]
 ];
 
 let selectedType = null;

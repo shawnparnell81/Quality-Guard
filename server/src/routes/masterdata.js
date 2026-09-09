@@ -231,6 +231,32 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
             options[target] = rows.rows;
         }));
 
+        /* A link field can also target another record (target:"record"),
+           optionally narrowed to one type (record_type:"risk"). The
+           picker gets "NUMBER  title" pairs; keyed plain "record" when
+           unfiltered, "record:<type>" when filtered, which is the key
+           the renderer looks up. Bounded - a real deployment with many
+           records wants a typeahead, not the whole list. */
+        const recordLinks = fields.filter((f) => f.type === "link" && f.target === "record");
+        if (recordLinks.length) {
+            const base = `select r.number as value,
+                                 r.number || '  ' || coalesce(r.title, '') as label,
+                                 false as disabled
+                            from records r
+                            join record_types rt on rt.id = r.record_type_id
+                           where r.org_id = $1`;
+            if (recordLinks.some((f) => !f.record_type)) {
+                const rows = await query(base + " order by r.opened_at desc limit 500",
+                    [request.user.org_id]);
+                options.record = rows.rows;
+            }
+            for (const t of [...new Set(recordLinks.map((f) => f.record_type).filter(Boolean))]) {
+                const rows = await query(base + " and rt.key = $2 order by r.opened_at desc limit 500",
+                    [request.user.org_id, t]);
+                options["record:" + t] = rows.rows;
+            }
+        }
+
         /* "user" has been accepted in FIELD_TYPES since this validator
            was written, but nothing ever loaded options for one - a form
            that declared it would have rendered as a plain text box.
@@ -380,8 +406,12 @@ export function problemWith(fields) {
         if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
             return "\"" + field.label + "\" needs at least one option";
         }
-        if (field.type === "link" && !LINK_SOURCES[field.target]) {
+        if (field.type === "link" && field.target !== "record" && !LINK_SOURCES[field.target]) {
             return "\"" + field.label + "\" needs a valid link target";
+        }
+        if (field.type === "link" && field.target === "record"
+            && field.record_type !== undefined && typeof field.record_type !== "string") {
+            return "\"" + field.label + "\"'s record_type filter must be a type key";
         }
         if (field.type === "table") {
             const bad = tableProblem(field);
