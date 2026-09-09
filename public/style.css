@@ -481,7 +481,11 @@ body {
     border-bottom: 2px solid var(--accent);
     position: sticky;
     top: 0;
-    z-index: 10;
+    /* Above the deptbar (z 20) so the header's own dropdowns - the
+       notification panel especially - hang over the department bar
+       instead of being clipped behind it. Still under the mobile
+       drawer/backdrop (45/46) and every overlay (50+). */
+    z-index: 30;
 }
 
 .topbar-right { margin-left: auto; }
