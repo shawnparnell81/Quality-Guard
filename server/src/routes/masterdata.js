@@ -263,7 +263,9 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
            Value is the person's initials, the same identifier records
            already use for owner, so a field like audit's "auditor" is
            a real reference rather than a name typed freely. */
-        if (fields.some((f) => f.type === "user")) {
+        const wantsUsers = fields.some((f) => f.type === "user"
+            || (f.type === "table" && (f.columns || []).some((c) => c.type === "user")));
+        if (wantsUsers) {
             const rows = await query(`
                 select initials as value,
                        full_name || case when discipline is not null
@@ -300,9 +302,23 @@ const FIELD_TYPES = new Set([
    (compute:"product"|"sum" over inputs:[...], e.g. RPN = severity x
    occurrence x detection) or a free expression (expr:"tol - abs(actual
    - nominal)", evaluated by public/js/expr.js on both tiers).
-   "boolean" is a checkbox cell, stored as true / false. */
-const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed", "boolean"]);
+   "boolean" is a checkbox cell, stored as true / false. "user" is a
+   person picker, stored as initials (same as a flat user field). */
+const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed", "boolean", "user"]);
 const COMPUTE_OPS = new Set(["product", "sum"]);
+
+/* thresholds:{warn?,crit?} paints a number amber / red once it crosses
+   them. Allowed on any "number" or "computed" field or column. */
+function thresholdProblem(label, t) {
+    if (t === undefined) return null;
+    if (!t || typeof t !== "object" || Array.isArray(t)) return "\"" + label + "\" has bad thresholds";
+    for (const key of ["warn", "crit"]) {
+        if (t[key] !== undefined && typeof t[key] !== "number") {
+            return "\"" + label + "\" threshold \"" + key + "\" must be a number";
+        }
+    }
+    return null;
+}
 
 function tableProblem(field) {
     if (!Array.isArray(field.columns) || field.columns.length === 0) {
@@ -326,6 +342,11 @@ function tableProblem(field) {
         if (col.type === "select" && (!Array.isArray(col.options) || col.options.length === 0)) {
             return "\"" + field.label + "\" column \"" + col.label + "\" needs options";
         }
+        if (col.thresholds !== undefined && col.type !== "number" && col.type !== "computed") {
+            return "\"" + field.label + "\" column \"" + col.label + "\" can only carry thresholds on a number or computed column";
+        }
+        const tp = thresholdProblem(field.label + " column \"" + col.label + "\"", col.thresholds);
+        if (tp) return tp;
     }
 
     /* A second pass: a computed column can only be checked once every
@@ -364,17 +385,6 @@ function tableProblem(field) {
                 return "\"" + field.label + "\" column \"" + col.label + "\" can only compute from number columns";
             }
         }
-        if (col.thresholds !== undefined) {
-            const t = col.thresholds;
-            if (!t || typeof t !== "object" || Array.isArray(t)) {
-                return "\"" + field.label + "\" column \"" + col.label + "\" has bad thresholds";
-            }
-            for (const key of ["warn", "crit"]) {
-                if (t[key] !== undefined && typeof t[key] !== "number") {
-                    return "\"" + field.label + "\" column \"" + col.label + "\" threshold \"" + key + "\" must be a number";
-                }
-            }
-        }
     }
     return null;
 }
@@ -406,6 +416,11 @@ export function problemWith(fields) {
         if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
             return "\"" + field.label + "\" needs at least one option";
         }
+        if (field.thresholds !== undefined && field.type !== "number") {
+            return "\"" + field.label + "\" can only carry thresholds on a number field";
+        }
+        const ftp = thresholdProblem(field.label, field.thresholds);
+        if (ftp) return ftp;
         if (field.type === "link" && field.target !== "record" && !LINK_SOURCES[field.target]) {
             return "\"" + field.label + "\" needs a valid link target";
         }

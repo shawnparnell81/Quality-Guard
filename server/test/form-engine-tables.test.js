@@ -721,3 +721,55 @@ test("an edit never re-signs a sealed signature in whoever made it", async () =>
 
     assert.deepEqual(second, first, "same signer, same timestamp, same hash - not re-signed");
 });
+
+/* ---------- field-type papercuts: user columns, thresholds, file slots (audit P3 / L1-L3) ---------- */
+
+test("a table can carry a user column and the form load populates the people picker", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Team Table", prefix: "TMT",
+        fields: [{ key: "actions", label: "Actions", type: "table", columns: [
+            { key: "task", label: "Task", type: "text" },
+            { key: "owner", label: "Owner", type: "user" }
+        ] }]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    const form = await api(adminCookie, "GET", "/api/record-types/team_table/form");
+    assert.ok(Array.isArray(form.body.options.users) && form.body.options.users.length > 0,
+        "options.users is loaded for a table user column");
+
+    const who = form.body.options.users[0].value;
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "team_table", title: "assign", data: { actions: [{ task: "sort the lot", owner: who }] }
+    });
+    assert.equal(rec.status, 201, JSON.stringify(rec.body));
+    const got = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    assert.equal(got.body.record.data.actions[0].owner, who);
+});
+
+test("thresholds are accepted on a plain number field/column, rejected elsewhere", async () => {
+    const ok = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Thresholded", prefix: "THR",
+        fields: [
+            { key: "score", label: "Score", type: "number", thresholds: { warn: 80, crit: 95 } },
+            { key: "rows", label: "Rows", type: "table", columns: [
+                { key: "n", label: "N", type: "number", thresholds: { warn: 10 } }
+            ] }
+        ]
+    });
+    assert.equal(ok.status, 201, JSON.stringify(ok.body));
+    const form = await api(adminCookie, "GET", "/api/record-types/thresholded/form");
+    assert.deepEqual(form.body.fields.find((f) => f.key === "score").thresholds, { warn: 80, crit: 95 });
+
+    const badField = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Bad Thr " + Math.random().toString(36).slice(2, 6), prefix: "BTH",
+        fields: [{ key: "t", label: "T", type: "text", thresholds: { warn: 1 } }]
+    });
+    assert.equal(badField.status, 422);
+
+    const badShape = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Bad Thr2 " + Math.random().toString(36).slice(2, 6), prefix: "BT2",
+        fields: [{ key: "n", label: "N", type: "number", thresholds: { warn: "high" } }]
+    });
+    assert.equal(badShape.status, 422);
+});

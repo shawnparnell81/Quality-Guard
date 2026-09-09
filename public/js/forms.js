@@ -67,6 +67,11 @@ export function buildField(field, options, currentValue, context = {}) {
                 value: currentValue ?? ""
             });
             if (field.min !== undefined) input.min = field.min;
+            if (field.thresholds) {
+                const repaint = () => paintThreshold(input, field, input.value);
+                input.addEventListener("input", repaint);
+                repaint();
+            }
             break;
 
         case "date":
@@ -166,14 +171,25 @@ export function buildField(field, options, currentValue, context = {}) {
             return { wrapper, input, field };
         }
 
-        case "file":
-            input = el("input", { type: "text", id, name: field.key, disabled: "disabled" });
-            wrapper.append(input);
-            wrapper.append(el("span", {
-                class: "field-hint",
-                text: "Save the record, then attach files from its Attachments section."
-            }));
+        case "file": {
+            /* A field-scoped file slot: its uploads are ordinary record
+               attachments tagged row_ref = "<fieldKey>:_", so they show
+               grouped under this field on the detail view. */
+            input = el("input", { type: "hidden", id, name: field.key });
+            if (context.recordNumber) {
+                const btn = el("button", {
+                    class: "btn sm", type: "button", text: "📎 Files for “" + field.label + "”",
+                    onClick: () => openRowAttachments(
+                        context.recordNumber, field.key + ":_", field.label)
+                });
+                wrapper.append(btn);
+            } else {
+                wrapper.append(el("input", { type: "text", disabled: "disabled", class: "readonly" }));
+                wrapper.append(el("span", { class: "field-hint",
+                    text: "Save the record, then attach files here." }));
+            }
             return { wrapper, input, field };
+        }
 
         case "table": {
             /* A repeating grid: one field, an array of row objects. The
@@ -200,6 +216,23 @@ export function buildField(field, options, currentValue, context = {}) {
                     const c = el("input", { type: "checkbox" });
                     c.checked = value === true || value === "true";
                     return c;
+                }
+                if (column.type === "user") {
+                    const s = el("select", {}, [
+                        el("option", { value: "", text: "—" }),
+                        ...(((options && options.users) || []).map((o) =>
+                            el("option", { value: o.value, text: o.label })))
+                    ]);
+                    s.value = value != null ? String(value) : "";
+                    return s;
+                }
+                if (column.type === "number" && column.thresholds) {
+                    const i = el("input", { type: "number", step: "any" });
+                    if (value != null && value !== "") i.value = String(value);
+                    const repaint = () => paintThreshold(i, column, i.value);
+                    i.addEventListener("input", repaint);
+                    repaint();
+                    return i;
                 }
                 if (column.type === "computed") {
                     /* Filled in by recompute(), never typed into. */

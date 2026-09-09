@@ -2619,25 +2619,35 @@ records.post("/:number/attachments", upload.single("file"), async (request, resp
         if (!request.user) return response.status(401).json({ error: "Not signed in" });
 
         const record = await query(
-            "select id, data from records where org_id = $1 and number = $2",
+            "select id, data, record_type_id, form_version from records where org_id = $1 and number = $2",
             [request.user.org_id, request.params.number]
         );
         if (record.rowCount === 0) {
             return response.status(404).json({ error: "Record not found" });
         }
 
-        /* An optional row_ref = "<tableFieldKey>:<rowId>" pins this file
-           to one row of a table field. Validated against the record's
-           own data - the row must actually exist - so a stale or forged
-           ref cannot leave an orphan attachment behind. */
+        /* An optional row_ref pins this file to a place in the form:
+             "<tableFieldKey>:<rowId>"  - one row of a table field
+             "<fileFieldKey>:_"         - a field-scoped file slot
+           Both are validated against the record's own schema / data so
+           a stale or forged ref cannot leave an orphan attachment. */
         const rowRef = String((request.body && request.body.row_ref) || "").trim() || null;
         if (rowRef) {
             const m = /^([A-Za-z0-9_]+):(.+)$/.exec(rowRef);
-            const rows = m && Array.isArray(record.rows[0].data?.[m[1]])
-                ? record.rows[0].data[m[1]] : null;
-            const hit = rows && rows.some((r) => r && typeof r === "object" && r._id === m[2]);
-            if (!hit) {
-                return response.status(400).json({ error: "row_ref does not match any row on this record" });
+            let ok = false;
+            if (m && m[2] === "_") {
+                const s = await query(
+                    "select schema from form_versions where record_type_id = $1 and version = $2",
+                    [record.rows[0].record_type_id, record.rows[0].form_version]);
+                ok = ((s.rows[0]?.schema?.fields) || [])
+                    .some((f) => f.key === m[1] && f.type === "file");
+            } else {
+                const rows = m && Array.isArray(record.rows[0].data?.[m[1]])
+                    ? record.rows[0].data[m[1]] : null;
+                ok = !!(rows && rows.some((r) => r && typeof r === "object" && r._id === m[2]));
+            }
+            if (!ok) {
+                return response.status(400).json({ error: "row_ref does not match a row or file field on this record" });
             }
         }
 

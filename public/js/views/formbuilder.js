@@ -39,7 +39,7 @@ const TYPE_LABEL = {
    server's TABLE_COLUMN_TYPES in masterdata.js. "computed" is a
    read-only cell derived from other number columns in the same row;
    "boolean" is a checkbox cell. */
-const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "boolean", "computed"];
+const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "boolean", "user", "computed"];
 
 /* Where a "link" field's options come from. The server enforces this
    list for real (LINK_SOURCES in masterdata.js); this copy only has
