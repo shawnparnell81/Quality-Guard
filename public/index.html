@@ -725,6 +725,33 @@
         </div>
     </section>
 
+    <!-- ============ PRODUCTION LOG ============ -->
+    <section class="view" id="view-production-log" hidden>
+        <div class="view-head">
+            <h1 class="view-title">Production Log<span class="clause-ref">8.5.1</span></h1>
+            <p class="view-sub">Every order followed through production - the customer behind it, the quantities that came out, the dates that were promised. The person who writes the work orders keeps this ledger; everyone else reads it.</p>
+        </div>
+        <div class="grid-2">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Production log</h2>
+                    <span class="panel-note" id="pl-log-note"></span>
+                    <button class="btn btn-primary no-print" type="button" id="pl-log-new" data-requires="wo.log" style="margin-left:auto">New entry</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Entry</th><th>WO</th><th>Customer</th><th class="num">Ordered</th><th class="num">Shipped</th><th>Status</th></tr></thead>
+                        <tbody id="pl-log-table"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-head"><h2 class="panel-title" id="pl-detail-number">Select an entry</h2></div>
+                <div class="panel-body" id="pl-detail"></div>
+            </div>
+        </div>
+    </section>
+
     <!-- ============ PURCHASE REQUEST LOG ============ -->
     <section class="view" id="view-pr-log" hidden>
         <div class="view-head">

@@ -291,6 +291,12 @@ export const api = {
     updatePurchaseRequest: (number, payload) =>
         request("PATCH", "/purchase-requests/" + encodeURIComponent(number), payload),
 
+    productionLogs:      ()       => get("/production-logs"),
+    productionLog:       (number) => get("/production-logs/" + encodeURIComponent(number)),
+    createProductionLog: (payload) => request("POST", "/production-logs", payload),
+    updateProductionLog: (number, payload) =>
+        request("PATCH", "/production-logs/" + encodeURIComponent(number), payload),
+
     changeImpact: (number)  => get("/changes/" + encodeURIComponent(number) + "/impact"),
     signImpact:   (number, area, payload) =>
         request("POST", "/changes/" + encodeURIComponent(number)

@@ -1,6 +1,6 @@
 /* ============================================================
    Customer Service logs: purchase orders, work orders, purchase
-   requests.
+   requests, the production log.
 
    Each screen is a register on the left and a detail panel on the
    right, the same shape as Receiving Inspection. Open a row to see
@@ -11,6 +11,10 @@
    Work orders are the existing work_orders row - the one Production
    Control uses - not a copy. Purchase orders and requests have their
    own thin tables (migrations 030, plus 032 for work_orders.data).
+   The production log (migration 048) is the CSR's ledger of orders
+   through production; its writes reuse wo.log, so the work-order
+   author and the GM are the only people who can change a row, and
+   everyone else sees it read-only.
    ============================================================ */
 
 import { api } from "../api.js";
@@ -28,7 +32,8 @@ const STATUS_KIND = {
     received: "done", closed: "done", cancelled: "hold",
     submitted: "prog", approved: "done", rejected: "open", ordered: "done",
     planned: "hold", running: "prog", quality_hold: "open",
-    mrb_hold: "open", complete: "done"
+    mrb_hold: "open", complete: "done",
+    scheduled: "hold", in_production: "prog", hold: "open", shipped: "done"
 };
 const statusPill = (status) => pill(humanize(status), STATUS_KIND[status] || "hold");
 
@@ -151,6 +156,33 @@ const WO_DETAIL = [
     { key: "notes",       label: "Notes", type: "memo", inData: true }
 ];
 
+/* The CSR's production ledger. wo_number points at the work order on
+   the floor; work_orders stays the source of truth for what is being
+   made, this row carries the order and the outcome around it. */
+const PL_DETAIL = [
+    { key: "wo_number",       label: "Work order", type: "text" },
+    { key: "customer",        label: "Customer", type: "text" },
+    { key: "customer_po",     label: "Customer PO", type: "text" },
+    { key: "part_number",     label: "Part number", type: "text" },
+    { key: "revision",        label: "Revision", type: "text" },
+    { key: "status",          label: "Status", type: "select",
+      options: ["scheduled", "in_production", "hold", "shipped", "closed", "cancelled"] },
+    { key: "order_date",      label: "Order confirmed", type: "date" },
+    { key: "promised_date",   label: "Promised ship", type: "date" },
+    { key: "qty_ordered",     label: "Qty ordered", type: "number" },
+    { key: "qty_completed",   label: "Qty completed", type: "number" },
+    { key: "qty_scrapped",    label: "Qty scrapped", type: "number" },
+    { key: "qty_shipped",     label: "Qty shipped", type: "number" },
+    { key: "line",            label: "Line / cell", type: "text" },
+    { key: "setup_time",      label: "Setup time", type: "text", inData: true },
+    { key: "quality_signoff", label: "Quality sign-off", type: "select",
+      options: ["pending", "released", "rejected"], inData: true },
+    { key: "ncr_ref",         label: "NCR reference", type: "text", inData: true },
+    { key: "fulfillment",     label: "Fulfilment", type: "select",
+      options: ["on_time", "late", "partial", "complete"], inData: true },
+    { key: "notes",           label: "Notes", type: "memo" }
+];
+
 /* New-record forms drop the readonly identifier/vendor and add the
    fields only set at creation. */
 const PO_CREATE = [
@@ -159,6 +191,7 @@ const PO_CREATE = [
 ];
 const PR_CREATE = PR_DETAIL.filter((f) => f.key !== "po_number");
 const WO_CREATE = WO_DETAIL;
+const PL_CREATE = PL_DETAIL;
 
 const LOGS = {
     po: {
@@ -192,10 +225,22 @@ const LOGS = {
         create: api.createWorkOrder, update: api.updateWorkOrder,
         isOpen: (s) => s !== "complete",
         placeholder: "Select a work order"
+    },
+    pl: {
+        title: "production log entry", numberKey: "pl_number",
+        detailFields: PL_DETAIL, createFields: PL_CREATE,
+        detailEl: "pl-detail", headEl: "pl-detail-number", tableEl: "pl-log-table",
+        rowAttr: "pl", refresh: renderProductionLog,
+        fetch: (n) => api.productionLog(n).then((r) => ({
+            record: r.production_log, can_edit: r.can_edit, extra: r.wo_context
+        })),
+        create: api.createProductionLog, update: api.updateProductionLog,
+        isOpen: (s) => !["closed", "cancelled"].includes(s),
+        placeholder: "Select an entry"
     }
 };
 
-const selected = { po: null, pr: null, wo: null };
+const selected = { po: null, pr: null, wo: null, pl: null };
 
 function mark(tableEl, attr, value) {
     tableEl.querySelectorAll("tr").forEach((tr) => {
@@ -306,6 +351,49 @@ function renderForm(kind, panel, record, editable, creating, extra) {
         }
     }
 
+    /* Production log: yield off the quantities entered, and what the
+       work order this row follows is doing on the floor right now. */
+    if (kind === "pl" && !creating) {
+        const ordered = Number(record.qty_ordered);
+        const completed = Number(record.qty_completed);
+        const scrapped = Number(record.qty_scrapped);
+
+        const summary = [];
+        if (Number.isFinite(ordered) && ordered > 0 && Number.isFinite(completed)) {
+            summary.push("Yield " + (Math.round((completed / ordered) * 1000) / 10) + "%");
+        }
+        if (Number.isFinite(scrapped) && scrapped > 0
+            && Number.isFinite(completed) && completed + scrapped > 0) {
+            summary.push("scrap " + (Math.round((scrapped / (completed + scrapped)) * 1000) / 10) + "%");
+        }
+        if (summary.length) {
+            children.push(el("div", { class: "section-label", text: "Yield" }));
+            children.push(el("p", { class: "sm", style: "margin:0 0 8px", text: summary.join(" · ") }));
+        }
+
+        if (extra) {
+            children.push(el("div", { class: "section-label", text: "Work order" }));
+            const line = record.wo_number
+                ? record.wo_number + " is " + humanize(extra.status)
+                  + (extra.open_ncr_count ? ", " + extra.open_ncr_count + " NCR open" : "")
+                : "";
+            children.push(el("p", { class: "sm", style: "margin:0 0 8px" }, [
+                line + " ",
+                el("button", {
+                    class: "btn sm no-print", type: "button", text: "Open on Production Control",
+                    onClick: () => document.dispatchEvent(new CustomEvent("navigate", { detail: { view: "production" } }))
+                })
+            ]));
+            if (extra.hold_reason) {
+                children.push(el("p", { class: "sm", style: "color:var(--crit);margin:0",
+                    text: "On hold: " + extra.hold_reason }));
+            }
+        } else if (record.wo_number) {
+            children.push(el("p", { class: "sm dim", style: "margin:0",
+                text: "Work order " + record.wo_number + " is not on the floor log." }));
+        }
+    }
+
     panel.replaceChildren(...children);
 }
 
@@ -316,7 +404,9 @@ function renderForm(kind, panel, record, editable, creating, extra) {
 function wireRows(tableEl, rows, attr, onPick) {
     tableEl.querySelectorAll("tr").forEach((tr, i) => {
         if (!rows[i]) return;
-        tr.dataset[attr] = rows[i][attr === "wo" ? "wo_number" : attr === "po" ? "po_number" : "pr_number"];
+        tr.dataset[attr] = rows[i][attr === "wo" ? "wo_number"
+            : attr === "po" ? "po_number"
+            : attr === "pl" ? "pl_number" : "pr_number"];
         tr.classList.add("row-clickable");
     });
 }
@@ -396,6 +486,33 @@ export async function renderPrLog() {
     }
 }
 
+export async function renderProductionLog() {
+    const tbody = document.getElementById("pl-log-table");
+    const note = document.getElementById("pl-log-note");
+    loadingRow(tbody, 6);
+    try {
+        const { production_logs: rows } = await api.productionLogs();
+        if (note) {
+            const active = rows.filter((r) => r.status === "in_production").length;
+            const held = rows.filter((r) => r.status === "hold").length;
+            note.textContent = rows.length + " tracked / " + active + " in production"
+                + (held ? " / " + held + " on hold" : "");
+        }
+        fillTable(tbody, rows, [
+            { className: "mono sm nowrap", render: (r) => r.pl_number },
+            { className: "mono sm nowrap", render: (r) => r.wo_number || "-" },
+            { className: "sm", render: (r) => r.customer || "-" },
+            { className: "num", render: (r) => r.qty_ordered != null ? r.qty_ordered.toLocaleString() : "-" },
+            { className: "num", render: (r) => r.qty_shipped != null ? r.qty_shipped.toLocaleString() : "-" },
+            { render: (r) => statusPill(r.status) }
+        ], "Nothing tracked yet");
+        wireRows(tbody, rows, "pl");
+        await settleSelection("pl", tbody, rows.map((r) => r.pl_number));
+    } catch (error) {
+        errorRow(tbody, 6, error);
+    }
+}
+
 /* After a register renders: keep the current selection if it still
    exists, otherwise open the first row, otherwise leave the detail
    panel on its placeholder. */
@@ -422,7 +539,7 @@ async function settleSelection(kind, tbody, numbers) {
    ============================================================ */
 
 export function wireLogs() {
-    for (const kind of ["po", "wo", "pr"]) {
+    for (const kind of ["po", "wo", "pr", "pl"]) {
         const cfg = LOGS[kind];
 
         const newBtn = document.getElementById(kind + "-log-new");

@@ -293,6 +293,90 @@ test("a completed work order cannot be edited beyond its status", async () => {
     assert.equal(edit.status, 409);
 });
 
+/* ---------- production log ---------- */
+
+test("a production log entry is created, auto-numbered, listed and editable", async () => {
+    const created = await api(adminCookie, "POST", "/api/production-logs", {
+        customer: "Northwind Turbines", customer_po: "NW-7781",
+        part_number: "RP-4471-A", revision: "C",
+        order_date: "2026-09-01", promised_date: "2026-09-25",
+        qty_ordered: 400
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.match(created.body.pl_number, /^PL-\d{4}-\d{4}$/);
+    assert.equal(created.body.status, "scheduled");
+    assert.equal(created.body.qty_ordered, 400);
+
+    const number = created.body.pl_number;
+
+    const got = await api(adminCookie, "GET", "/api/production-logs/" + number);
+    assert.equal(got.status, 200);
+    assert.equal(got.body.production_log.customer, "Northwind Turbines");
+    assert.equal(got.body.can_edit, true);
+    assert.equal(got.body.wo_context, null);   // no work order named yet
+
+    const list = await api(adminCookie, "GET", "/api/production-logs");
+    assert.ok(list.body.production_logs.some((r) => r.pl_number === number));
+
+    const patched = await api(adminCookie, "PATCH", "/api/production-logs/" + number, {
+        status: "in_production", qty_completed: 388, qty_scrapped: 12,
+        data: { setup_time: "45m", quality_signoff: "pending" }
+    });
+    assert.equal(patched.status, 200, JSON.stringify(patched.body));
+    assert.equal(patched.body.status, "in_production");
+    assert.equal(patched.body.qty_completed, 388);
+    assert.equal(patched.body.data.setup_time, "45m");
+
+    /* data merges rather than replaces */
+    const merged = await api(adminCookie, "PATCH", "/api/production-logs/" + number, {
+        data: { quality_signoff: "released" }
+    });
+    assert.equal(merged.body.data.setup_time, "45m");
+    assert.equal(merged.body.data.quality_signoff, "released");
+});
+
+test("a production log entry resolves the work order it follows", async () => {
+    const wo = await api(adminCookie, "POST", "/api/work-orders", { qty: 300, cell: "Cell 2" });
+    const woNumber = wo.body.wo_number;
+
+    const pl = await api(adminCookie, "POST", "/api/production-logs", {
+        wo_number: woNumber, customer: "Follows WO Co", qty_ordered: 300
+    });
+    assert.equal(pl.status, 201);
+
+    const got = await api(adminCookie, "GET", "/api/production-logs/" + pl.body.pl_number);
+    assert.ok(got.body.wo_context, "wo_context should be populated");
+    assert.equal(got.body.wo_context.status, "planned");
+    assert.equal(got.body.wo_context.open_ncr_count, 0);
+});
+
+test("creating and editing a production log entry needs wo.log; reading does not", async () => {
+    const denied = await api(noLogCookie, "POST", "/api/production-logs", { customer: "X" });
+    assert.equal(denied.status, 403);
+
+    const mine = await api(adminCookie, "POST", "/api/production-logs", { customer: "Readable" });
+    const editDenied = await api(noLogCookie, "PATCH",
+        "/api/production-logs/" + mine.body.pl_number, { status: "hold" });
+    assert.equal(editDenied.status, 403);
+
+    const list = await api(noLogCookie, "GET", "/api/production-logs");
+    assert.equal(list.status, 200);
+});
+
+test("a closed production log entry cannot be edited beyond its status", async () => {
+    const pl = await api(adminCookie, "POST", "/api/production-logs", { customer: "Closing Co" });
+    const number = pl.body.pl_number;
+
+    await api(adminCookie, "PATCH", "/api/production-logs/" + number, { status: "closed" });
+
+    const edit = await api(adminCookie, "PATCH", "/api/production-logs/" + number, { qty_shipped: 1 });
+    assert.equal(edit.status, 409);
+
+    const reopen = await api(adminCookie, "PATCH", "/api/production-logs/" + number, { status: "shipped" });
+    assert.equal(reopen.status, 200);
+    assert.equal(reopen.body.status, "shipped");
+});
+
 /* ---------- isolation ---------- */
 
 test("one tenant's logs are invisible to another", async () => {
@@ -309,4 +393,12 @@ test("one tenant's logs are invisible to another", async () => {
 
     const list = await api(otherCookie, "GET", "/api/purchase-orders");
     assert.equal(list.body.purchase_orders.some((r) => r.po_number === po.body.po_number), false);
+
+    /* the production log is scoped the same way */
+    const pl = await api(adminCookie, "POST", "/api/production-logs", { customer: "Private Job" });
+    assert.equal(pl.status, 201);
+    const plGet = await api(otherCookie, "GET", "/api/production-logs/" + pl.body.pl_number);
+    assert.equal(plGet.status, 404);
+    const plList = await api(otherCookie, "GET", "/api/production-logs");
+    assert.equal(plList.body.production_logs.some((r) => r.pl_number === pl.body.pl_number), false);
 });
