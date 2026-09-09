@@ -14,7 +14,7 @@ import {
     formatDate, humanize, statusKind
 } from "../dom.js";
 import { renderDocumentsPanel } from "./resources.js";
-import { recordLink } from "../record-nav.js";
+import { recordLink, recordOpenLink } from "../record-nav.js";
 
 /* ============================================================
    8D
@@ -85,7 +85,7 @@ async function renderEightDDetail(number) {
     try {
         const { record, links, transitions } = await api.record(number);
 
-        if (heading) heading.textContent = record.number;
+        if (heading) heading.replaceChildren(recordOpenLink(record.number));
         if (editButton) editButton.dataset.number = record.number;
 
         renderDocumentsPanel(record.number, "eightd-documents-panel");
@@ -214,7 +214,7 @@ async function renderChangeDetail(number) {
 
         if (editButton) editButton.dataset.number = record.number;
 
-        if (heading) heading.textContent = record.number;
+        if (heading) heading.replaceChildren(recordOpenLink(record.number));
 
         if (note) {
             note.textContent = impact.complete

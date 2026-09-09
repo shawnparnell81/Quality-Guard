@@ -21,7 +21,7 @@ import { openEntityForm } from "../entity-form.js";
 import { buildUploader } from "../attach-upload.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { openFileWindow } from "../doc-windows.js";
-import { recordLink, looksLikeRecordNumber } from "../record-nav.js";
+import { recordLink, recordOpenLink, looksLikeRecordNumber } from "../record-nav.js";
 import { onStreamEvent } from "../stream.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
@@ -1021,7 +1021,7 @@ export async function renderRecordDetail(type, number) {
         ]);
         const attachments = attachData.attachments;
 
-        if (heading) heading.textContent = record.number;
+        if (heading) heading.replaceChildren(recordOpenLink(record.number));
 
         const pdfButton = document.getElementById(type + "-pdf");
         if (pdfButton) pdfButton.dataset.number = record.number;

@@ -20,6 +20,7 @@ import { renderRegister, wireRegisterClicks } from "./views/events.js";
 import { renderRoles, renderPeople, wireMatrixEditing, wirePeopleActions } from "./views/access.js";
 import { renderProduction, wireProduction } from "./views/production.js";
 import { renderEightD, renderChange, wireChangeScreens } from "./views/change.js";
+import { openRecord } from "./record-nav.js";
 import { renderReceiving, renderShipping, wireOperations } from "./views/operations.js";
 import {
     renderDrawings, renderOnboarding, renderOnboardingPacket,
@@ -444,7 +445,19 @@ async function start() {
     fillHeader();
     showReadinessBadge();
     updateNavCounts();
-    show("dashboard");
+
+    /* Deep link: /app?record=CAPA-2026-0034 opens straight to that
+       record's screen with it selected, so a register row (or a
+       linked-record chip) can be opened in its own browser tab and
+       several records worked side by side. */
+    const deepRecord = new URLSearchParams(location.search).get("record");
+    if (deepRecord) {
+        document.title = deepRecord + " · QMS Guardian";
+        try { await openRecord(deepRecord); }
+        catch { show("dashboard"); }
+    } else {
+        show("dashboard");
+    }
 
     /* First-run wizard, for an admin whose org has not been set up.
        After the dashboard so it opens over a populated page. */

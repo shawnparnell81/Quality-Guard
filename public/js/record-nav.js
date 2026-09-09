@@ -104,6 +104,19 @@ export async function openRecord(number, typeHint) {
     else await renderRecordDetail(type, n);
 }
 
+/* The record number as a real link that opens the record on its own
+   screen in a new browser tab (/app?record=NNN). Used as the detail
+   panel's title so several records can be worked side by side. */
+export function recordOpenLink(number) {
+    return el("a", {
+        href: "/app?record=" + encodeURIComponent(number),
+        target: "_blank", rel: "noopener",
+        class: "record-open-link",
+        title: "Open " + number + " in a new tab",
+        text: number + "  ↗"
+    });
+}
+
 /* A clickable chip / hyperlink for a record number. `link` may be a
    plain string or an object { number, type?, link_type?, title? }. */
 export function recordLink(link, { chip = true, suffix = "" } = {}) {
