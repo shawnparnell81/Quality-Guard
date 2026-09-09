@@ -213,6 +213,42 @@ test("a file attaches to one row via row_ref, and a bad row_ref is a 400", async
     assert.equal(bad2.status, 400);
 });
 
+test("a file field is a field-scoped slot: attach via row_ref \"<key>:_\"", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "File Slot Form", prefix: "FSL",
+        fields: [
+            { key: "note", label: "Note", type: "text" },
+            { key: "photos", label: "Photos", type: "file" }
+        ]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "file_slot_form", title: "with a file slot", data: { note: "see photos" }
+    });
+    assert.equal(rec.status, 201, JSON.stringify(rec.body));
+
+    const pdf = await makePdf("evidence");
+    const good = new FormData();
+    good.append("file", new Blob([pdf], { type: "application/pdf" }), "ev.pdf");
+    good.append("row_ref", "photos:_");
+    const up = await fetch(BASE + "/api/records/" + rec.body.number + "/attachments", {
+        method: "POST", headers: { Cookie: adminCookie }, body: good
+    });
+    assert.equal(up.status, 201, await up.text());
+    assert.equal(JSON.parse(await (await fetch(BASE + "/api/records/" + rec.body.number
+        + "/attachments", { headers: { Cookie: adminCookie } })).text()).attachments[0].row_ref, "photos:_");
+
+    /* ":_" only works for an actual file field */
+    const bad = new FormData();
+    bad.append("file", new Blob([pdf], { type: "application/pdf" }), "x.pdf");
+    bad.append("row_ref", "note:_");
+    const badResp = await fetch(BASE + "/api/records/" + rec.body.number + "/attachments", {
+        method: "POST", headers: { Cookie: adminCookie }, body: bad
+    });
+    assert.equal(badResp.status, 400);
+});
+
 test("a clone gets fresh row ids so it never shares an attachment with its source", async () => {
     const clone = await api(adminCookie, "POST", "/api/records/" + number + "/clone");
     assert.equal(clone.status, 201, JSON.stringify(clone.body));
