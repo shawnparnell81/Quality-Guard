@@ -85,7 +85,8 @@ async function mountEditor(pane, body, onEditDone) {
             host: body,
             headerless: true,
             custom: !BUILT_IN.has(pane.type),
-            onDone: () => { if (onEditDone) onEditDone(); }
+            onDone: () => { pane._editor = null; if (onEditDone) onEditDone(); },
+            onEditor: (handle) => { pane._editor = handle; }   // refreshed on every re-open
         });
         body.dataset.loaded = "1";
     } catch (error) {

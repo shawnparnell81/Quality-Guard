@@ -60,7 +60,6 @@ function shell(pane, index, ws, cb, body) {
             : (pane.number ? el("button", {
                 class: "pane-btn pane-edit", type: "button", title: "Edit this record",
                 "aria-label": "Edit " + (pane.title || "record"),
-                disabled: (ws.editing && ws.editing !== pane.id) ? "disabled" : undefined,
                 onClick: () => cb.onEdit(pane.id)
             }, "✎") : null),
         el("button", {

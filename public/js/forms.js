@@ -47,7 +47,9 @@ export function ensureDialog() {
    context carries the record number when editing an existing record,
    so a table with rowAttachments can offer a per-row file button. */
 export function buildField(field, options, currentValue, context = {}) {
-    const id = "field-" + field.key;
+    /* idPrefix keeps input ids / label `for` unique when more than one
+       editor is mounted at once (concurrent panes, M3). */
+    const id = (context.idPrefix || "") + "field-" + field.key;
     const wrapper = el("div", { class: "field-group" });
 
     wrapper.append(el("label", { for: id }, [
@@ -748,13 +750,9 @@ let returnView = null;
 let editorTeardown = null;
 let editorIsDirty = () => false;
 
-/* The multi-pane workspace needs to check / tear down whatever editor
-   is live before it closes the pane hosting it. */
-export function activeEditorIsDirty() { return editorIsDirty(); }
-export function teardownActiveEditor() { if (editorTeardown) editorTeardown(); }
-
 /* The record the editor currently has open, so the shared Print / PDF
-   buttons in its header can act on it. Null while creating a new one. */
+   buttons in its header can act on it. Null while creating a new one.
+   (Pane editors track their own record via the onEditor handle.) */
 let editorRecordNumber = null;
 
 export function wireRecordEditor() {
@@ -814,11 +812,13 @@ function appendFieldsGrouped(container, entries) {
 /* host / headerless / onDone: render the editor into an arbitrary
    container (a pane body) instead of #record-editor-body, skip the
    shared page header, and hand control back to the caller on save or
-   cancel rather than navigating. Used by the multi-pane workspace
-   (M2) so one pane can be edited in place. */
+   cancel rather than navigating. onEditor(handle) hands the caller a
+   { isDirty, destroy, number } so several pane editors can run at
+   once (M3), each torn down independently. Used by the multi-pane
+   workspace so panes can be edited in place. */
 export async function openRecordEditor(typeKey, {
     number, onSaved, returnView: fromView, stayOnSave = false, custom = false,
-    host = null, headerless = false, onDone = null
+    host = null, headerless = false, onDone = null, onEditor = null
 } = {}) {
     if (fromView) returnView = fromView;
 
@@ -829,7 +829,7 @@ export async function openRecordEditor(typeKey, {
     const actionsEl = headerless ? null : document.getElementById("record-editor-actions");
     if (!body) return;
 
-    editorRecordNumber = number || null;
+    if (!headerless) editorRecordNumber = number || null;
     if (actionsEl) {
         actionsEl.hidden = !number;
         /* Print / PDF are static + wired once; drop any per-open extras
@@ -842,7 +842,7 @@ export async function openRecordEditor(typeKey, {
                 try {
                     const r = await api.cloneRecord(number);
                     toast(r.number + " created from " + number);
-                    openRecordEditor(typeKey, { number: r.number, returnView, stayOnSave, custom, host, headerless, onDone });
+                    openRecordEditor(typeKey, { number: r.number, returnView, stayOnSave, custom, host, headerless, onDone, onEditor });
                 } catch (error) { toast(error.message, "error"); dup.disabled = false; }
             });
             const excel = el("a", {
@@ -900,24 +900,28 @@ export async function openRecordEditor(typeKey, {
         presenceBanner.hidden = false;
     }
 
+    /* idPrefix (M3): unique input ids so several editors can be mounted
+       at once (concurrent panes). "" for the normal single editor. */
+    const idPrefix = headerless && number ? number + "__" : "";
+
     const entries = definition.fields.map((field) =>
         buildField(field, definition.options, existing ? existing.data[field.key] : undefined,
-            { recordNumber: existing ? existing.number : null })
+            { recordNumber: existing ? existing.number : null, idPrefix })
     );
 
     const titleInput = el("input", {
-        type: "text", id: "field-title", name: "title", required: true,
+        type: "text", id: idPrefix + "field-title", name: "title", required: true,
         placeholder: "What is wrong, in one line",
         value: existing ? existing.title : ""
     });
 
     const titleGroup = el("div", { class: "field-group" }, [
-        el("label", { for: "field-title" }, ["Summary", el("span", { class: "req", text: " *" })]),
+        el("label", { for: idPrefix + "field-title" }, ["Summary", el("span", { class: "req", text: " *" })]),
         titleInput,
         el("span", { class: "field-hint", text: "This is what appears in the register." })
     ]);
 
-    const severitySelect = el("select", { id: "field-severity", name: "severity" },
+    const severitySelect = el("select", { id: idPrefix + "field-severity", name: "severity" },
         SEVERITY_OPTIONS.map(([value, label]) => el("option", {
             value, text: label,
             selected: (existing ? existing.severity : "warn") === value ? "selected" : undefined
@@ -925,7 +929,7 @@ export async function openRecordEditor(typeKey, {
     );
 
     const severityGroup = el("div", { class: "field-group" }, [
-        el("label", { for: "field-severity", text: "Severity" }),
+        el("label", { for: idPrefix + "field-severity", text: "Severity" }),
         severitySelect
     ]);
 
@@ -934,12 +938,12 @@ export async function openRecordEditor(typeKey, {
        than as a per-type field every form has to remember to declare -
        every register's overdue colouring reads this same column. */
     const dueInput = el("input", {
-        type: "date", id: "field-due-at", name: "due_at",
+        type: "date", id: idPrefix + "field-due-at", name: "due_at",
         value: existing && existing.due_at ? existing.due_at.slice(0, 10) : ""
     });
 
     const dueGroup = el("div", { class: "field-group" }, [
-        el("label", { for: "field-due-at", text: "Due date" }),
+        el("label", { for: idPrefix + "field-due-at", text: "Due date" }),
         dueInput,
         el("span", { class: "field-hint", text: "Optional. Drives the overdue colouring in the register." })
     ]);
@@ -963,11 +967,13 @@ export async function openRecordEditor(typeKey, {
     if (existing) {
         import("./views/record-context.js")
             .then(({ buildRecordContext }) => {
-                if (editorRecordNumber !== existing.number) return;   // a newer editor opened
+                /* Skip if a newer editor replaced this form in the host
+                   (concurrent panes, or a re-open, took over). */
+                if (!body.contains(form)) return;
                 body.append(buildRecordContext(typeKey, existing.number, {
                     onWorkflow: () => openRecordEditor(typeKey, {
                         number: existing.number, onSaved, returnView, stayOnSave,
-                        custom, host, headerless, onDone
+                        custom, host, headerless, onDone, onEditor
                     })
                 }));
             })
@@ -1054,7 +1060,10 @@ export async function openRecordEditor(typeKey, {
     }
     const cleanJSON = JSON.stringify(snapshot());
     const isDirty = () => JSON.stringify(snapshot()) !== cleanJSON;
-    editorIsDirty = isDirty;
+    /* Only the one shared-screen editor registers as "the" editor;
+       pane editors (M3) may run several at once and are tracked by
+       their caller through onEditor instead. */
+    if (!headerless) editorIsDirty = isDirty;
 
     /* Announce that this record is open for editing, and show a banner
        if anyone else already has it. Only for an existing record - a
@@ -1109,7 +1118,10 @@ export async function openRecordEditor(typeKey, {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
 
+    let torn = false;
     function teardown() {
+        if (torn) return;
+        torn = true;
         if (saveTimer) clearTimeout(saveTimer);
         clearInterval(hintTicker);
         window.removeEventListener("beforeunload", onBeforeUnload);
@@ -1117,8 +1129,13 @@ export async function openRecordEditor(typeKey, {
         if (editorTeardown === teardown) editorTeardown = null;
         if (editorIsDirty === isDirty) editorIsDirty = () => false;
     }
-    if (editorTeardown) editorTeardown();   // a previous editor left mounted
-    editorTeardown = teardown;
+    if (!headerless) {
+        if (editorTeardown) editorTeardown();   // a previous shared-screen editor left mounted
+        editorTeardown = teardown;
+    }
+    /* Hand a handle to a pane host so it can check dirtiness and tear
+       this instance down without touching sibling pane editors (M3). */
+    if (onEditor) onEditor({ isDirty, destroy: teardown, number: number || null });
 
     function leave() {
         teardown();
