@@ -21,6 +21,7 @@ import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { fillTemplate, readTemplate } from "../excel-fill.js";
 import { INK, INK_2, HAIRLINE, drawLetterhead, drawFooter, humanizeKey } from "../pdf-branding.js";
 import { formatValue, isEmpty } from "../../../public/js/format.js";
+import { evaluate as evalExpr } from "../../../public/js/expr.js";
 import { ppapMissing } from "./ppap.js";
 import { publish } from "../stream.js";
 import { heartbeat, leaveEditing } from "../presence.js";
@@ -86,12 +87,25 @@ function withComputedRpn(typeKey, data) {
 }
 
 /* A form's table field may carry "computed" columns - a cell whose
-   value is the product or sum of other number columns in the same
-   row (RPN = severity x occurrence x detection). The in-app editor
-   fills these live; recomputed here from the schema so a stored value
-   can never disagree with the numbers it is made of, the same
-   guarantee withComputedRpn gives the built-in risk record. A no-op
-   unless the published form actually defines a computed column. */
+   value is worked out from other number columns in the same row.
+   Either a fixed op (compute:"product"|"sum" over inputs:[...]) or a
+   free expression (expr:"sev * occ * det", evaluated by expr.js). The
+   in-app editor fills these live; recomputed here from the schema so
+   a stored value can never disagree with the numbers it is made of,
+   the same guarantee withComputedRpn gives the built-in risk record.
+   A no-op unless the published form actually defines a computed
+   column. */
+function computeCell(col, row) {
+    if (typeof col.expr === "string" && col.expr.trim()) {
+        return evalExpr(col.expr, row);   // undefined when not yet computable
+    }
+    const nums = (col.inputs || []).map((k) => Number(row[k]));
+    if (nums.length === 0 || !nums.every((n) => Number.isFinite(n))) return undefined;
+    return col.compute === "sum"
+        ? nums.reduce((a, b) => a + b, 0)
+        : nums.reduce((a, b) => a * b, 1);
+}
+
 function applyComputedColumns(schema, data) {
     const fields = schema && Array.isArray(schema.fields) ? schema.fields : [];
     if (!data || typeof data !== "object" || fields.length === 0) return data;
@@ -110,14 +124,9 @@ function applyComputedColumns(schema, data) {
             if (!row || typeof row !== "object") return row;
             const next = { ...row };
             for (const col of computed) {
-                const nums = (col.inputs || []).map((k) => Number(next[k]));
-                if (nums.length === 0 || !nums.every((n) => Number.isFinite(n))) {
-                    delete next[col.key];
-                    continue;
-                }
-                next[col.key] = col.compute === "sum"
-                    ? nums.reduce((a, b) => a + b, 0)
-                    : nums.reduce((a, b) => a * b, 1);
+                const value = computeCell(col, next);
+                if (value === undefined) delete next[col.key];
+                else next[col.key] = value;
             }
             return next;
         });

@@ -357,3 +357,95 @@ test("the server recomputes RPN on edit", async () => {
     const after = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
     assert.equal(after.body.record.data.analysis[0].rpn, 54, "9 x 3 x 2");
 });
+
+/* ---------- expression-based computed columns (audit P1 / M1) ---------- */
+
+const DEV_COLUMNS = [
+    { key: "nominal", label: "Nominal", type: "number" },
+    { key: "actual", label: "Actual", type: "number" },
+    { key: "tol", label: "Tol", type: "number" },
+    { key: "deviation", label: "Deviation", type: "computed", expr: "actual - nominal" },
+    { key: "margin", label: "Margin", type: "computed",
+      expr: "tol - abs(actual - nominal)", thresholds: { warn: 0.5, crit: 0 } }
+];
+
+test("an expr computed column publishes and round-trips", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Deviation Study", prefix: "DEV", clause: "8.5.1",
+        fields: [{ key: "checks", label: "Checks", type: "table", columns: DEV_COLUMNS }]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+
+    const form = await api(adminCookie, "GET", "/api/record-types/deviation_study/form");
+    const margin = form.body.fields[0].columns.find((c) => c.key === "margin");
+    assert.equal(margin.type, "computed");
+    assert.equal(margin.expr, "tol - abs(actual - nominal)");
+    assert.deepEqual(margin.thresholds, { warn: 0.5, crit: 0 });
+});
+
+test("the server evaluates expr columns on create and ignores the client's value", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "Op 30 bore",
+        data: { checks: [
+            { nominal: 12.50, actual: 12.71, tol: 0.30, deviation: 999, margin: -999 },
+            { nominal: 8.00, actual: 8.00, tol: 0.10 },
+            { nominal: 5.00, tol: 0.10 }                       // no actual -> not computable
+        ] }
+    });
+    assert.equal(rec.status, 201, JSON.stringify(rec.body));
+
+    const rows = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+    assert.ok(Math.abs(rows[0].deviation - 0.21) < 1e-9, "12.71 - 12.50");
+    assert.ok(Math.abs(rows[0].margin - 0.09) < 1e-9, "0.30 - |0.21|");
+    assert.equal(rows[1].deviation, 0);
+    assert.equal(rows[1].margin, 0.10);
+    assert.equal(rows[2].deviation, undefined, "a missing input leaves the cell blank");
+    assert.equal(rows[2].margin, undefined);
+});
+
+test("the server re-evaluates expr columns on edit", async () => {
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "deviation_study", title: "edit me",
+        data: { checks: [{ nominal: 10, actual: 10.4, tol: 0.5 }] }
+    });
+    const before = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+    assert.ok(Math.abs(before[0].deviation - 0.4) < 1e-9);
+
+    await api(adminCookie, "PATCH", "/api/records/" + rec.body.number, {
+        reason: "remeasured", data: { checks: [{ nominal: 10, actual: 9.2, tol: 0.5, deviation: 0 }] }
+    });
+    const after = (await api(adminCookie, "GET", "/api/records/" + rec.body.number)).body.record.data.checks;
+    assert.ok(Math.abs(after[0].deviation - -0.8) < 1e-9, "9.2 - 10");
+    assert.ok(Math.abs(after[0].margin - -0.3) < 1e-9, "0.5 - |−0.8|");
+});
+
+test("a broken expr computed column is refused at publish", async () => {
+    const withCols = (cols) => ({
+        name: "BadExpr " + Math.random().toString(36).slice(2, 7), prefix: "BEX",
+        fields: [{ key: "t", label: "T", type: "table", columns: cols }]
+    });
+
+    const syntax = await api(adminCookie, "POST", "/api/record-types", withCols([
+        { key: "a", label: "A", type: "number" },
+        { key: "r", label: "R", type: "computed", expr: "a * " }
+    ]));
+    assert.equal(syntax.status, 422);
+
+    const missingRef = await api(adminCookie, "POST", "/api/record-types", withCols([
+        { key: "a", label: "A", type: "number" },
+        { key: "r", label: "R", type: "computed", expr: "a * ghost" }
+    ]));
+    assert.equal(missingRef.status, 422);
+
+    const selfRef = await api(adminCookie, "POST", "/api/record-types", withCols([
+        { key: "a", label: "A", type: "number" },
+        { key: "r", label: "R", type: "computed", expr: "r + a" }
+    ]));
+    assert.equal(selfRef.status, 422);
+
+    const nonNumberRef = await api(adminCookie, "POST", "/api/record-types", withCols([
+        { key: "note", label: "Note", type: "text" },
+        { key: "r", label: "R", type: "computed", expr: "note * 2" }
+    ]));
+    assert.equal(nonNumberRef.status, 422);
+});

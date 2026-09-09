@@ -17,6 +17,7 @@ import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { upload } from "../uploads.js";
 import { publish } from "../stream.js";
 import { buildDefaultMap } from "../excel-fill.js";
+import { identifiers as exprIdentifiers } from "../../../public/js/expr.js";
 
 const XLSX_EXTENSIONS = new Set([".xlsx"]);
 
@@ -268,10 +269,12 @@ const FIELD_TYPES = new Set([
 
 /* A table field's columns can only be scalars - a repeating grid of
    grids is not something any real QMS form needs and not something
-   the renderer supports. "computed" is a read-only cell: the product
-   or sum of other number columns in the same row (RPN = severity x
-   occurrence x detection). "boolean" is a checkbox cell, stored as
-   true / false. */
+   the renderer supports. "computed" is a read-only cell worked out
+   from other number columns in the same row: either a fixed op
+   (compute:"product"|"sum" over inputs:[...], e.g. RPN = severity x
+   occurrence x detection) or a free expression (expr:"tol - abs(actual
+   - nominal)", evaluated by public/js/expr.js on both tiers).
+   "boolean" is a checkbox cell, stored as true / false. */
 const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed", "boolean"]);
 const COMPUTE_OPS = new Set(["product", "sum"]);
 
@@ -300,19 +303,37 @@ function tableProblem(field) {
     }
 
     /* A second pass: a computed column can only be checked once every
-       column it might reference is known. */
+       column it might reference is known. It is defined EITHER by a
+       free expression (expr) OR by a fixed op (compute + inputs). */
     for (const col of field.columns) {
         if (col.type !== "computed") continue;
-        if (!COMPUTE_OPS.has(col.compute)) {
-            return "\"" + field.label + "\" column \"" + col.label + "\" needs a compute of \"product\" or \"sum\"";
+
+        const hasExpr = typeof col.expr === "string" && col.expr.trim() !== "";
+        let refs;
+
+        if (hasExpr) {
+            try {
+                refs = exprIdentifiers(col.expr);
+            } catch {
+                return "\"" + field.label + "\" column \"" + col.label + "\" has an expression that does not parse";
+            }
+        } else {
+            if (!COMPUTE_OPS.has(col.compute)) {
+                return "\"" + field.label + "\" column \"" + col.label + "\" needs an expression, or a compute of \"product\" or \"sum\"";
+            }
+            if (!Array.isArray(col.inputs) || col.inputs.length === 0) {
+                return "\"" + field.label + "\" column \"" + col.label + "\" needs at least one input column";
+            }
+            refs = col.inputs;
         }
-        if (!Array.isArray(col.inputs) || col.inputs.length === 0) {
-            return "\"" + field.label + "\" column \"" + col.label + "\" needs at least one input column";
-        }
-        for (const key of col.inputs) {
+
+        for (const key of refs) {
             if (key === col.key) return "\"" + field.label + "\" column \"" + col.label + "\" cannot compute from itself";
             const src = byKey.get(key);
-            if (!src) return "\"" + field.label + "\" column \"" + col.label + "\" refers to a missing column";
+            if (!src) {
+                return "\"" + field.label + "\" column \"" + col.label + "\" "
+                    + (hasExpr ? "expression refers to" : "refers to") + " a missing column \"" + key + "\"";
+            }
             if (src.type !== "number") {
                 return "\"" + field.label + "\" column \"" + col.label + "\" can only compute from number columns";
             }
