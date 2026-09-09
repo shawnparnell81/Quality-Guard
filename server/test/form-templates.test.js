@@ -107,14 +107,20 @@ after(async () => {
 test("the template list carries metadata and an installed map", async () => {
     const r = await api(adminCookie, "GET", "/api/form-templates");
     assert.equal(r.status, 200);
-    assert.ok(r.body.templates.length >= 8,
+    assert.ok(r.body.templates.length >= 11,
         "the library has the full core-tool set: " + r.body.templates.map((t) => t.key).join(", "));
 
-    /* the AIAG / AS9102 core tools are all present */
+    /* the AIAG / AS9102 core tools, plus the customer-format forms */
     for (const key of ["pfmea", "dfmea", "control_plan", "process_flow",
-        "fair_report", "eight_d_report", "msa_grr", "ppap_checklist"]) {
+        "fair_report", "eight_d_report", "msa_grr", "ppap_checklist",
+        "calibration_log", "work_order_form", "automotive_ncr"]) {
         assert.ok(r.body.templates.some((t) => t.key === key), "library has " + key);
     }
+
+    const ncr = r.body.templates.find((t) => t.key === "automotive_ncr");
+    assert.equal(ncr.prefix, "ANCR");
+    assert.equal(ncr.standard, "IATF 16949");
+    assert.ok(ncr.table_count >= 5, "the automotive NCR carries its ICA / RCA / CAP tables");
 
     const pfmea = r.body.templates.find((t) => t.key === "pfmea");
     assert.ok(pfmea);
