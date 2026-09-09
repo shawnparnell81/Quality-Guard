@@ -1745,11 +1745,17 @@ function drawSectionHeading(doc, title) {
     doc.moveDown(0.5);
 }
 
+/* A blank fill line for a field with no value, so a printed form is a
+   form you can complete on paper, not a list of the two things that
+   happened to be filled in. */
+const BLANK_LINE = " " + ".".repeat(52);   // a dot leader - a line to write on
+
 /* A table field is an array of row objects keyed by the schema's
    column keys. Column counts vary wildly across QMS forms (a 5-Why
    is 3 columns, a PFMEA is 20+), so rather than squash a grid into
-   portrait width, each row prints as a small labelled block - only
-   its non-empty cells - which reads cleanly at any width. */
+   portrait width, each row prints as a small labelled block. Every
+   column is shown - a blank cell gets a fill line - and an empty
+   table still prints one blank row so the structure is on the page. */
 function drawTableField(doc, field, rows, userNames) {
     const columns = Array.isArray(field.columns) ? field.columns : [];
     const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
@@ -1758,10 +1764,13 @@ function drawTableField(doc, field, rows, userNames) {
         .text((field.label || humanizeKey(field.key)) + ":");
     doc.moveDown(0.15);
 
-    rows.forEach((row, index) => {
-        if (!row || typeof row !== "object") return;
+    const dataRows = (Array.isArray(rows) ? rows : []).filter((r) => r && typeof r === "object");
+    const toDraw = dataRows.length ? dataRows : [{}];   // one blank template row
 
-        doc.fontSize(8.5).font("Helvetica-Bold").fillColor(INK).text("  " + (index + 1) + ".");
+    toDraw.forEach((row, index) => {
+        if (doc.y > doc.page.height - doc.page.margins.bottom - 40) doc.addPage();
+        doc.fontSize(8.5).font("Helvetica-Bold").fillColor(INK)
+            .text("  " + (dataRows.length ? (index + 1) + "." : "–"));
 
         const cells = columns.length > 0
             ? columns.map((col) => [col.label || humanizeKey(col.key), row[col.key], col])
@@ -1770,30 +1779,27 @@ function drawTableField(doc, field, rows, userNames) {
                 .map(([key, value]) => [humanizeKey(key), value, { type: "text" }]);
 
         for (const [label, value, col] of cells) {
-            if (isEmpty(value)) continue;
-            const text = formatValue(col, value, { users: userNames });
+            if (col && col.type === "computed" && isEmpty(value)) continue;   // derived, no line to fill
+            const text = isEmpty(value) ? BLANK_LINE : formatValue(col, value, { users: userNames });
             doc.fontSize(8.5).font("Helvetica-Bold").fillColor(INK_2)
                 .text("     " + label + ":  ", { continued: true, width })
-                .font("Helvetica").fillColor(INK).text(text, { width });
+                .font("Helvetica").fillColor(isEmpty(value) ? INK_2 : INK).text(text, { width });
         }
         doc.moveDown(0.25);
     });
     doc.moveDown(0.4);
 }
 
-/* The whole point of this export: a PDF laid out like the form that
-   was actually filled in, not an alphabetised key/value dump. Reads
-   the exact form version the record was raised under - schema.fields
-   in their declared order, grouped under the same section headings
-   forms.js groups them under on screen (public/js/forms.js,
-   appendFieldsGrouped) - so a printed NCR reads the way the on-screen
-   form reads, sections and all.
+/* The printed form IS the form: every section and every field of the
+   version the record was raised under, in declared order, with the
+   filled-in values where they exist and a blank fill line where they
+   do not - so a quality engineer can print a partly-done record and
+   finish it on paper, or print an empty one as a blank template.
 
    A key present in data but no longer named by that version's schema
-   (an older field, since renamed or removed in a later form version)
-   is not dropped - it still happened, and this is meant to carry ALL
-   of a record's information, not just what the current form asks
-   for - it prints last, under "Additional details". */
+   (an older field renamed or removed in a later form version) still
+   prints, last, under "Additional details" - this export carries ALL
+   of a record's information, not just what the current form asks. */
 function drawFormFields(doc, data, schema, userNames, signatures) {
     const values = data || {};
     const fields = (schema && Array.isArray(schema.fields)) ? schema.fields : [];
@@ -1811,13 +1817,14 @@ function drawFormFields(doc, data, schema, userNames, signatures) {
     let lastSection;
     let first = true;
 
-    for (const field of fields) {
-        const value = values[field.key];
-        if (value === null || value === undefined || value === "") continue;
-        /* an empty table array is nothing to print */
-        if (field.type === "table" && (!Array.isArray(value) || value.length === 0)) continue;
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
 
+    for (const field of fields) {
         shown.add(field.key);
+        const value = values[field.key];
+        const empty = field.type === "table"
+            ? !Array.isArray(value) || value.length === 0
+            : isEmpty(value);
 
         const section = field.section || null;
         if (first || section !== lastSection) {
@@ -1829,27 +1836,35 @@ function drawFormFields(doc, data, schema, userNames, signatures) {
         const label = field.label || humanizeKey(field.key);
 
         if (field.type === "table") {
-            drawTableField(doc, field, value, userNames);
+            drawTableField(doc, field, Array.isArray(value) ? value : [], userNames);
             continue;
         }
 
-        let text = formatValue(field, value, { users: userNames });
-        if (field.type === "signature" && sigs[field.key] && !sigs[field.key].legacy) {
-            text += sigs[field.key].intact
-                ? "   [unchanged since signing]"
-                : "   [RECORD EDITED AFTER SIGNING]";
+        let text;
+        if (field.type === "signature") {
+            const s = sigs[field.key];
+            text = empty ? BLANK_LINE + "   (sign / date)"
+                : formatValue(field, value, { users: userNames })
+                  + (s && !s.legacy ? (s.intact ? "   [unchanged since signing]" : "   [RECORD EDITED AFTER SIGNING]") : "");
+        } else if (empty && field.type === "boolean") {
+            text = "[  ] Yes      [  ] No";
+        } else if (empty && field.type === "select" && Array.isArray(field.options) && field.options.length) {
+            text = BLANK_LINE.slice(0, 24) + "  (" + field.options.join("  /  ") + ")";
+        } else if (empty) {
+            text = BLANK_LINE;
+        } else {
+            text = formatValue(field, value, { users: userNames });
         }
 
         if (field.type === "memo") {
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2).text(label + ":");
-            doc.fontSize(9).font("Helvetica").fillColor(INK).text(text, {
-                width: doc.page.width - doc.page.margins.left - doc.page.margins.right
-            });
+            doc.fontSize(9).font("Helvetica").fillColor(empty ? INK_2 : INK)
+                .text(empty ? BLANK_LINE + "\n" + BLANK_LINE : text, { width: pageWidth });
             doc.moveDown(0.4);
         } else {
             doc.fontSize(9).font("Helvetica-Bold").fillColor(INK_2)
                 .text(label + ":  ", { continued: true })
-                .font("Helvetica").fillColor(INK).text(text);
+                .font("Helvetica").fillColor(empty ? INK_2 : INK).text(text);
         }
     }
 

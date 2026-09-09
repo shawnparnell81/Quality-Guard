@@ -23,6 +23,7 @@ import {
     el, pill, fillTable, loadingRow, errorRow, formatDate, humanize, statusKind, toast
 } from "../dom.js";
 import { formatValue } from "../format.js";
+import { recordOpenLink } from "../record-nav.js";
 
 const BUILT_IN = new Set([
     "ncr", "capa", "eightd", "complaint", "scar", "audit", "ecn", "risk", "apqp", "di"
@@ -134,7 +135,7 @@ async function renderCustomDetail(typeKey, number) {
         return;
     }
 
-    if (head) head.textContent = record.number;
+    if (head) head.replaceChildren(recordOpenLink(record.number));
 
     const children = [
         el("div", { class: "row", style: "gap:6px;margin-bottom:8px" }, [
