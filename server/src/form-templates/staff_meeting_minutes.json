@@ -1,0 +1,28 @@
+{
+  "key": "staff_meeting_minutes",
+  "name": "Monthly Staff Meeting Minutes",
+  "prefix": "SMM",
+  "clause": "7.4",
+  "category": "Governance",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "The operations-cell monthly record - department and chairperson, the safety / yields / scrap & tool-wear briefings, and the task routing log with assignees and target dates.",
+  "fields": [
+    { "key": "department_cell", "label": "Department / Operations Cell", "type": "text", "required": true, "section": "Meeting details" },
+    { "key": "meeting_date", "label": "Meeting Date", "type": "date", "section": "Meeting details" },
+    { "key": "meeting_leader", "label": "Meeting Leader / Chairperson", "type": "text", "section": "Meeting details" },
+
+    { "key": "safety_health_briefing", "label": "1. Safety & Health Briefing", "type": "memo", "section": "Shop-floor review" },
+    { "key": "production_yields_efficiency", "label": "2. Production Yields & Efficiency", "type": "memo", "section": "Shop-floor review" },
+    { "key": "scrap_tool_wear_review", "label": "3. Scrap & Tool Wear Review", "type": "memo", "section": "Shop-floor review" },
+
+    {
+      "key": "action_items", "label": "Task Routing & Floor Assignments", "type": "table",
+      "section": "Action log",
+      "columns": [
+        { "key": "task", "label": "Corrective Task / Operational Improvement Assignment", "type": "text" },
+        { "key": "assignee", "label": "Assignee", "type": "text" },
+        { "key": "target_date", "label": "Target Date", "type": "date" }
+      ]
+    }
+  ]
+}
