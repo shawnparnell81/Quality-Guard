@@ -123,7 +123,7 @@ ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
 CREATE TABLE public.automation_logs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     org_id uuid NOT NULL,
-    customer_id uuid NOT NULL,
+    customer_id uuid,
     step text NOT NULL,
     status text NOT NULL,
     run_source text NOT NULL,
@@ -132,6 +132,9 @@ CREATE TABLE public.automation_logs (
     started_at timestamp with time zone,
     finished_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    record_id uuid,
+    lpa_audit_id uuid,
+    CONSTRAINT automation_logs_one_subject CHECK ((num_nonnulls(customer_id, record_id, lpa_audit_id) = 1)),
     CONSTRAINT automation_logs_run_source_check CHECK ((run_source = ANY (ARRAY['auto'::text, 'manual'::text]))),
     CONSTRAINT automation_logs_status_check CHECK ((status = ANY (ARRAY['running'::text, 'done'::text, 'failed'::text, 'skipped'::text])))
 );
@@ -441,6 +444,7 @@ CREATE TABLE public.lpa_audits (
     score_pass integer DEFAULT 0 NOT NULL,
     score_total integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    folder_root text,
     CONSTRAINT lpa_audits_status_check CHECK ((status = ANY (ARRAY['scheduled'::text, 'in_progress'::text, 'complete'::text, 'missed'::text])))
 );
 CREATE TABLE public.lpa_questions (
@@ -1199,6 +1203,8 @@ CREATE INDEX idx_attachments_row_ref ON public.attachments USING btree (record_i
 CREATE INDEX idx_audit_entity ON public.audit_log USING btree (entity, entity_id);
 CREATE INDEX idx_audit_record ON public.audit_log USING btree (record_id, changed_at DESC);
 CREATE INDEX idx_automation_logs_customer ON public.automation_logs USING btree (customer_id, step, created_at DESC);
+CREATE INDEX idx_automation_logs_lpa_audit ON public.automation_logs USING btree (lpa_audit_id, step, created_at DESC) WHERE (lpa_audit_id IS NOT NULL);
+CREATE INDEX idx_automation_logs_record ON public.automation_logs USING btree (record_id, step, created_at DESC) WHERE (record_id IS NOT NULL);
 CREATE INDEX idx_cert_next_audit ON public.certifications USING btree (org_id, next_audit_on);
 CREATE INDEX idx_customer_documents_customer ON public.customer_documents USING btree (customer_id);
 CREATE INDEX idx_customer_documents_stage ON public.customer_documents USING btree (stage_id);
@@ -1282,7 +1288,11 @@ ALTER TABLE ONLY public.audit_log
 ALTER TABLE ONLY public.automation_logs
     ADD CONSTRAINT automation_logs_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.automation_logs
+    ADD CONSTRAINT automation_logs_lpa_audit_id_fkey FOREIGN KEY (lpa_audit_id) REFERENCES public.lpa_audits(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.automation_logs
     ADD CONSTRAINT automation_logs_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.automation_logs
+    ADD CONSTRAINT automation_logs_record_id_fkey FOREIGN KEY (record_id) REFERENCES public.records(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.certifications
     ADD CONSTRAINT certifications_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.certifications

@@ -12,6 +12,7 @@ import { api } from "../api.js";
 import { confirmStep, ensureDialog } from "../forms.js";
 import { openEntityForm } from "../entity-form.js";
 import { can, applyPermissions } from "../session.js";
+import { paintAuditAutomationPanel } from "./audit-automation-panel.js";
 import { el, pill, toast, formatDate, humanize } from "../dom.js";
 
 let cache = null;         // last /api/lpa payload, for the create-form option lists
@@ -230,12 +231,18 @@ export async function renderLpaAudit(id) {
             }
         }));
 
+        const autoHost = el("div", { class: "audit-automation", style: "margin-top:18px" },
+            el("p", { class: "sm dim", text: "Loading automation…" }));
+
         body.replaceChildren(
             el("p", { class: "sm dim", text: audit.template + "  -  due " + formatDate(audit.due_on) }),
             ...rows,
-            el("div", { class: "row", style: "margin-top:14px" }, [complete])
+            el("div", { class: "row", style: "margin-top:14px" }, [complete]),
+            el("div", { class: "section-label", text: "Automation" }),
+            autoHost
         );
         applyPermissions(panel);
+        paintAuditAutomationPanel(autoHost, "in_process", id, () => renderLpaAudit(id));
     } catch (error) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
     }

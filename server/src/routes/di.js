@@ -23,6 +23,7 @@ import multer from "multer";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { saveDocumentFile } from "../document-storage.js";
+import { raiseLinkedRecord } from "../records-raise.js";
 
 export const di = Router();
 
@@ -128,28 +129,6 @@ di.post("/di", requirePermission("di.manage"), async (request, response, next) =
                 return { conflict: "That audit already has a DI: " + existing.rows[0].number };
             }
 
-            const typeRow = await client.query(
-                "select id, prefix from record_types where org_id = $1 and key = 'di'",
-                [request.user.org_id]
-            );
-            const recordType = typeRow.rows[0];
-
-            const year = new Date().getFullYear();
-            const last = await client.query(`
-                select number from records
-                 where org_id = $1 and record_type_id = $2 and number like $3
-                 order by number desc limit 1
-            `, [request.user.org_id, recordType.id, recordType.prefix + "-" + year + "-%"]);
-            const nextSeq = last.rowCount === 0
-                ? 1
-                : Number(last.rows[0].number.split("-").pop()) + 1;
-            const number = recordType.prefix + "-" + year + "-" + String(nextSeq).padStart(4, "0");
-
-            const firstState = await client.query(
-                "select key from workflow_states where record_type_id = $1 order by position limit 1",
-                [recordType.id]
-            );
-
             const data = {
                 department,
                 finding,
@@ -159,27 +138,19 @@ di.post("/di", requirePermission("di.manage"), async (request, response, next) =
                 corrective_plan: (request.body?.corrective_plan || "").trim() || undefined
             };
 
-            const inserted = await client.query(`
-                insert into records
-                    (org_id, record_type_id, number, title, status, severity, data, form_version, created_by)
-                values ($1, $2, $3, $4, $5, 'warn', $6, 1, $7)
-                returning id, number, status
-            `, [request.user.org_id, recordType.id, number,
-                "Discrepancy from " + auditNumber, firstState.rows[0].key, data, request.user.id]);
-            const diId = inserted.rows[0].id;
+            const raised = await raiseLinkedRecord(client, {
+                orgId: request.user.org_id,
+                typeKey: "di",
+                title: "Discrepancy from " + auditNumber,
+                data,
+                severity: "warn",
+                linkFromRecordId: audit.id,
+                linkType: "child_of",
+                userId: request.user.id
+            });
+            if (!raised) return { conflict: "This organization has no DI record type" };
 
-            await client.query(`
-                insert into record_links (from_record_id, to_record_id, link_type)
-                values ($1, $2, 'child_of')
-            `, [audit.id, diId]);
-
-            await client.query(`
-                insert into audit_log (org_id, record_id, entity, entity_id, field, new_value, changed_by)
-                values ($1, $2, 'records', $2, 'created', $3, $4),
-                       ($1, $5, 'record_links', $2, 'di_raised', $3, $4)
-            `, [request.user.org_id, diId, number, request.user.id, audit.id]);
-
-            return { row: inserted.rows[0] };
+            return { row: raised };
         });
 
         if (result.conflict) return response.status(409).json({ error: result.conflict });

@@ -18,6 +18,8 @@ import { Router } from "express";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { runOnce, JOB_LOCKS } from "../job-lock.js";
+import { log } from "../logger.js";
+import { inProcessContext, runFull } from "../audit-automation.js";
 
 export const lpa = Router();
 
@@ -518,7 +520,24 @@ lpa.post("/lpa/audits/:id/complete", requirePermission("lpa.audit"), async (requ
 
         if (outcome.code === 404) return response.status(404).json({ error: "No such audit" });
         if (outcome.code === 409) return response.status(409).json(outcome.body);
-        response.json(outcome.body);
+
+        /* Run the in-process audit automation now the checklist is done:
+           folders + checklist artefacts, an NCR per failed check, the
+           actions list and a scored PDF report. Continue-on-failure;
+           the completion stands regardless. */
+        let automation = null;
+        try {
+            const ctx = await inProcessContext(request.user.org_id, request.params.id);
+            if (ctx) {
+                ctx.userId = request.user.id;
+                automation = await runFull(ctx, { source: "auto" });
+            }
+        } catch (error) {
+            log.warn("lpa_complete_automation_failed",
+                { id: request.params.id, error: error.message });
+        }
+
+        response.json({ ...outcome.body, automation });
     } catch (error) {
         next(error);
     }

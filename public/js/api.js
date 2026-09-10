@@ -581,6 +581,24 @@ export const api = {
     completeLpaAudit: (id, payload) =>
         request("POST", "/lpa/audits/" + encodeURIComponent(id) + "/complete", payload || {}),
 
+    /* audit automation - internal audits by record number, in-process by lpa_audits id */
+    auditAutomation:      (number) =>
+        get("/audits/" + encodeURIComponent(number) + "/automation"),
+    auditAutomationLogs:  (number) =>
+        get("/audits/" + encodeURIComponent(number) + "/automation/logs"),
+    runAuditAutomation:   (number, payload) =>
+        request("POST", "/audits/" + encodeURIComponent(number) + "/automation/run", payload || {}),
+    auditAutomationStep:  (number, step) =>
+        request("POST", "/audits/" + encodeURIComponent(number) + "/automation/" + encodeURIComponent(step), {}),
+    lpaAuditAutomation:     (id) =>
+        get("/lpa/audits/" + encodeURIComponent(id) + "/automation"),
+    lpaAuditAutomationLogs: (id) =>
+        get("/lpa/audits/" + encodeURIComponent(id) + "/automation/logs"),
+    runLpaAuditAutomation:  (id, payload) =>
+        request("POST", "/lpa/audits/" + encodeURIComponent(id) + "/automation/run", payload || {}),
+    lpaAuditAutomationStep: (id, step) =>
+        request("POST", "/lpa/audits/" + encodeURIComponent(id) + "/automation/" + encodeURIComponent(step), {}),
+
     ppapPackage:   (number) => get("/ppap/" + encodeURIComponent(number)),
     setPpapElement: (number, element, payload) =>
         request("PUT", "/ppap/" + encodeURIComponent(number)
