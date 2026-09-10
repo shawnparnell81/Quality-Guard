@@ -36,8 +36,16 @@ const RECOMPUTE = {
     calibration_log: recomputeCalibration,
     internal_audit_checklist: recomputeAuditTally,
     process_capability: recomputeCpk,
-    training_matrix: recomputeTrainingMatrix
+    training_matrix: recomputeTrainingMatrix,
+    ncr_report: recomputeNcrBalance
 };
+
+/* Suspect quantity not yet accounted for by scrap + rework. */
+function recomputeNcrBalance(entries) {
+    const n = (k) => { const v = numOf(entries, k); return Number.isFinite(v) ? v : 0; };
+    setDerived(entries, "qty_balance_unaccounted",
+        String(n("total_qty_suspect") - n("qty_scrap") - n("qty_rework")));
+}
 
 /* Station Qualification % per operator row: share of the three
    stations at L2 (certified) or L3 (trainer). */
