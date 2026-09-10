@@ -37,8 +37,40 @@ const RECOMPUTE = {
     internal_audit_checklist: recomputeAuditTally,
     process_capability: recomputeCpk,
     training_matrix: recomputeTrainingMatrix,
-    ncr_report: recomputeNcrBalance
+    ncr_report: recomputeNcrBalance,
+    final_inspection_checklist: recomputeFinalInspection
 };
+
+/* Final inspection: a Passed / Rejected / Evaluating per parameter row
+   against that row's own LSL / USL, and the lot-level checked / rejected
+   / acceptance-yield % (a blank row counts for nothing). */
+function recomputeFinalInspection(entries, { tables } = {}) {
+    const t = entries.find((e) => e.field.key === "parameters" && e.readTable);
+    if (!t) return;
+    const rows = t.readTable();
+    let checked = 0, rejected = 0, touched = false;
+    for (const r of rows) {
+        const actual = Number(r.actual_value);
+        const lsl = Number(r.lsl);
+        const usl = Number(r.usl);
+        let s = "";
+        if (r.actual_value === "" || r.actual_value == null || !Number.isFinite(actual)) {
+            s = r.characteristic ? "Evaluating" : "";
+        } else {
+            const okLow = !Number.isFinite(lsl) || actual >= lsl;
+            const okHigh = !Number.isFinite(usl) || actual <= usl;
+            s = okLow && okHigh ? "Passed" : "Rejected";
+            checked += 1;
+            if (s === "Rejected") rejected += 1;
+        }
+        if (r.status !== s) { r.status = s; touched = true; }
+    }
+    setDerived(entries, "count_checked", String(checked));
+    setDerived(entries, "count_rejected", String(rejected));
+    setDerived(entries, "lot_yield_pct",
+        checked ? (((checked - rejected) / checked) * 100).toFixed(1) : "");
+    if (touched && tables) t.writeTable(rows);
+}
 
 /* Suspect quantity not yet accounted for by scrap + rework. */
 function recomputeNcrBalance(entries) {
