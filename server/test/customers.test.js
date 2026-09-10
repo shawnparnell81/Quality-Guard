@@ -117,13 +117,20 @@ before(async () => {
         values ($1, 'SPEC-88', 'Customer part spec', 'C', 'released')
     `, [tenant.orgId]);
 
-    /* A role that has neither customer.manage nor customer.onboard. */
+    /* A role that carries customer.read but neither customer.manage nor
+       customer.onboard - so it may view a folder but not change one. */
     const noPerm = await query(`
         select r.key from roles r
-         where r.org_id = $1 and not exists (
-             select 1 from role_permissions rp
-              where rp.org_id = r.org_id and rp.role_key = r.key
-                and rp.permission_key in ('customer.manage', 'customer.onboard'))
+         where r.org_id = $1
+           and exists (
+               select 1 from role_permissions rp
+                where rp.org_id = r.org_id and rp.role_key = r.key
+                  and rp.permission_key = 'customer.read')
+           and not exists (
+               select 1 from role_permissions rp
+                where rp.org_id = r.org_id and rp.role_key = r.key
+                  and rp.permission_key in ('customer.manage', 'customer.onboard'))
+         order by r.key
          limit 1
     `, [tenant.orgId]);
     const denied = await api(adminCookie, "POST", "/api/users", {
