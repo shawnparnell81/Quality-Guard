@@ -297,6 +297,8 @@ body {
 /* ---------- department menu bar ---------- */
 
 .deptbar-item { position: relative; display: flex; }
+.deptbar-item.dragging { opacity: .4; }
+.deptbar-item.dragging .deptbar-menu { display: none; }
 
 /* Flat bar links (Dashboard, Audit Readiness) and department buttons
    share the bar-button look. .deptbar-link is also a .nav-item, so a
@@ -442,6 +444,8 @@ body {
     max-width: 220px;
 }
 .wtab:hover { color: var(--ink); }
+.wtab[draggable="true"] { cursor: grab; }
+.wtab.dragging { opacity: .4; cursor: grabbing; }
 .wtab.is-active {
     color: var(--ink);
     background: var(--surface);
