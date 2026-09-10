@@ -1,0 +1,65 @@
+{
+  "primary_sheet": "PQP Summary",
+  "sheets": [
+    "PQP Summary"
+  ],
+  "fields": {
+    "product_name": {
+      "sheet": "PQP Summary",
+      "cell": "B4"
+    },
+    "part_number": {
+      "sheet": "PQP Summary",
+      "cell": "G4"
+    },
+    "customer": {
+      "sheet": "PQP Summary",
+      "cell": "B6"
+    },
+    "manufacturing_plant": {
+      "sheet": "PQP Summary",
+      "cell": "G6"
+    },
+    "capability_study_notes": {
+      "sheet": "PQP Summary",
+      "cell": "B11"
+    },
+    "control_plan_approved": {
+      "sheet": "PQP Summary",
+      "cell": "F13"
+    },
+    "control_plan_date_approved": {
+      "sheet": "PQP Summary",
+      "cell": "I13"
+    },
+    "initial_samples_notes": {
+      "sheet": "PQP Summary",
+      "cell": "B24"
+    },
+    "gage_msa_notes": {
+      "sheet": "PQP Summary",
+      "cell": "B28"
+    },
+    "process_monitoring_notes": {
+      "sheet": "PQP Summary",
+      "cell": "B36"
+    },
+    "packaging_shipping_notes": {
+      "sheet": "PQP Summary",
+      "cell": "B42"
+    },
+    "signoff_1": {
+      "sheet": "PQP Summary",
+      "cell": "B45"
+    },
+    "signoff_2": {
+      "sheet": "PQP Summary",
+      "cell": "B47"
+    },
+    "signoff_3": {
+      "sheet": "PQP Summary",
+      "cell": "B49"
+    }
+  },
+  "tables": {}
+}

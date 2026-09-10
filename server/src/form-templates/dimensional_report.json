@@ -1,0 +1,29 @@
+{
+  "key": "dimensional_report",
+  "name": "Dimensional Test Results",
+  "prefix": "DTR",
+  "clause": "8.6",
+  "category": "Inspection",
+  "standard": "AIAG",
+  "description": "Your PPAP dimensional results sheet - header plus one line per characteristic: dimension / specification, limits, test date, quantity tested, measurement results and OK / Not OK. Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record.",
+  "fields": [
+    { "key": "organization", "label": "Organization", "type": "text", "section": "Header" },
+    { "key": "supplier_vendor_code", "label": "Supplier/Vendor Code", "type": "text", "section": "Header" },
+    { "key": "inspection_facility", "label": "Name of Inspection Facility", "type": "text", "section": "Header" },
+    { "key": "part_number", "label": "Part Number", "type": "text", "required": true, "section": "Header" },
+    { "key": "part_name", "label": "Part Name", "type": "text", "section": "Header" },
+    { "key": "design_record_change_level", "label": "Design Record Change Level", "type": "text", "section": "Header" },
+    {
+      "key": "results", "label": "Dimensional Results", "type": "table", "required": true,
+      "columns": [
+        { "key": "dimension_specification", "label": "Dimension/Specification", "type": "text" },
+        { "key": "specification_limits", "label": "Specification / Limits", "type": "text" },
+        { "key": "test_date", "label": "Test Date", "type": "date" },
+        { "key": "qty_tested", "label": "Qty. Tested", "type": "number" },
+        { "key": "measurement_results", "label": "Organization Measurement Results (Data)", "type": "text" },
+        { "key": "ok", "label": "OK", "type": "text" },
+        { "key": "not_ok", "label": "Not OK", "type": "text" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "primary_sheet": "Dimensional Report",
+  "sheets": [
+    "Dimensional Report"
+  ],
+  "fields": {
+    "organization": {
+      "sheet": "Dimensional Report",
+      "cell": "C3"
+    },
+    "supplier_vendor_code": {
+      "sheet": "Dimensional Report",
+      "cell": "C4"
+    },
+    "inspection_facility": {
+      "sheet": "Dimensional Report",
+      "cell": "C5"
+    },
+    "part_number": {
+      "sheet": "Dimensional Report",
+      "cell": "H3"
+    },
+    "part_name": {
+      "sheet": "Dimensional Report",
+      "cell": "H4"
+    },
+    "design_record_change_level": {
+      "sheet": "Dimensional Report",
+      "cell": "H5"
+    }
+  },
+  "tables": {
+    "results": {
+      "sheet": "Dimensional Report",
+      "first_data_row": 9,
+      "columns": {
+        "dimension_specification": "B",
+        "specification_limits": "C",
+        "test_date": "D",
+        "qty_tested": "E",
+        "measurement_results": "F",
+        "ok": "G",
+        "not_ok": "H"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "B"
+    }
+  }
+}
