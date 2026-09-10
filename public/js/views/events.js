@@ -1081,10 +1081,10 @@ export async function renderRecordDetail(type, number, { slot = type } = {}) {
     panel.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
-        const [{ record, links, history, transitions }, attachData, schemaDef] = await Promise.all([
-            api.record(number),
+        const { record, links, history, transitions } = await api.record(number);
+        const [attachData, schemaDef] = await Promise.all([
             api.attachments(number),
-            api.recordForm(type).catch(() => null)
+            api.recordForm(type, { version: record.form_version }).catch(() => null)
         ]);
         const attachments = attachData.attachments;
 

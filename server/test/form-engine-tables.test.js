@@ -867,3 +867,80 @@ test("rules block a bad save, warn on a file gap, and flag an approval", async (
     const got = await api(adminCookie, "GET", "/api/records/" + uai.body.number);
     assert.equal((got.body.approvals_needed || [])[0]?.role, "quality_manager");
 });
+
+test("GET form?version= pins an old published schema; latest includes new fields", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Versioned Form", prefix: "VFN",
+        fields: [{ key: "old_only", label: "Old field", type: "text" }]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.key, "versioned_form");
+
+    const v1 = await api(adminCookie, "GET", "/api/record-types/versioned_form/form");
+    assert.equal(v1.status, 200);
+    assert.equal(v1.body.version, 1);
+    assert.ok(v1.body.fields.some((f) => f.key === "old_only"));
+    assert.ok(!v1.body.fields.some((f) => f.key === "new_field"));
+
+    const rec = await api(adminCookie, "POST", "/api/records", {
+        type: "versioned_form", title: "pinned to v1", data: { old_only: "x" }
+    });
+    assert.equal(rec.status, 201, JSON.stringify(rec.body));
+
+    const published = await api(adminCookie, "PUT", "/api/record-types/versioned_form/form", {
+        fields: [
+            { key: "old_only", label: "Old field", type: "text" },
+            { key: "new_field", label: "New field", type: "text" }
+        ]
+    });
+    assert.equal(published.status, 200, JSON.stringify(published.body));
+    assert.equal(published.body.version, 2);
+
+    const pinnedByOne = await api(adminCookie, "GET",
+        "/api/record-types/versioned_form/form?version=1");
+    assert.equal(pinnedByOne.status, 200, JSON.stringify(pinnedByOne.body));
+    assert.equal(pinnedByOne.body.version, 1);
+    assert.ok(pinnedByOne.body.fields.some((f) => f.key === "old_only"));
+    assert.ok(!pinnedByOne.body.fields.some((f) => f.key === "new_field"),
+        "old version must not grow the new field");
+
+    const latest = await api(adminCookie, "GET", "/api/record-types/versioned_form/form");
+    assert.equal(latest.status, 200);
+    assert.equal(latest.body.version, 2);
+    assert.ok(latest.body.fields.some((f) => f.key === "new_field"));
+
+    const stillPinned = await api(adminCookie, "GET", "/api/records/" + rec.body.number);
+    assert.equal(stillPinned.body.record.form_version, 1);
+
+    const missing = await api(adminCookie, "GET", "/api/record-types/versioned_form/form?version=99");
+    assert.equal(missing.status, 404);
+
+    const malformed = await api(adminCookie, "GET", "/api/record-types/versioned_form/form?version=nope");
+    assert.equal(malformed.status, 400);
+
+    const rt = await query(
+        "select id from record_types where org_id = $1 and key = 'versioned_form'",
+        [tenant.orgId]);
+    await query(`
+        insert into form_versions (record_type_id, version, schema, published_at)
+        values ($1, 3, $2::jsonb, null)
+    `, [rt.rows[0].id, JSON.stringify({
+        fields: [{ key: "draft_only", label: "Draft", type: "text" }]
+    })]);
+    const draft = await api(adminCookie, "GET", "/api/record-types/versioned_form/form?version=3");
+    assert.equal(draft.status, 404, "unpublished drafts stay hidden");
+});
+
+test("PUT form with a garbage rule is rejected 422", async () => {
+    const made = await api(adminCookie, "POST", "/api/record-types", {
+        name: "Rule Guard", prefix: "RGX",
+        fields: [{ key: "qty", label: "Qty", type: "number" }]
+    });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const form = await api(adminCookie, "GET", "/api/record-types/rule_guard/form");
+    const bad = await api(adminCookie, "PUT", "/api/record-types/rule_guard/form", {
+        fields: form.body.fields,
+        rules: [{ when: "this is (((", then: "block_submit" }]
+    });
+    assert.equal(bad.status, 422, JSON.stringify(bad.body));
+});

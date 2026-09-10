@@ -7,16 +7,18 @@
  *
  * The server is the source of truth for these shapes
  * (server/src/routes/*.js). Keep this in step with `problemWith` in
- * masterdata.js and the record routes.
+ * shared/schema.js and the record routes.
  */
 
 // ---------- form schema ----------
 
 type QmsFieldType =
   | "text" | "memo" | "number" | "date" | "select"
-  | "link" | "file" | "signature" | "user" | "table";
+  | "link" | "file" | "signature" | "user" | "table" | "boolean";
 
-type QmsColumnType = "text" | "memo" | "number" | "date" | "select" | "computed";
+type QmsColumnType =
+  | "text" | "memo" | "number" | "date" | "select" | "computed"
+  | "boolean" | "user";
 
 /** One cell type in a repeating-table field. */
 interface QmsColumn {
@@ -29,6 +31,8 @@ interface QmsColumn {
   compute?: "product" | "sum";
   /** `computed` columns only: keys of the number columns it reads. */
   inputs?: string[];
+  /** `computed` columns only: a free arithmetic expression over sibling number columns. */
+  expr?: string;
   /** `computed` columns only: amber / red cut-offs (e.g. RPN >= 100, >= 150). */
   thresholds?: { warn?: number; crit?: number };
 }
@@ -47,10 +51,16 @@ interface QmsField {
   target?: string;
   /** `number` fields only. */
   min?: number;
+  /** `number` fields only. */
+  max?: number;
   /** `text` fields only: a validation regex source. */
   pattern?: string;
+  /** `link` fields targeting another record: optional type-key filter. */
+  record_type?: string;
   /** `table` fields only. */
   columns?: QmsColumn[];
+  /** `table` fields only: per-row file slots. */
+  rowAttachments?: boolean;
 }
 
 /** A conditional rule carried on a form version (not editable in-app yet). */

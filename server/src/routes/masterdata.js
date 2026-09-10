@@ -18,7 +18,9 @@ import { upload } from "../uploads.js";
 import { publish } from "../stream.js";
 import { buildDefaultMap, mapProblem, reconcileMap } from "../excel-fill.js";
 import { getTemplateExcel } from "../form-templates/index.js";
-import { identifiers as exprIdentifiers } from "../../../public/js/expr.js";
+import { problemWithSchema } from "../../../shared/schema.js";
+
+export { problemWith, problemWithSchema, FIELD_TYPES, TABLE_COLUMN_TYPES, SCHEMA_LIMITS } from "../../../shared/schema.js";
 
 const XLSX_EXTENSIONS = new Set([".xlsx"]);
 
@@ -195,29 +197,57 @@ masterdata.get("/record-types", async (request, response, next) => {
 
 masterdata.get("/record-types/:key/form", async (request, response, next) => {
     try {
-        const found = await query(`
-            select rt.key, rt.name, rt.prefix, rt.clause,
-                   fv.version, fv.schema
-              from record_types rt
-         left join form_versions fv
-                on fv.record_type_id = rt.id and fv.published_at is not null
-             where rt.org_id = $1 and rt.key = $2
-             order by fv.version desc
-             limit 1
-        `, [request.user.org_id, request.params.key]);
+        const rawVersion = request.query.version;
+        let wantVersion = null;
+        if (rawVersion !== undefined && rawVersion !== "") {
+            const n = Number(rawVersion);
+            if (!Number.isInteger(n) || n < 1) {
+                return response.status(400).json({ error: "version must be a positive integer" });
+            }
+            wantVersion = n;
+        }
 
-        if (found.rowCount === 0) {
+        const typeRow = await query(
+            "select id, key, name, prefix, clause from record_types where org_id = $1 and key = $2",
+            [request.user.org_id, request.params.key]
+        );
+        if (typeRow.rowCount === 0) {
             return response.status(404).json({ error: "No such record type" });
         }
+        const rt = typeRow.rows[0];
 
-        const definition = found.rows[0];
+        /* Published-only, matching the previous latest-form query.
+           Unpublished drafts are never returned to ordinary callers. */
+        const found = wantVersion === null
+            ? await query(`
+                select version, schema from form_versions
+                 where record_type_id = $1 and published_at is not null
+                 order by version desc limit 1
+              `, [rt.id])
+            : await query(`
+                select version, schema from form_versions
+                 where record_type_id = $1 and version = $2 and published_at is not null
+              `, [rt.id, wantVersion]);
 
-        if (!definition.schema) {
+        if (found.rowCount === 0 || !found.rows[0].schema) {
             return response.status(404).json({
-                error: "No published form for " + definition.key,
-                detail: "This record type has no form version yet."
+                error: wantVersion === null
+                    ? "No published form for " + rt.key
+                    : "No published form version " + wantVersion + " for " + rt.key,
+                detail: wantVersion === null
+                    ? "This record type has no form version yet."
+                    : undefined
             });
         }
+
+        const definition = {
+            key: rt.key,
+            name: rt.name,
+            prefix: rt.prefix,
+            clause: rt.clause,
+            version: found.rows[0].version,
+            schema: found.rows[0].schema
+        };
 
         /* Load options for every link field the form declares. */
         const fields = definition.schema.fields || [];
@@ -292,202 +322,6 @@ masterdata.get("/record-types/:key/form", async (request, response, next) => {
     }
 });
 
-const FIELD_TYPES = new Set([
-    "text", "memo", "number", "date", "select", "link", "file", "signature", "user", "table", "boolean"
-]);
-
-/* Size caps on a published schema (audit M7). problemWith already
-   proves a schema is structurally sound; these stop a pathological
-   one - 300 columns, 5000 options, a novel-length label - from
-   becoming the form every future record of the type renders. Chosen
-   well above any real quality form (a big PFMEA is ~25 columns, a
-   long disposition list ~15 options) and well below what would choke
-   the renderer. */
-const SCHEMA_LIMITS = {
-    fields: 250,
-    tableColumns: 80,
-    options: 500,
-    keyChars: 100,
-    labelChars: 300,
-    sectionChars: 200,
-    exprChars: 1000
-};
-
-function tooLong(what, value, cap) {
-    return typeof value === "string" && value.length > cap
-        ? what + " is too long (" + value.length + " chars, limit " + cap + ")"
-        : null;
-}
-
-/* A table field's columns can only be scalars - a repeating grid of
-   grids is not something any real QMS form needs and not something
-   the renderer supports. "computed" is a read-only cell worked out
-   from other number columns in the same row: either a fixed op
-   (compute:"product"|"sum" over inputs:[...], e.g. RPN = severity x
-   occurrence x detection) or a free expression (expr:"tol - abs(actual
-   - nominal)", evaluated by public/js/expr.js on both tiers).
-   "boolean" is a checkbox cell, stored as true / false. "user" is a
-   person picker, stored as initials (same as a flat user field). */
-const TABLE_COLUMN_TYPES = new Set(["text", "memo", "number", "date", "select", "computed", "boolean", "user"]);
-const COMPUTE_OPS = new Set(["product", "sum"]);
-
-/* thresholds:{warn?,crit?} paints a number amber / red once it crosses
-   them. Allowed on any "number" or "computed" field or column. */
-function thresholdProblem(label, t) {
-    if (t === undefined) return null;
-    if (!t || typeof t !== "object" || Array.isArray(t)) return "\"" + label + "\" has bad thresholds";
-    for (const key of ["warn", "crit"]) {
-        if (t[key] !== undefined && typeof t[key] !== "number") {
-            return "\"" + label + "\" threshold \"" + key + "\" must be a number";
-        }
-    }
-    return null;
-}
-
-function tableProblem(field) {
-    if (!Array.isArray(field.columns) || field.columns.length === 0) {
-        return "\"" + field.label + "\" needs at least one column";
-    }
-    if (field.columns.length > SCHEMA_LIMITS.tableColumns) {
-        return "\"" + field.label + "\" has too many columns ("
-            + field.columns.length + ", limit " + SCHEMA_LIMITS.tableColumns + ")";
-    }
-    if (field.rowAttachments !== undefined && typeof field.rowAttachments !== "boolean") {
-        return "\"" + field.label + "\"'s rowAttachments must be true or false";
-    }
-    const seen = new Set();
-    const byKey = new Map();
-    for (const col of field.columns) {
-        if (!col || typeof col !== "object") return "\"" + field.label + "\" has a bad column";
-        if (!col.key || typeof col.key !== "string") return "\"" + field.label + "\" has a column with no key";
-        if (!col.label || typeof col.label !== "string") return "\"" + field.label + "\" has a column with no label";
-        const clk = tooLong("Column key \"" + col.key + "\"", col.key, SCHEMA_LIMITS.keyChars)
-            || tooLong("Column label \"" + col.label + "\"", col.label, SCHEMA_LIMITS.labelChars);
-        if (clk) return clk;
-        if (!TABLE_COLUMN_TYPES.has(col.type)) {
-            return "\"" + field.label + "\" column \"" + col.label + "\" has an unusable type";
-        }
-        if (seen.has(col.key)) return "\"" + field.label + "\" has two columns keyed \"" + col.key + "\"";
-        seen.add(col.key);
-        byKey.set(col.key, col);
-        if (col.type === "select" && (!Array.isArray(col.options) || col.options.length === 0)) {
-            return "\"" + field.label + "\" column \"" + col.label + "\" needs options";
-        }
-        if (Array.isArray(col.options) && col.options.length > SCHEMA_LIMITS.options) {
-            return "\"" + field.label + "\" column \"" + col.label + "\" has too many options ("
-                + col.options.length + ", limit " + SCHEMA_LIMITS.options + ")";
-        }
-        if (typeof col.expr === "string" && col.expr.length > SCHEMA_LIMITS.exprChars) {
-            return "\"" + field.label + "\" column \"" + col.label + "\" has an over-long expression";
-        }
-        if (col.thresholds !== undefined && col.type !== "number" && col.type !== "computed") {
-            return "\"" + field.label + "\" column \"" + col.label + "\" can only carry thresholds on a number or computed column";
-        }
-        const tp = thresholdProblem(field.label + " column \"" + col.label + "\"", col.thresholds);
-        if (tp) return tp;
-    }
-
-    /* A second pass: a computed column can only be checked once every
-       column it might reference is known. It is defined EITHER by a
-       free expression (expr) OR by a fixed op (compute + inputs). */
-    for (const col of field.columns) {
-        if (col.type !== "computed") continue;
-
-        const hasExpr = typeof col.expr === "string" && col.expr.trim() !== "";
-        let refs;
-
-        if (hasExpr) {
-            try {
-                refs = exprIdentifiers(col.expr);
-            } catch {
-                return "\"" + field.label + "\" column \"" + col.label + "\" has an expression that does not parse";
-            }
-        } else {
-            if (!COMPUTE_OPS.has(col.compute)) {
-                return "\"" + field.label + "\" column \"" + col.label + "\" needs an expression, or a compute of \"product\" or \"sum\"";
-            }
-            if (!Array.isArray(col.inputs) || col.inputs.length === 0) {
-                return "\"" + field.label + "\" column \"" + col.label + "\" needs at least one input column";
-            }
-            refs = col.inputs;
-        }
-
-        for (const key of refs) {
-            if (key === col.key) return "\"" + field.label + "\" column \"" + col.label + "\" cannot compute from itself";
-            const src = byKey.get(key);
-            if (!src) {
-                return "\"" + field.label + "\" column \"" + col.label + "\" "
-                    + (hasExpr ? "expression refers to" : "refers to") + " a missing column \"" + key + "\"";
-            }
-            if (src.type !== "number") {
-                return "\"" + field.label + "\" column \"" + col.label + "\" can only compute from number columns";
-            }
-        }
-    }
-    return null;
-}
-
-/* Never trust the client's own validation. The in-app editor already
-   checks all of this before it ever sends a request, but the field
-   list is exactly the shape every screen in the app renders forms
-   from, so a bad one here breaks every future record of this type,
-   not just the request that sent it. Structural soundness AND size
-   (SCHEMA_LIMITS, audit M7) - a schema that parses but is
-   pathologically large is still rejected. */
-export function problemWith(fields) {
-    if (!Array.isArray(fields) || fields.length === 0) {
-        return "At least one field is required";
-    }
-    if (fields.length > SCHEMA_LIMITS.fields) {
-        return "Too many fields (" + fields.length + ", limit " + SCHEMA_LIMITS.fields + ")";
-    }
-
-    const seenKeys = new Set();
-
-    for (const field of fields) {
-        if (!field || typeof field !== "object") return "Every field must be an object";
-        if (!field.key || typeof field.key !== "string") return "Every field needs a key";
-        if (!field.label || typeof field.label !== "string") return "Every field needs a label";
-        if (!FIELD_TYPES.has(field.type)) return "Unknown field type: " + field.type;
-        const flk = tooLong("Field key \"" + field.key + "\"", field.key, SCHEMA_LIMITS.keyChars)
-            || tooLong("Field label \"" + field.label + "\"", field.label, SCHEMA_LIMITS.labelChars)
-            || tooLong("\"" + field.label + "\"'s section", field.section, SCHEMA_LIMITS.sectionChars);
-        if (flk) return flk;
-        if (field.section !== undefined && typeof field.section !== "string") {
-            return "\"" + field.label + "\"'s section must be text";
-        }
-
-        if (seenKeys.has(field.key)) return "Two fields share the key \"" + field.key + "\"";
-        seenKeys.add(field.key);
-
-        if (field.type === "select" && (!Array.isArray(field.options) || field.options.length === 0)) {
-            return "\"" + field.label + "\" needs at least one option";
-        }
-        if (Array.isArray(field.options) && field.options.length > SCHEMA_LIMITS.options) {
-            return "\"" + field.label + "\" has too many options ("
-                + field.options.length + ", limit " + SCHEMA_LIMITS.options + ")";
-        }
-        if (field.thresholds !== undefined && field.type !== "number") {
-            return "\"" + field.label + "\" can only carry thresholds on a number field";
-        }
-        const ftp = thresholdProblem(field.label, field.thresholds);
-        if (ftp) return ftp;
-        if (field.type === "link" && field.target !== "record" && !LINK_SOURCES[field.target]) {
-            return "\"" + field.label + "\" needs a valid link target";
-        }
-        if (field.type === "link" && field.target === "record"
-            && field.record_type !== undefined && typeof field.record_type !== "string") {
-            return "\"" + field.label + "\"'s record_type filter must be a type key";
-        }
-        if (field.type === "table") {
-            const bad = tableProblem(field);
-            if (bad) return bad;
-        }
-    }
-
-    return null;
-}
-
 /* PUT /api/record-types/ncr/form   { fields: [...] }
 
    Publishing a new version, never overwriting the one records were
@@ -501,7 +335,8 @@ export function problemWith(fields) {
 masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
     async (request, response, next) => {
         try {
-            const problem = problemWith(request.body?.fields);
+            const incomingRules = Array.isArray(request.body?.rules) ? request.body.rules : undefined;
+            const problem = problemWithSchema({ fields: request.body?.fields, rules: incomingRules });
             if (problem) return response.status(422).json({ error: problem });
 
             const fields = request.body.fields;
@@ -525,7 +360,12 @@ masterdata.put("/record-types/:key/form", requirePermission("forms.manage"),
                 `, [recordTypeId]);
 
                 const nextVersion = previous.rowCount > 0 ? previous.rows[0].version + 1 : 1;
-                const rules = previous.rowCount > 0 ? (previous.rows[0].schema.rules || []) : [];
+                /* Incoming rules were validated above; otherwise copy the
+                   previous version's rules without re-validating stored
+                   content. */
+                const rules = incomingRules !== undefined
+                    ? incomingRules
+                    : (previous.rowCount > 0 ? (previous.rows[0].schema.rules || []) : []);
 
                 /* Carry the Excel template map forward, reconciled. */
                 let excelMap = null;
@@ -792,7 +632,8 @@ masterdata.post("/record-types", requirePermission("forms.manage"),
             }
 
             const fields = body.fields;
-            const bad = problemWith(fields);
+            const rules = Array.isArray(body.rules) ? body.rules : [];
+            const bad = problemWithSchema({ fields, rules });
             if (bad) return response.status(422).json({ error: bad });
 
             const created = await withTransaction(async (client) => {
@@ -823,7 +664,7 @@ masterdata.post("/record-types", requirePermission("forms.manage"),
                 await client.query(`
                     insert into form_versions (record_type_id, version, schema, published_at, published_by)
                     values ($1, 1, $2, now(), $3)
-                `, [recordTypeId, JSON.stringify({ fields, rules: [] }), request.user.id]);
+                `, [recordTypeId, JSON.stringify({ fields, rules }), request.user.id]);
 
                 await client.query(`
                     insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)

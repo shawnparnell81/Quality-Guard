@@ -32,7 +32,7 @@ export async function openPrintView(number) {
     let record, definition;
     try {
         record = (await api.record(number)).record;
-        definition = await api.recordForm(record.type).catch(() => null);
+        definition = await api.recordForm(record.type, { version: record.form_version }).catch(() => null);
     } catch (error) {
         host.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
         return;

@@ -15,6 +15,7 @@ import { api } from "../api.js";
 import { currentUser, can } from "../session.js";
 import { buildField, readValue, validate } from "../forms.js";
 import { el, toast } from "../dom.js";
+import { validateRecord } from "../../../shared/validate.js";
 import {
     enqueueRecord, listQueue, cacheForm, getCachedForm, wireAutoSync
 } from "../offline-queue.js";
@@ -162,19 +163,24 @@ function buildForm(body, definition, orgId, usingCache) {
         event.preventDefault();
         errorBox.hidden = true;
 
+        const data = {};
+        for (const entry of entries) {
+            const value = readValue(entry);
+            if (value !== undefined) data[entry.field.key] = value;
+        }
+
         const problems = validate(entries);
         if (!titleInput.value.trim()) problems.unshift("Summary is required");
+        const checked = validateRecord(definition, data, { phase: "create" });
+        problems.push(...checked.rule_violations);
+        for (const p of checked.problems) {
+            problems.push((p.field || "") + (p.column ? "." + p.column : "") + ": " + p.error);
+        }
 
         if (problems.length > 0) {
             errorBox.textContent = problems.join(". ");
             errorBox.hidden = false;
             return;
-        }
-
-        const data = {};
-        for (const entry of entries) {
-            const value = readValue(entry);
-            if (value !== undefined) data[entry.field.key] = value;
         }
 
         const payload = {

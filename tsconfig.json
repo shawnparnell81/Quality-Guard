@@ -18,6 +18,7 @@
   "include": [
     "types/**/*.d.ts",
     "public/js/**/*.js",
+    "shared/**/*.js",
     "server/src/**/*.js",
     "server/scripts/**/*.js"
   ],

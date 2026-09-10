@@ -19,7 +19,7 @@ import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { xlsxUpload, assertSaneWorkbook } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
-import { problemWith, slugKey } from "./masterdata.js";
+import { problemWithSchema, slugKey } from "./masterdata.js";
 import { buildDefaultMap } from "../excel-fill.js";
 
 export const formImport = Router();
@@ -678,7 +678,9 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
                review screen; they are advisory and must not end up in
                the published schema. */
             const fields = stripHints(body.fields);
-            const bad = problemWith(fields);
+            const incomingRules = Array.isArray(body.rules) ? body.rules : undefined;
+            const rules = incomingRules !== undefined ? incomingRules : [];
+            const bad = problemWithSchema({ fields, rules });
             if (bad) return response.status(422).json({ error: bad });
 
             const imp = await query(
@@ -722,7 +724,7 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
                     await client.query(`
                         insert into form_versions (record_type_id, version, schema, published_at, published_by)
                         values ($1, 1, $2, now(), $3)
-                    `, [recordTypeId, JSON.stringify({ fields, rules: [] }), request.user.id]);
+                    `, [recordTypeId, JSON.stringify({ fields, rules }), request.user.id]);
 
                     await client.query(`
                         insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
@@ -745,12 +747,14 @@ formImport.post("/forms/imports/:id/apply", requirePermission("forms.manage"),
                     [recordTypeId]
                 );
                 const nextVersion = prev.rowCount > 0 ? prev.rows[0].version + 1 : 1;
-                const rules = prev.rowCount > 0 ? (prev.rows[0].schema.rules || []) : [];
+                const publishedRules = incomingRules !== undefined
+                    ? incomingRules
+                    : (prev.rowCount > 0 ? (prev.rows[0].schema.rules || []) : []);
 
                 await client.query(`
                     insert into form_versions (record_type_id, version, schema, published_at, published_by)
                     values ($1, $2, $3, now(), $4)
-                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules }), request.user.id]);
+                `, [recordTypeId, nextVersion, JSON.stringify({ fields, rules: publishedRules }), request.user.id]);
 
                 await client.query(`
                     insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)

@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { evalWhen, checkRules } from "../../public/js/rules.js";
+import { evalWhen, checkRules } from "../../shared/rules.js";
 
 test("evalWhen: a bare ref is a truthiness test", () => {
     assert.equal(evalWhen("gage_cal_expired", { gage_cal_expired: true }), true);

@@ -36,7 +36,7 @@ const TYPE_LABEL = {
 };
 
 /* A table column can only be one of these scalar types - matches the
-   server's TABLE_COLUMN_TYPES in masterdata.js. "computed" is a
+   server's TABLE_COLUMN_TYPES in shared/schema.js. "computed" is a
    read-only cell derived from other number columns in the same row;
    "boolean" is a checkbox cell. */
 const COLUMN_TYPES = ["text", "memo", "number", "date", "select", "boolean", "user", "computed"];

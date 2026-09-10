@@ -17,7 +17,7 @@ import { el, toast, pill, humanize, statusKind } from "./dom.js";
 import { beginEditing } from "./presence.js";
 import { buildUploader } from "./attach-upload.js";
 import { openFileWindow } from "./doc-windows.js";
-import { checkRules } from "./rules.js";
+import { validateRecord } from "../../shared/validate.js";
 import { ensureDialog, paintThreshold } from "./field-kit.js";
 import { createTableEditor } from "./table-editor.js";
 
@@ -121,7 +121,10 @@ export function buildField(field, options, currentValue, context = {}) {
             const list = options.users || [];
             input = el("select", { id, name: field.key }, [
                 el("option", { value: "", text: "Choose..." }),
-                ...list.map((item) => el("option", { value: item.value, text: item.label }))
+                ...list.map((item) => el("option", {
+                    value: item.value, text: item.label,
+                    selected: currentValue === item.value ? "selected" : undefined
+                }))
             ]);
             break;
         }
@@ -477,11 +480,13 @@ export async function openRecordEditor(typeKey, {
 
     let existingVersion = null;
     try {
-        definition = await api.recordForm(typeKey);
         if (number) {
             const result = await api.record(number);
             existing = result.record;
             existingVersion = result.version || null;
+            definition = await api.recordForm(typeKey, { version: existing.form_version });
+        } else {
+            definition = await api.recordForm(typeKey);
         }
     } catch (error) {
         body.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
@@ -830,13 +835,16 @@ export async function openRecordEditor(typeKey, {
             if (value !== undefined) data[entry.field.key] = value;
         }
 
-        /* Conditional form rules - instant feedback before the round
-           trip; the server enforces the same rules authoritatively. */
-        const rules = checkRules(definition, data);
-        if (rules.blocked.length) {
+        /* Same validator the server write path uses, so Floor Report
+           and this editor cannot drift from checkRules / schema. */
+        const checked = validateRecord(definition, data, {
+            phase: existing ? "update" : "create",
+            prior: existing ? existing.data : null
+        });
+        if (checked.rule_violations.length) {
             errorBox.replaceChildren(
                 el("div", { class: "sm", style: "font-weight:600;margin-bottom:4px", text: "This form's rules block the save" }),
-                ...rules.blocked.map((m) => el("div", { text: m }))
+                ...checked.rule_violations.map((m) => el("div", { text: m }))
             );
             errorBox.hidden = false;
             errorBox.scrollIntoView({ behavior: "smooth", block: "center" });

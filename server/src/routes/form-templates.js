@@ -23,7 +23,7 @@ import { requirePermission } from "../auth.js";
 import { log } from "../logger.js";
 import { saveUploadedFile } from "../file-storage.js";
 import { mapProblem } from "../excel-fill.js";
-import { problemWith } from "./masterdata.js";
+import { problemWithSchema } from "./masterdata.js";
 import { listTemplates, getTemplate, getTemplateExcel } from "../form-templates/index.js";
 
 export const formTemplates = Router();
@@ -101,7 +101,7 @@ formTemplates.post("/form-templates/:key/install", requirePermission("forms.mana
             const tpl = getTemplate(request.params.key);
             if (!tpl) return response.status(404).json({ error: "No such template" });
 
-            const bad = problemWith(tpl.fields);
+            const bad = problemWithSchema({ fields: tpl.fields, rules: tpl.rules || [] });
             if (bad) return response.status(500).json({ error: "Template is malformed: " + bad });
 
             const outcome = await withTransaction(async (client) => {

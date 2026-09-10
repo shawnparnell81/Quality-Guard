@@ -24,8 +24,8 @@
      buildField / readValue        public/js/forms.js
      validate                      public/js/forms.js
      createTableEditor (via table)  public/js/table-editor.js
-     evaluate                       public/js/expr.js  (inside the editor)
-     checkRules                     public/js/rules.js
+     evaluate                       shared/expr.js  (inside the editor)
+     validateRecord                 shared/validate.js
      beginEditing                  public/js/presence.js
      buildRecordContext            ./record-context.js
    ============================================================ */
@@ -33,7 +33,7 @@
 import { api } from "../api.js";
 import { buildField, readValue, validate } from "../forms.js";
 import { el, humanize, formatDate, debounce, toast } from "../dom.js";
-import { checkRules } from "../rules.js";
+import { validateRecord } from "../../../shared/validate.js";
 import { beginEditing } from "../presence.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { buildRecordContext } from "./record-context.js";
@@ -300,7 +300,7 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
         const got = await api.record(number);
         record = got.record;
         version = got.version || null;
-        definition = await api.recordForm(record.type);
+        definition = await api.recordForm(record.type, { version: record.form_version });
     } catch (error) {
         track.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
         return;
@@ -334,8 +334,11 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
             todoBox.hidden = false;
             return;
         }
-        const rules = checkRules(definition, collectData());
-        const items = [...validate(entries), ...rules.blocked, ...rules.warnings];
+        const collected = collectData();
+        const rules = validateRecord(definition, collected, {
+            phase: "update", prior: record.data
+        });
+        const items = [...validate(entries), ...rules.rule_violations, ...rules.warnings];
         if (!items.length) { todoBox.hidden = true; return; }
         todoBox.replaceChildren(
             el("div", { class: "section-label", text: "Before this record can move forward" }),

@@ -154,24 +154,35 @@ async function postForm(path, formData, method = "POST") {
 const FORM_CACHE_MS = 60000;
 const formCache = new Map();
 
-function cachedForm(typeKey) {
-    const hit = formCache.get(typeKey);
+function cachedForm(typeKey, version) {
+    const verKey = version === undefined || version === null || version === "" ? "latest" : String(version);
+    const cacheKey = typeKey + "\0" + verKey;
+    const hit = formCache.get(cacheKey);
     if (hit && Date.now() - hit.at < FORM_CACHE_MS) return hit.promise;
 
-    const promise = get("/record-types/" + encodeURIComponent(typeKey) + "/form");
-    formCache.set(typeKey, { at: Date.now(), promise });
+    const path = verKey === "latest"
+        ? "/record-types/" + encodeURIComponent(typeKey) + "/form"
+        : "/record-types/" + encodeURIComponent(typeKey) + "/form?version=" + encodeURIComponent(verKey);
+    const promise = get(path);
+    formCache.set(cacheKey, { at: Date.now(), promise });
 
     promise.catch(() => {
-        const current = formCache.get(typeKey);
-        if (current && current.promise === promise) formCache.delete(typeKey);
+        const current = formCache.get(cacheKey);
+        if (current && current.promise === promise) formCache.delete(cacheKey);
     });
 
     return promise;
 }
 
 export function clearFormCache(typeKey) {
-    if (typeKey === undefined) formCache.clear();
-    else formCache.delete(typeKey);
+    if (typeKey === undefined) {
+        formCache.clear();
+        return;
+    }
+    const prefix = typeKey + "\0";
+    for (const key of [...formCache.keys()]) {
+        if (key === typeKey || key.startsWith(prefix)) formCache.delete(key);
+    }
 }
 
 function withQuery(path, params) {
@@ -312,7 +323,7 @@ export const api = {
         request("PUT", "/layout/" + encodeURIComponent(kind), { layout }),
 
     recordTypes:  ()        => get("/record-types"),
-    recordForm:   (typeKey) => cachedForm(typeKey),
+    recordForm:   (typeKey, opts) => cachedForm(typeKey, opts && opts.version),
     /* Anything that can publish a new form version drops the cached
        schema, whether or not the call came back clean. The ones that
        do not name a single type clear the lot. */

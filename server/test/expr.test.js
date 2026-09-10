@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluate, identifiers, parse } from "../../public/js/expr.js";
+import { evaluate, identifiers, parse } from "../../shared/expr.js";
 
 const ev = (expr, scope) => evaluate(expr, scope);
 

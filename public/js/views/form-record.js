@@ -137,7 +137,7 @@ export async function renderCustomDetail(typeKey, number, { slot = "record-view"
         record = got.record;
         transitions = got.transitions;
         signatures = got.signatures || {};
-        definition = await api.recordForm(typeKey).catch(() => null);
+        definition = await api.recordForm(typeKey, { version: record.form_version }).catch(() => null);
     } catch (error) {
         panel.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
         return;

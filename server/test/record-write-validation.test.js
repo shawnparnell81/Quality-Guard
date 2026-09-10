@@ -234,3 +234,17 @@ test("a PATCH re-sending an unchanged value the schema no longer accepts still s
     });
     assert.equal(bad.status, 422);
 });
+
+test("PATCH /:number/table/:field rejects a cell the schema cannot accept", async () => {
+    const patched = await api(adminCookie, "PATCH",
+        "/api/records/" + cleanNumber + "/table/rows", {
+            upsert: [{ note: "ok", count: "abc" }],
+            reason: "bad cell"
+        });
+    assert.equal(patched.status, 422, JSON.stringify(patched.body));
+    assert.ok((patched.body.schema_violations || []).some((p) => p.column === "count"));
+
+    const got = await api(adminCookie, "GET", "/api/records/" + cleanNumber);
+    const rows = got.body.record.data.rows || [];
+    assert.ok(rows.every((r) => r.count !== "abc"), "the bad row was not persisted");
+});

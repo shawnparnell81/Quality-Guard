@@ -51,6 +51,7 @@ const PORT = Number(process.env.PORT || 3001);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(here, "..", "..", "public");
+const sharedDir = join(here, "..", "..", "shared");
 const startedAt = Date.now();
 
 const VERSION = (() => {
@@ -234,6 +235,14 @@ app.get("/app", (request, response) => {
    no asset hashing here, so a cached app.js after an update is a
    recurring "why isn't my change showing" trap. These files are
    small and same-origin - correctness beats the few saved KB. */
+app.use("/shared", express.static(sharedDir, {
+    index: false,
+    setHeaders(response, filePath) {
+        if (/\.(?:js|css|html)$/i.test(filePath)) {
+            response.setHeader("Cache-Control", "no-store");
+        }
+    }
+}));
 app.use(express.static(publicDir, {
     index: false,
     setHeaders(response, filePath) {

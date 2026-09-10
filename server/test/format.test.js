@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { formatValue, formatDateValue, isEmpty } from "../../public/js/format.js";
+import { formatValue, formatDateValue, isEmpty } from "../../shared/format.js";
 
 test("isEmpty: null / undefined / empty string / empty array only", () => {
     for (const v of [null, undefined, "", []]) assert.equal(isEmpty(v), true, JSON.stringify(v));

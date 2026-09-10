@@ -20,11 +20,11 @@ const HEAD_FIELDS = [
 export async function openCompare(paneA, paneB) {
     let ra, rb, def;
     try {
-        [{ record: ra }, { record: rb }, def] = await Promise.all([
+        [{ record: ra }, { record: rb }] = await Promise.all([
             api.record(paneA.number),
-            api.record(paneB.number),
-            api.recordForm(paneA.type).catch(() => ({ fields: [] }))
+            api.record(paneB.number)
         ]);
+        def = await api.recordForm(paneA.type, { version: ra.form_version }).catch(() => ({ fields: [] }));
     } catch (error) {
         toast(error.message, "error");
         return;
