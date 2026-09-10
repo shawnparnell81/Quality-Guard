@@ -221,8 +221,9 @@ body {
 .brand-mark {
     width: 24px; height: 24px;
     flex-shrink: 0;
-    /* The mark's inner stroke is near-white, drawn for the dark
-       sidebar. Keep it on a dark chip so it still reads on the header. */
+    /* A white shield-and-G, drawn for the dark sidebar. Keep it on a
+       dark chip so it still reads on the light header. */
+    color: #fff;
     background: var(--sidebar-bg);
     border-radius: 6px;
     padding: 3px;
@@ -2192,12 +2193,22 @@ th.col-you { color: var(--brand); }
 .signin-brand {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 11px;
-    margin-bottom: 26px;
+    margin-bottom: 22px;
 }
 
 .signin-brand .brand-name { color: var(--ink); font-size: 19px; }
 .signin-brand .brand-sub  { color: var(--brass); }
+
+/* the full emblem - carries its own "QMS Guardian / Quality Management
+   System" lettering, so no wordmark beside it */
+.signin-logo {
+    display: block;
+    width: 210px;
+    max-width: 72%;
+    height: auto;
+}
 
 .signin-panel {
     background: var(--surface);
