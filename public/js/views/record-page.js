@@ -22,13 +22,12 @@ import { api } from "../api.js";
 import { el, toast, printRecord } from "../dom.js";
 import { openRecordEditor } from "../forms.js";
 import { renderRecordDetail } from "./events.js";
-import { renderCustomDetail } from "./form-record.js";
 import { renderFairDetail } from "./fair.js";
 import { renderPpapDetail } from "./ppap.js";
 import { renderEightDDetail, renderChangeDetail } from "./change.js";
 import { renderDiDetail } from "./di.js";
 import { renderApqpDetail } from "./apqp.js";
-import { renderCalibrationLog } from "./calibration-log.js";
+import { renderLiveForm } from "./live-form.js";
 import { openPane, hasPanes } from "../panes/paneManager.js";
 
 const SLOT = "record-view";
@@ -44,17 +43,17 @@ const BESPOKE = {
     apqp: renderApqpDetail
 };
 
-/* Custom (user-installed) record types that get a designed, editable
-   bespoke layout instead of the generic label-above-field form. Same
-   render(number, { slot }) contract as BESPOKE. */
-const CUSTOM_BESPOKE = {
-    calibration_log: renderCalibrationLog
-};
+/* Custom (user-installed) record types render as a live document -
+   buildLiveForm from the schema. A key here overrides that with a
+   bespoke renderer; there are none right now (the calibration due-date
+   calc rides the RECOMPUTE hook in live-form.js instead). */
+const CUSTOM_BESPOKE = {};
 
 /* Types whose paper copy is a designed one-sheet form (print-view.js),
-   not the generic pdfkit PDF. */
+   not the generic pdfkit PDF: the built-in 8D plus every custom type
+   (they are all live documents now). */
 function isBespokePrint(type) {
-    return type === "eightd" || type in CUSTOM_BESPOKE;
+    return type === "eightd" || !BUILT_IN.has(type);
 }
 
 /* Built-in types whose old side panel carried no Edit button - the
@@ -70,14 +69,6 @@ const BUILT_IN = new Set([
 
 export function converted(type) {
     return GENERIC.has(type) || Boolean(BESPOKE[type]) || !BUILT_IN.has(type);
-}
-
-/* Types whose record IS its schema form: opening one goes straight to
-   the editable form + context panel (one surface, S3), not a
-   read-only view with an Edit button. The bespoke types keep the
-   view + Edit model - their screens are not plain forms. */
-function editInPlace(type) {
-    return GENERIC.has(type) || !BUILT_IN.has(type);
 }
 
 /* Where "Back" returns to, and the scroll position to restore there.
@@ -106,18 +97,19 @@ export async function openRecordPage(number, opts = {}) {
 
     if (!converted(type)) return false;
 
-    /* A custom type with a designed bespoke layout: full-page view path,
-       its own renderer, chrome trimmed to Back + Print. */
-    const customBespoke = Boolean(CUSTOM_BESPOKE[type]);
+    /* Every custom (user-installed) type is a live document now -
+       full-page view path, buildLiveForm from its schema, chrome =
+       Back + Print + Fill from Excel + Duplicate. */
+    const liveForm = !BUILT_IN.has(type);
 
-    /* The merged surface: the record opens as its editable form with a
-       context panel below it (forms.js openRecordEditor). No separate
-       read-only view, no Edit button. */
-    if (editInPlace(type) && !customBespoke) {
+    /* GENERIC built-ins (NCR, CAPA, ...) open straight into their
+       editable schema form + context panel (forms.js openRecordEditor).
+       Custom types no longer take this path. */
+    if (GENERIC.has(type)) {
         const back = opts.returnView || currentViewName() || "dashboard";
         await show("record-editor", { reload: false });
         await openRecordEditor(type, {
-            number: n, returnView: back, stayOnSave: true, custom: !BUILT_IN.has(type)
+            number: n, returnView: back, stayOnSave: true, custom: false
         });
         return true;
     }
@@ -131,8 +123,6 @@ export async function openRecordPage(number, opts = {}) {
     shell.dataset.type = type;
     current = { number: n, type };
 
-    const isCustom = !BUILT_IN.has(type) && !customBespoke;
-
     const heading = document.getElementById(SLOT + "-detail-number");
     if (heading) heading.textContent = n;
     document.getElementById(SLOT + "-detail-status").replaceChildren();
@@ -140,20 +130,19 @@ export async function openRecordPage(number, opts = {}) {
         .replaceChildren(el("p", { class: "sm dim", text: "Loading…" }));
     document.title = n + " · QMS Guardian";
 
-    /* A built-in type leans on the chrome's Edit / Print / PDF;
-       renderCustomDetail builds its own button row in the panel body,
-       so for a plain custom type the chrome bar is hidden. A custom
-       bespoke layout keeps the bar but only Back + Print (it edits in
-       place, and its paper copy is the designed print view). */
-    document.getElementById(SLOT + "-actions").hidden = isCustom;
-    document.getElementById(SLOT + "-edit").hidden = NO_EDIT.has(type) || customBespoke;
-    document.getElementById(SLOT + "-pdf").hidden = customBespoke;
+    /* Chrome: a live-document (custom) type edits in place and prints
+       its designed sheet, so it shows Back + Print + Fill from Excel +
+       Duplicate, no Edit / PDF. A built-in bespoke type keeps
+       Edit / Print / PDF. */
+    document.getElementById(SLOT + "-actions").hidden = false;
+    document.getElementById(SLOT + "-edit").hidden = NO_EDIT.has(type) || liveForm;
+    document.getElementById(SLOT + "-pdf").hidden = liveForm;
+    setFillFromExcel(liveForm ? type : null, n);
+    setDuplicate(liveForm ? { type, number: n } : null);
 
     try {
-        if (customBespoke) {
-            await CUSTOM_BESPOKE[type](n, { slot: SLOT });
-        } else if (isCustom) {
-            await renderCustomDetail(type, n, { slot: SLOT });
+        if (liveForm) {
+            await (CUSTOM_BESPOKE[type] || renderLiveForm)(n, { slot: SLOT });
         } else if (BESPOKE[type]) {
             await BESPOKE[type](n, { slot: SLOT });
         } else {
@@ -195,8 +184,11 @@ function buildShell() {
             ]),
             el("div", { class: "row no-print record-page-actions", id: SLOT + "-actions" }, [
                 actionBtn(SLOT + "-edit", "Edit", "btn-primary"),
+                actionBtn(SLOT + "-fillxl", "Fill from Excel"),
+                actionBtn(SLOT + "-dup", "Duplicate"),
                 actionBtn(SLOT + "-print", "Print"),
-                actionBtn(SLOT + "-pdf", "PDF")
+                actionBtn(SLOT + "-pdf", "PDF"),
+                el("input", { id: SLOT + "-xlfile", type: "file", accept: ".xlsx", hidden: "hidden" })
             ])
         ]),
         el("div", { class: "panel" }, el("div", { class: "panel-body", id: SLOT + "-detail" }))
@@ -234,6 +226,58 @@ function wireActions() {
             onSaved: () => refreshRecordPage()
         });
     });
+
+    /* Fill from Excel - upload a filled copy of this form's template,
+       the server reads it into a new record of this type. */
+    const xlBtn = document.getElementById(SLOT + "-fillxl");
+    const xlFile = document.getElementById(SLOT + "-xlfile");
+    xlBtn.addEventListener("click", () => { xlFile.value = ""; xlFile.click(); });
+    xlFile.addEventListener("change", async () => {
+        if (!xlFile.files.length || !current) return;
+        const fd = new FormData();
+        fd.append("file", xlFile.files[0]);
+        xlBtn.disabled = true;
+        xlBtn.textContent = "Reading…";
+        try {
+            const r = await api.importRecordExcel(current.type, fd);
+            toast(r.number + " created from Excel"
+                + (r.source_attached ? " (spreadsheet attached)" : ""));
+            openRecordPage(r.number, { type: current.type });
+        } catch (error) {
+            const errs = error.payload && error.payload.errors;
+            toast(errs && errs.length ? errs[0] : error.message, "error");
+        } finally {
+            xlBtn.disabled = false;
+            xlBtn.textContent = "Fill from Excel";
+        }
+    });
+
+    document.getElementById(SLOT + "-dup").addEventListener("click", async () => {
+        if (!current) return;
+        try {
+            const r = await api.cloneRecord(current.number);
+            toast(r.number + " created from " + current.number);
+            openRecordPage(r.number, { type: current.type });
+        } catch (error) { toast(error.message, "error"); }
+    });
+}
+
+/* Show the Fill-from-Excel button only for a type whose published form
+   version carries an Excel layout (excel_map). */
+async function setFillFromExcel(type, number) {
+    const btn = document.getElementById(SLOT + "-fillxl");
+    if (!btn) return;
+    btn.hidden = true;
+    if (!type) return;
+    try {
+        const { has_template } = await api.excelMap(type);
+        if (current && current.number === number) btn.hidden = !has_template;
+    } catch { /* leave hidden */ }
+}
+
+function setDuplicate(ctx) {
+    const btn = document.getElementById(SLOT + "-dup");
+    if (btn) btn.hidden = !ctx;
 }
 
 function goBack() {

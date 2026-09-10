@@ -6,21 +6,19 @@
    person can review it and hit Ctrl+P / "Save as PDF" for a clean
    controlled-document copy.
 
-   Only form types with a bespoke print layout come here (8D, the
-   calibration log); every other type keeps the generated pdfkit PDF.
-   The layout is the same builder the on-screen form uses, rendered
-   read-only, and styled by the per-form @media print rules in
-   style.css.
+   The built-in 8D has its own builder; every other form renders
+   through the generic live-document builder from its schema. Styled
+   by the per-form @media print rules in style.css.
    ============================================================ */
 
 import { api } from "../api.js";
 import { el } from "../dom.js";
 import { buildEightDForm } from "./change.js";
-import { buildCalLogForm } from "./calibration-log.js";
+import { buildLiveForm } from "./live-form.js";
 
+/* per-type overrides; everything else falls back to buildLiveForm */
 const BUILDERS = {
-    eightd: buildEightDForm,
-    calibration_log: buildCalLogForm
+    eightd: (record) => buildEightDForm(record, { editable: false })
 };
 
 export async function openPrintView(number) {
@@ -31,16 +29,21 @@ export async function openPrintView(number) {
     document.title = number + " · Print · QMS Guardian";
     host.replaceChildren(el("p", { class: "sm dim", text: "Loading…" }));
 
-    let record;
+    let record, definition;
     try {
         record = (await api.record(number)).record;
+        definition = await api.recordForm(record.type).catch(() => null);
     } catch (error) {
         host.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
         return;
     }
 
-    const build = BUILDERS[record.type];
-    if (!build) {
+    let sheet;
+    if (BUILDERS[record.type]) {
+        sheet = BUILDERS[record.type](record);
+    } else if (definition && Array.isArray(definition.fields)) {
+        sheet = buildLiveForm(record, definition, { editable: false }).node;
+    } else {
         host.replaceChildren(el("p", { class: "sm",
             text: record.number + " has no designed print layout - use the PDF button instead." }));
         return;
@@ -53,9 +56,7 @@ export async function openPrintView(number) {
             onClick: () => window.close() })
     ]);
 
-    const sheet = build(record, { editable: false });
     sheet.classList.add("print-area");
-
     host.replaceChildren(bar, sheet);
     window.scrollTo(0, 0);
 }

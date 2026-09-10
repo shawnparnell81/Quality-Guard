@@ -3231,11 +3231,137 @@ body.print-mode #view-print { display: block; padding: 0; }
 body.print-mode .app,
 body.print-mode .app-main { display: block; margin: 0; padding: 0; }
 
-#print-host { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
+#print-host { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
 .print-bar {
     position: sticky; top: 0; z-index: 5;
     display: flex; gap: 8px; padding: 10px 0; margin-bottom: 16px;
     background: #fff; border-bottom: 1px solid var(--hairline);
+}
+
+/* ============================================================
+   .live-form - the generic live document (live-form.js). Any record
+   type's schema, rendered as an editable + printable controlled
+   document: navy header + section bands, slate label cells, gridlines
+   on every flat field and every table cell. Renders as a white
+   document in either app theme so the screen and the print match.
+   ============================================================ */
+
+.live-form {
+    --navy: #0E1861;
+    --slate: #EEF1F7;
+    --rule: #9aa3b2;
+    background: #fff;
+    color: #1f2430;
+    border: 1px solid var(--rule);
+    margin-bottom: 8px;
+}
+.live-form .lf-head {
+    background: var(--navy); color: #fff; padding: 10px 14px;
+}
+.live-form .lf-head-title {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.live-form .lf-kicker { font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+.live-form .lf-no { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+.live-form .lf-facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 2px 14px; margin-top: 8px; font-size: 11px;
+}
+.live-form .lf-fact-label {
+    display: block; text-transform: uppercase; letter-spacing: .05em;
+    font-size: 9px; color: #b9c0e8;
+}
+.live-form .lf-fact-val { color: #fff; }
+
+.live-form .lf-block { border-bottom: 1px solid var(--rule); }
+.live-form .lf-block:last-child { border-bottom: 0; }
+.live-form .lf-block-head {
+    margin: 0; padding: 5px 12px; font-size: 12px; font-weight: 700;
+    background: var(--navy); color: #fff;
+}
+.live-form .lf-block-body { padding: 0; }
+
+/* flat fields: buildField gives .field-group (label + input); lay them
+   out as a two-column label / value grid with rules. */
+.live-form .lf-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+}
+.live-form .lf-field.field-group {
+    display: grid; grid-template-columns: 190px 1fr; align-items: stretch;
+    gap: 0; margin: 0;
+    border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+}
+.live-form .lf-field > label {
+    padding: 5px 8px; background: var(--slate);
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .03em; color: #3a4257; display: flex; align-items: center;
+}
+.live-form .lf-field > input,
+.live-form .lf-field > select,
+.live-form .lf-field > textarea {
+    border: 0; padding: 5px 8px; font: inherit; font-size: 12px;
+    background: #fff; color: #1f2430; width: 100%; box-sizing: border-box;
+    min-height: 30px;
+}
+.live-form .lf-field > textarea { resize: vertical; }
+.live-form .lf-field .field-hint { display: none; }
+.live-form .lf-field .req { color: var(--crit); }
+
+/* table fields: buildField wraps createTableEditor's grid in
+   .field-group. Give it the register look. */
+.live-form .lf-tablewrap.field-group { margin: 0; padding: 8px 12px; }
+.live-form .lf-tablewrap > label {
+    font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 4px;
+    text-transform: none; letter-spacing: 0;
+}
+.live-form .lf-tablewrap .table-wrap { overflow-x: auto; border: 1px solid var(--rule); }
+.live-form .lf-tablewrap table {
+    width: 100%; border-collapse: collapse; font-size: 11px;
+}
+.live-form .lf-tablewrap th {
+    background: var(--navy); color: #fff; font-weight: 600; text-align: left;
+    padding: 4px 6px; border: 1px solid var(--rule); white-space: nowrap;
+}
+.live-form .lf-tablewrap td { border: 1px solid var(--rule); padding: 0; }
+.live-form .lf-tablewrap td input,
+.live-form .lf-tablewrap td select,
+.live-form .lf-tablewrap td textarea {
+    border: 0; width: 100%; padding: 4px 6px; font: inherit; font-size: 11px;
+    background: #fff; color: #1f2430; box-sizing: border-box;
+}
+.live-form .lf-tablewrap td input[type="number"],
+.live-form .lf-tablewrap td .computed-cell {
+    font-variant-numeric: tabular-nums; text-align: right;
+}
+.live-form .lf-tablewrap td .computed-cell { background: var(--slate); }
+.live-form .lf-tablewrap .row-tools { white-space: nowrap; text-align: center; }
+.live-form .lf-tablewrap .field-hint { display: block; margin-top: 4px; color: var(--ink-3); }
+
+@media (max-width: 820px) {
+    .live-form .lf-grid { grid-template-columns: 1fr; }
+    .live-form .lf-field.field-group { border-right: 0; }
+}
+
+@page live-wide { size: letter landscape; margin: 12mm; }
+@media print {
+    .print-area.live-form,
+    .print-area .live-form { font-size: 9pt; }
+    .print-area .live-form:has(.lf-grid--wide) { page: live-wide; }
+    .print-area .lf-head,
+    .print-area .lf-block-head,
+    .print-area .lf-tablewrap th {
+        background: #000 !important; color: #fff !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .print-area .lf-field > label { background: #eee !important; }
+    .print-area .lf-field > input,
+    .print-area .lf-field > select,
+    .print-area .lf-field > textarea,
+    .print-area .lf-tablewrap td,
+    .print-area .lf-tablewrap th { border: 1px solid #000 !important; }
+    .print-area .lf-block { break-inside: avoid; }
+    .print-area .lf-tablewrap tr { break-inside: avoid; }
+    .print-area .no-print { display: none !important; }
 }
 
 .d8-form,
