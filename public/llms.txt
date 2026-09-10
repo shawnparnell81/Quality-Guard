@@ -1,0 +1,62 @@
+# QMS Guardian
+
+> A hosted ISO 9001 / IATF 16949 quality management system built for small
+> manufacturers - nonconformance and CAPA, calibration, internal audits,
+> training records and document control in one place, set up in an afternoon.
+
+## What it is
+
+QMS Guardian is a web-based quality management system (QMS) for manufacturing
+companies. It replaces the usual mix of spreadsheets, shared drives and a
+paper binder with one system that covers the day-to-day quality records an
+ISO 9001 or IATF 16949 auditor expects: nonconformance reports, corrective and
+preventive action (CAPA), gage and equipment calibration, internal audits,
+operator competence and training, controlled documents, and production
+traceability. Workflows, roles, permissions and record types are configurable
+by the customer, without a build step or a consultant.
+
+## Who it's for
+
+Manufacturing shops of roughly 100 people or fewer that need a real QMS but do
+not have a dedicated quality department or budget for enterprise QMS software.
+
+## Modules
+
+- Nonconformance (NCR) and CAPA - raise, contain, disposition, root-cause and
+  verify, with the audit trail sealed on close
+- Calibration and gage tracking - intervals, due dates, status, certificates
+- Internal audit readiness - schedule, checklist, findings, clause coverage
+- Competence and training records - matrix by operator and revision
+- Document control - controlled copies, revisions, review dates
+- Production and traceability - work orders through to shipped, with yield
+- Roles and permissions - every workflow step gated by a named permission
+
+## Standards
+
+Aligned to ISO 9001:2015 and IATF 16949. Module-to-clause mapping includes
+nonconformity and corrective action (8.7, 10.2), monitoring and measuring
+resources / calibration (7.1.5), internal audit (9.2), competence (7.2), and
+documented information (7.5). A clause readiness view shows current coverage.
+
+## Pricing
+
+Three flat plans, one price each, billed annually (ask about month-to-month):
+
+- Starter - $399 / month - for a shop just getting off spreadsheets
+- Growth - $799 / month - for a shop running full production traceability
+- Business - $1,299 / month - for a plant that wants forms shaped to its process
+
+Every plan includes every module. No per-module add-ons. No free self-serve
+trial.
+
+## Access
+
+A live demo on your own roles and data is available on request. There is no
+self-serve signup. Contact: shawnparnell81@yahoo.com
+
+## Links
+
+- Home / product overview: /
+- Features: /#features
+- Pricing: /#pricing
+- FAQ: /#faq
