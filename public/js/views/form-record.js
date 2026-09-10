@@ -461,10 +461,18 @@ export function wireFormRecord() {
                    and any flagged gaps - are right there. */
                 await openRecordPage(r.number, { type: currentType });
             } catch (error) {
-                const errs = error.payload && error.payload.errors;
-                toast(errs && errs.length ? errs[0] : error.message, "error");
-                if (errs && errs.length > 1) {
-                    window.alert("The sheet could not be read:\n\n" + errs.join("\n"));
+                const errs = (error.payload && error.payload.errors) || [];
+                if (errs.length > 1) {
+                    toast(errs.length + " problems in the sheet - first: " + errs[0], "error");
+                    /* the full list, for a person who wants to fix every cell at once */
+                    const note = document.getElementById("form-record-note");
+                    if (note) {
+                        note.textContent = "";
+                        note.append(el("span", { class: "sm", style: "color:var(--crit)",
+                            text: "Excel import: " + errs.join("  ·  ") }));
+                    }
+                } else {
+                    toast(errs[0] || error.message, "error");
                 }
             } finally {
                 fromExcel.disabled = false;

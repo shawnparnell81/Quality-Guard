@@ -2991,6 +2991,12 @@ th.col-you { color: var(--brand); }
     color: var(--ink-2);
     flex: 1;
 }
+.form-card-xl {
+    margin: 0;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: help;
+}
 .form-card-foot {
     display: flex;
     align-items: center;

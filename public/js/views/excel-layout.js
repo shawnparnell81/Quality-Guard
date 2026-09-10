@@ -32,7 +32,7 @@ export async function openExcelLayout(typeKey, typeName) {
     render(state);
 
     function render(data) {
-        const { map, schema, has_template: hasTemplate } = data;
+        const { map, schema, has_template: hasTemplate, starter_available: starterAvailable } = data;
         const fields = (schema && schema.fields) || [];
         const flat = fields.filter((f) => FLAT_TYPES.has(f.type));
         const tables = fields.filter((f) => f.type === "table" && Array.isArray(f.columns));
@@ -44,9 +44,40 @@ export async function openExcelLayout(typeKey, typeName) {
         if (!hasTemplate) {
             const file = el("input", { type: "file", accept: ".xlsx" });
             file.addEventListener("change", () => uploadTemplate(file.files[0]));
+
+            /* A form installed from the Library carries a bundled
+               spreadsheet - one click adopts it instead of hunting for
+               the file. */
+            let starterBlock = null;
+            if (starterAvailable) {
+                const useStarter = el("button", { class: "btn btn-primary", type: "button",
+                    text: "Use the bundled layout" });
+                useStarter.addEventListener("click", async () => {
+                    useStarter.disabled = true;
+                    useStarter.textContent = "Attaching...";
+                    try {
+                        const res = await api.useStarterExcelTemplate(typeKey);
+                        toast("Bundled layout attached - review the cells");
+                        render({ ...state, has_template: true, map: res.map });
+                    } catch (error) {
+                        toast(error.message, "error");
+                        useStarter.disabled = false;
+                        useStarter.textContent = "Use the bundled layout";
+                    }
+                });
+                starterBlock = el("div", { class: "field-group" }, [
+                    el("p", { class: "sm", text:
+                        "This form ships with the spreadsheet it was built from. "
+                        + "\"Fill from Excel\" and the template download will use it." }),
+                    useStarter,
+                    el("p", { class: "sm dim", style: "margin-top:10px", text: "— or attach your own file below —" })
+                ]);
+            }
+
             node.replaceChildren(
                 head,
                 el("div", { class: "modal-body" }, [
+                    starterBlock,
                     el("p", { class: "sm", text:
                         "Attach the spreadsheet this form is based on. Its exports will then come "
                         + "out on that exact layout - headers, merges and all - instead of the "

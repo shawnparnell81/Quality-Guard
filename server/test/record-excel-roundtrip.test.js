@@ -285,6 +285,33 @@ test("the bundled 8D form fills from the user's own Blank 8D sheet", async () =>
     assert.match(d.root_cause, /Mould vent blocked/);
 });
 
+test("a form with no Excel layout can adopt its bundled starter spreadsheet", async () => {
+    /* work_order_form was installed (with its bundle) by an earlier
+       test. Drop the layout to stand in for a form installed before
+       its starter shipped a spreadsheet, then re-adopt it. */
+    const dropped = await api(adminCookie, "DELETE", "/api/record-types/work_order_form/excel-map");
+    assert.equal(dropped.status, 200, JSON.stringify(dropped.body));
+
+    const before = await api(adminCookie, "GET", "/api/record-types/work_order_form/excel-map");
+    assert.equal(before.body.has_template, false);
+    assert.equal(before.body.starter_available, true, "the catalogue knows a bundled sheet exists");
+
+    const adopt = await api(adminCookie, "POST",
+        "/api/record-types/work_order_form/excel-template/from-starter");
+    assert.equal(adopt.status, 201, JSON.stringify(adopt.body));
+    assert.match(adopt.body.map.template_name, /work_order_form\.xlsx/);
+
+    /* it is really back: the template download is the customer layout again */
+    const { wb } = await downloadXlsx(adminCookie, "/api/records/excel-template?type=work_order_form");
+    assert.ok(wb.getWorksheet("Work Order Template"));
+
+    /* an installed form whose starter ships no spreadsheet says so */
+    const none = await api(adminCookie, "POST",
+        "/api/record-types/pfmea/excel-template/from-starter");
+    assert.equal(none.status, 404);
+    assert.match(none.body.error, /no starter spreadsheet/i);
+});
+
 test("a sheet split out of the Appearance Report workbook fills from its own layout", async () => {
     const install = await api(adminCookie, "POST", "/api/form-templates/fair_inspection_aar/install");
     assert.equal(install.status, 201, JSON.stringify(install.body));
