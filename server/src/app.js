@@ -17,6 +17,7 @@ import { identify, requireAuth, requirePasswordCurrent, requireCsrf } from "./au
 import { auth } from "./routes/auth.js";
 import { records } from "./routes/records.js";
 import { masterdata } from "./routes/masterdata.js";
+import { customers } from "./routes/customers.js";
 import { dashboard } from "./routes/dashboard.js";
 import { metrics } from "./routes/metrics.js";
 import { jobs } from "./routes/jobs.js";
@@ -388,6 +389,7 @@ app.use("/api", layout);
 app.use("/api", formImport);
 app.use("/api", formTemplates);
 app.use("/api", notifications);
+app.use("/api", customers);
 app.use("/api", masterdata);
 
 app.use((request, response) => {

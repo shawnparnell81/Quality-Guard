@@ -146,6 +146,54 @@ CREATE TABLE public.change_impact_assessments (
     "position" integer NOT NULL,
     CONSTRAINT change_impact_assessments_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'signed'::text, 'not_applicable'::text])))
 );
+CREATE TABLE public.customer_documents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    stage_id uuid,
+    category text,
+    kind text NOT NULL,
+    original_filename text,
+    mime_type text,
+    size_bytes bigint,
+    storage_path text,
+    document_id uuid,
+    note text,
+    uploaded_by uuid,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT customer_documents_category_check CHECK ((category = ANY (ARRAY['quote'::text, 'spec'::text, 'drawing'::text, 'contract'::text, 'correspondence'::text, 'other'::text]))),
+    CONSTRAINT customer_documents_kind_check CHECK ((kind = ANY (ARRAY['upload'::text, 'link'::text]))),
+    CONSTRAINT customer_documents_stage_xor_category CHECK (((stage_id IS NOT NULL) <> (category IS NOT NULL)))
+);
+CREATE TABLE public.customer_onboarding_stages (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_id uuid NOT NULL,
+    stage_key text NOT NULL,
+    name text NOT NULL,
+    detail text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    completed_by uuid,
+    completed_at timestamp with time zone,
+    "position" integer NOT NULL,
+    CONSTRAINT customer_onboarding_stages_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'complete'::text, 'skipped'::text])))
+);
+CREATE TABLE public.customers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    org_id uuid NOT NULL,
+    name text NOT NULL,
+    code text,
+    status text DEFAULT 'prospect'::text NOT NULL,
+    primary_contact_name text,
+    primary_contact_email text,
+    phone text,
+    address text,
+    notes text,
+    data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT customers_status_check CHECK ((status = ANY (ARRAY['prospect'::text, 'active'::text, 'inactive'::text])))
+);
 CREATE TABLE public.di_deliverables (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     org_id uuid NOT NULL,
@@ -898,6 +946,16 @@ ALTER TABLE ONLY public.change_impact_assessments
     ADD CONSTRAINT change_impact_assessments_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.change_impact_assessments
     ADD CONSTRAINT change_impact_assessments_record_id_area_key UNIQUE (record_id, area);
+ALTER TABLE ONLY public.customer_documents
+    ADD CONSTRAINT customer_documents_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.customer_onboarding_stages
+    ADD CONSTRAINT customer_onboarding_stages_customer_id_stage_key_key UNIQUE (customer_id, stage_key);
+ALTER TABLE ONLY public.customer_onboarding_stages
+    ADD CONSTRAINT customer_onboarding_stages_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_org_id_name_key UNIQUE (org_id, name);
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.di_deliverables
     ADD CONSTRAINT di_deliverables_pkey PRIMARY KEY (id);
 ALTER TABLE ONLY public.di_deliverables
@@ -1089,6 +1147,11 @@ CREATE INDEX idx_attachments_row_ref ON public.attachments USING btree (record_i
 CREATE INDEX idx_audit_entity ON public.audit_log USING btree (entity, entity_id);
 CREATE INDEX idx_audit_record ON public.audit_log USING btree (record_id, changed_at DESC);
 CREATE INDEX idx_cert_next_audit ON public.certifications USING btree (org_id, next_audit_on);
+CREATE INDEX idx_customer_documents_customer ON public.customer_documents USING btree (customer_id);
+CREATE INDEX idx_customer_documents_stage ON public.customer_documents USING btree (stage_id);
+CREATE INDEX idx_customer_stages ON public.customer_onboarding_stages USING btree (customer_id, "position");
+CREATE UNIQUE INDEX idx_customers_code ON public.customers USING btree (org_id, code) WHERE (code IS NOT NULL);
+CREATE INDEX idx_customers_org_status ON public.customers USING btree (org_id, status);
 CREATE INDEX idx_di_deliverables ON public.di_deliverables USING btree (record_id);
 CREATE INDEX idx_docreq_role ON public.document_requirements USING btree (org_id, role);
 CREATE INDEX idx_docrev_document ON public.document_revisions USING btree (document_id);
@@ -1170,6 +1233,24 @@ ALTER TABLE ONLY public.change_impact_assessments
     ADD CONSTRAINT change_impact_assessments_record_id_fkey FOREIGN KEY (record_id) REFERENCES public.records(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.change_impact_assessments
     ADD CONSTRAINT change_impact_assessments_signed_by_fkey FOREIGN KEY (signed_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.customer_documents
+    ADD CONSTRAINT customer_documents_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.customer_documents
+    ADD CONSTRAINT customer_documents_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.customer_documents
+    ADD CONSTRAINT customer_documents_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.customer_documents
+    ADD CONSTRAINT customer_documents_stage_id_fkey FOREIGN KEY (stage_id) REFERENCES public.customer_onboarding_stages(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.customer_documents
+    ADD CONSTRAINT customer_documents_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.customer_onboarding_stages
+    ADD CONSTRAINT customer_onboarding_stages_completed_by_fkey FOREIGN KEY (completed_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.customer_onboarding_stages
+    ADD CONSTRAINT customer_onboarding_stages_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 ALTER TABLE ONLY public.di_deliverables
     ADD CONSTRAINT di_deliverables_added_by_fkey FOREIGN KEY (added_by) REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE ONLY public.di_deliverables

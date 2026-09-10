@@ -42,6 +42,11 @@ export const NAV = [
         { label: "Purchase Requests", view: "pr-log" }
     ] },
 
+    { dept: "Sales & Marketing", items: [
+        { label: "Customers", view: "customers" },
+        { label: "Customer Onboarding", view: "customer-onboarding" }
+    ] },
+
     { dept: "Production", items: [
         { label: "Production Control", view: "production" },
         { label: "Warehouse & Material", view: "warehouse" },

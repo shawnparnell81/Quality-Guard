@@ -463,6 +463,24 @@ export const api = {
         "/api/onboarding/" + encodeURIComponent(vendor)
         + "/stages/" + encodeURIComponent(stageKey) + "/documents/" + encodeURIComponent(id) + "/download",
 
+    /* Sales & Marketing - customers, onboarding, per-customer folder */
+    customers:     ()        => get("/customers"),
+    customer:      (id)      => get("/customers/" + encodeURIComponent(id)),
+    createCustomer: (payload) => request("POST", "/customers", payload),
+    updateCustomer: (id, payload) =>
+        request("PATCH", "/customers/" + encodeURIComponent(id), payload),
+    completeCustomerStage: (id, stageKey, payload) =>
+        request("POST", "/customers/" + encodeURIComponent(id)
+                + "/stages/" + encodeURIComponent(stageKey) + "/complete", payload),
+    addCustomerDocument: (id, formData) =>
+        postForm("/customers/" + encodeURIComponent(id) + "/documents", formData),
+    removeCustomerDocument: (id, docId) =>
+        request("DELETE", "/customers/" + encodeURIComponent(id)
+                + "/documents/" + encodeURIComponent(docId)),
+    customerDocumentUrl: (id, docId) =>
+        "/api/customers/" + encodeURIComponent(id)
+        + "/documents/" + encodeURIComponent(docId) + "/download",
+
     vendors:      ()        => get("/vendors"),
     vendorEvaluations: (name) => get("/vendors/" + encodeURIComponent(name) + "/evaluations"),
     addVendorEvaluation: (name, payload) =>
