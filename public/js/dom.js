@@ -262,6 +262,27 @@ export function printElement(node) {
     window.print();
 }
 
+/* Open a record's bespoke print view (print-view.js) in a new tab -
+   a bare, paper-sized page the person can review then Ctrl+P / Save as
+   PDF. Used for form types that have a designed layout (8D, calibration
+   log); everything else keeps the generated pdfkit PDF. */
+export function printRecord(number) {
+    if (!number) return;
+    window.open("/app?print=" + encodeURIComponent(number), "_blank", "noopener");
+}
+
+/* ---------- timing ---------- */
+
+/* Trailing debounce - the last call in a burst wins after `ms` quiet.
+   Used to coalesce keystroke-rate field edits into one save. */
+export function debounce(fn, ms = 400) {
+    let timer = null;
+    return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), ms);
+    };
+}
+
 /* ---------- formatting ---------- */
 
 export function setText(id, value) {

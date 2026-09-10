@@ -11,7 +11,7 @@ import { api } from "../api.js";
 import { confirmStep, editDueDate } from "../forms.js";
 import {
     el, pill, severity, recordId, fillTable, loadingRow, errorRow,
-    formatDate, humanize, statusKind
+    formatDate, humanize, statusKind, toast, debounce
 } from "../dom.js";
 import { renderDocumentsPanel } from "./resources.js";
 import { recordLink, recordOpenLink } from "../record-nav.js";
@@ -31,6 +31,219 @@ const DISCIPLINES = [
     ["d7", "Prevent recurrence",     "Read across to similar processes"],
     ["d8", "Recognise the team",     "Closed out"]
 ];
+
+/* ============================================================
+   The designed 8D form.
+
+   buildEightDForm(record, { editable }) returns the whole D1-D8 form
+   as one node - a controlled-document header, the discipline status
+   strip, and eight titled blocks. The built-in eightd schema stays
+   minimal (customer, summary); this layout owns the D1-D8 content and
+   reads / writes it as flat keys and two small arrays on record.data:
+
+     d1_champion d1_leader d1_members
+     d2_problem  d2_is     d2_is_not
+     d3_containment d3_pct_effective d3_target d3_actual
+     d4_root_cause  five_why[]            (array of strings - kept)
+     d5_actions[]   {action,owner,target,completion,pct_effective}
+     d6_implemented d6_target d6_actual
+     d7_prevention  d7_read_across
+     d8_recognition d8_close_date
+
+   PATCH /api/records/:number merges the data object it is sent over
+   record.data, so an edit posts the whole working copy - safe and
+   idempotent, arrays included. Unknown keys are accepted (the schema
+   validator only checks keys it declares) and still audited.
+   ============================================================ */
+
+export function buildEightDForm(record, { editable = true } = {}) {
+    const data = JSON.parse(JSON.stringify(record.data || {}));
+    if (!Array.isArray(data.five_why)) data.five_why = [];
+    if (!Array.isArray(data.d5_actions)) data.d5_actions = [];
+
+    const save = editable
+        ? debounce(async () => {
+            try { await api.updateRecord(record.number, { data }); }
+            catch (error) { toast(error.message, "error"); }
+        }, 500)
+        : () => {};
+
+    /* a labelled cell: an input/textarea when editable, else the value
+       (or a blank rule) as static text */
+    function cell(label, key, { area = false, type = "text", wide = false } = {}) {
+        let control;
+        if (editable) {
+            control = area
+                ? el("textarea", { class: "d8-in", rows: "2", onInput: (e) => { data[key] = e.target.value; save(); } })
+                : el("input", { class: "d8-in", type, onInput: (e) => { data[key] = e.target.value; save(); } });
+            if (data[key] != null) { if (area) control.value = data[key]; else control.setAttribute("value", data[key]); }
+        } else {
+            control = el("div", { class: "d8-val", text: data[key] != null && data[key] !== "" ? String(data[key]) : "—" });
+        }
+        return el("div", { class: "d8-field" + (wide ? " d8-field-wide" : "") }, [
+            el("span", { class: "d8-label", text: label }),
+            control
+        ]);
+    }
+
+    /* an add/remove row grid backed by one array on data */
+    function grid(key, columns, { addLabel = "Add row" } = {}) {
+        const rows = data[key];
+        const body = el("tbody");
+        const draw = () => {
+            body.replaceChildren(...rows.map((row, i) => el("tr", {}, [
+                ...columns.map((c) => el("td", {}, [
+                    editable
+                        ? (() => {
+                            const inp = el(c.area ? "textarea" : "input", {
+                                class: "d8-cell", type: c.type || "text", rows: "1",
+                                onInput: (e) => { row[c.key] = e.target.value; save(); }
+                            });
+                            if (row[c.key] != null) { if (c.area) inp.value = row[c.key]; else inp.setAttribute("value", row[c.key]); }
+                            return inp;
+                        })()
+                        : el("div", { class: "d8-cell-val", text: row[c.key] != null && row[c.key] !== "" ? String(row[c.key]) : "—" })
+                ])),
+                editable ? el("td", { class: "d8-rm no-print" }, el("button", {
+                    class: "link-btn", type: "button", text: "✕", title: "Remove row",
+                    onClick: () => { rows.splice(i, 1); draw(); save(); }
+                })) : null
+            ])));
+        };
+        draw();
+        return el("div", { class: "d8-grid-wrap" }, [
+            el("table", { class: "d8-grid" }, [
+                el("thead", {}, el("tr", {}, [
+                    ...columns.map((c) => el("th", { text: c.label })),
+                    editable ? el("th", { class: "no-print" }) : null
+                ])),
+                body
+            ]),
+            editable ? el("button", {
+                class: "btn btn-xs no-print", type: "button", text: "+ " + addLabel,
+                onClick: () => {
+                    rows.push(Object.fromEntries(columns.map((c) => [c.key, ""])));
+                    draw(); save();
+                }
+            }) : null
+        ]);
+    }
+
+    function whyGrid() {
+        const list = data.five_why;
+        const box = el("div", { class: "d8-why" });
+        const draw = () => {
+            box.replaceChildren(...list.map((why, i) => el("div", { class: "d8-why-row" }, [
+                el("span", { class: "d8-why-n", text: "Why " + (i + 1) }),
+                editable
+                    ? (() => {
+                        const inp = el("input", { class: "d8-cell",
+                            onInput: (e) => { list[i] = e.target.value; save(); } });
+                        if (why != null) inp.setAttribute("value", why);
+                        return inp;
+                    })()
+                    : el("div", { class: "d8-cell-val", text: why || "—" }),
+                editable ? el("button", { class: "link-btn no-print", type: "button", text: "✕",
+                    title: "Remove", onClick: () => { list.splice(i, 1); draw(); save(); } }) : null
+            ])));
+        };
+        draw();
+        return el("div", {}, [
+            box,
+            editable ? el("button", { class: "btn btn-xs no-print", type: "button", text: "+ Why",
+                onClick: () => { list.push(""); draw(); save(); } }) : null
+        ]);
+    }
+
+    function block(tag, title, ...fields) {
+        return el("section", { class: "d8-block" }, [
+            el("h3", { class: "d8-block-head" }, [
+                el("span", { class: "d8-block-tag", text: tag }), title
+            ]),
+            el("div", { class: "d8-block-body" }, fields)
+        ]);
+    }
+
+    /* discipline status strip - done = everything before the current
+       state, exactly as the old summary computed it */
+    const currentIndex = DISCIPLINES.findIndex(([k]) => k === record.status);
+    const closed = record.status === "closed";
+    const strip = el("div", { class: "d8-strip" }, DISCIPLINES.map(([k, name], i) => {
+        const done = closed || (currentIndex > -1 && i < currentIndex);
+        const active = !closed && i === currentIndex;
+        return el("div", { class: "d8-strip-step" + (done ? " done" : active ? " active" : "") }, [
+            el("span", { class: "d8-strip-tag", text: k.toUpperCase() }),
+            el("span", { class: "d8-strip-name", text: name })
+        ]);
+    }));
+
+    const header = el("div", { class: "d8-doc-head" }, [
+        el("div", { class: "d8-doc-title" }, [
+            el("span", { class: "d8-doc-kicker", text: "8D Problem Solving Report" }),
+            el("span", { class: "d8-doc-no", text: record.number })
+        ]),
+        el("div", { class: "d8-doc-facts" }, [
+            cell("Customer", "customer"),
+            cell("Problem title / summary", "summary", { area: true, wide: true }),
+            el("div", { class: "d8-field" }, [
+                el("span", { class: "d8-label", text: "Status" }),
+                el("div", { class: "d8-val", text: humanize(record.status) })
+            ]),
+            el("div", { class: "d8-field" }, [
+                el("span", { class: "d8-label", text: "Owner" }),
+                el("div", { class: "d8-val", text: record.owner || "—" })
+            ]),
+            el("div", { class: "d8-field" }, [
+                el("span", { class: "d8-label", text: "Opened" }),
+                el("div", { class: "d8-val", text: formatDate(record.opened_at) })
+            ]),
+            el("div", { class: "d8-field" }, [
+                el("span", { class: "d8-label", text: "Target close" }),
+                el("div", { class: "d8-val", text: record.due_at ? formatDate(record.due_at) : "—" })
+            ])
+        ])
+    ]);
+
+    return el("div", { class: "d8-form" }, [
+        header,
+        strip,
+        block("D1", "Team", cell("Champion", "d1_champion"), cell("Team leader", "d1_leader"),
+            cell("Team members (name / dept)", "d1_members", { area: true, wide: true })),
+        block("D2", "Problem description",
+            cell("Problem statement (quantified)", "d2_problem", { area: true, wide: true }),
+            cell("IS", "d2_is", { area: true }), cell("IS NOT", "d2_is_not", { area: true })),
+        block("D3", "Interim containment action(s)",
+            cell("Containment action(s)", "d3_containment", { area: true, wide: true }),
+            cell("% effective", "d3_pct_effective"),
+            cell("Target date", "d3_target", { type: "date" }),
+            cell("Actual date", "d3_actual", { type: "date" })),
+        block("D4", "Root cause",
+            cell("Verified root cause", "d4_root_cause", { area: true, wide: true }),
+            el("div", { class: "d8-field d8-field-wide" }, [
+                el("span", { class: "d8-label", text: "5-Why analysis" }), whyGrid()
+            ])),
+        block("D5 / D6", "Permanent corrective action(s)",
+            el("div", { class: "d8-field d8-field-wide" }, [
+                el("span", { class: "d8-label", text: "Corrective actions" }),
+                grid("d5_actions", [
+                    { key: "action", label: "Action", area: true },
+                    { key: "owner", label: "Owner" },
+                    { key: "target", label: "Target", type: "date" },
+                    { key: "completion", label: "Completed", type: "date" },
+                    { key: "pct_effective", label: "% eff." }
+                ], { addLabel: "Action" })
+            ]),
+            cell("Implemented & validated", "d6_implemented", { area: true, wide: true }),
+            cell("Target date", "d6_target", { type: "date" }),
+            cell("Actual date", "d6_actual", { type: "date" })),
+        block("D7", "Prevent recurrence",
+            cell("Systemic prevention / mistake-proofing", "d7_prevention", { area: true, wide: true }),
+            cell("Read-across to similar processes", "d7_read_across", { area: true, wide: true })),
+        block("D8", "Recognise the team",
+            cell("Recognition", "d8_recognition", { area: true, wide: true }),
+            cell("Close date", "d8_close_date", { type: "date" }))
+    ]);
+}
 
 let selectedEightD = null;
 
@@ -102,49 +315,11 @@ export async function renderEightDDetail(number, { slot = "eightd" } = {}) {
         }
         if (editButton) editButton.dataset.number = record.number;
 
-        /* The disciplines are workflow states, so "done" is simply
-           everything before the one the record is sitting on. */
-        const currentIndex = DISCIPLINES.findIndex(([key]) => key === record.status);
-        const closed = record.status === "closed";
-        const dates = record.data.disciplines || {};
+        /* the designed, editable D1-D8 form */
+        const form = buildEightDForm(record, { editable: true });
 
-        const stepEls = DISCIPLINES.map(([key, name, detail], index) => {
-            const done = closed || (currentIndex > -1 && index < currentIndex);
-            const active = !closed && index === currentIndex;
-
-            return el("div", {
-                class: "d8-step" + (done ? " done" : active ? " active" : "")
-            }, [
-                el("span", { class: "d8-tag", text: key.toUpperCase() }),
-                el("div", {}, [
-                    el("div", { class: "d8-name", text: name }),
-                    el("div", { class: "d8-meta", text: detail })
-                ]),
-                done && dates[key] && dates[key] !== "in_progress"
-                    ? pill(formatDate(dates[key]), "done")
-                    : active ? pill("Current", "prog") : pill("-", "hold")
-            ]);
-        });
-
-        /* ---- five why, links, and the next step ---- */
+        /* ---- links + the next step ---- */
         const children = [];
-
-        const fiveWhy = record.data.five_why || [];
-
-        if (fiveWhy.length > 0) {
-            children.push(el("div", { class: "section-label", style: "margin-top:0", text: "Five why, D4" }));
-
-            const list = el("dl", { class: "kv" });
-            fiveWhy.forEach((why, index) => {
-                list.append(el("dt", { text: "Why " + (index + 1) }));
-                list.append(el("dd", {
-                    class: index === fiveWhy.length - 1 ? "mono" : null,
-                    style: index === fiveWhy.length - 1 ? "color:var(--crit)" : null,
-                    text: why
-                }));
-            });
-            children.push(list);
-        }
 
         if (links.length > 0) {
             children.push(el("div", { class: "section-label", text: "Linked records" }));
@@ -157,17 +332,16 @@ export async function renderEightDDetail(number, { slot = "eightd" } = {}) {
         children.push(...workflowButtons(record, transitions, refresh));
 
         if (full) {
-            const docsHost = el("div", { class: "panel-body", id: slot + "-documents-panel" });
             track.replaceChildren(
-                el("div", { class: "d8" }, stepEls),
-                el("div", { class: "section-label", text: "Investigation detail" }),
-                ...children,
-                el("div", { class: "section-label", text: "Documents" }),
-                docsHost
+                form,
+                el("div", { class: "section-label no-print", text: "Links & workflow" }),
+                el("div", { class: "no-print" }, children),
+                el("div", { class: "section-label no-print", text: "Documents" }),
+                el("div", { class: "panel-body no-print", id: slot + "-documents-panel" })
             );
             renderDocumentsPanel(record.number, slot + "-documents-panel");
         } else {
-            track.replaceChildren(...stepEls);
+            track.replaceChildren(form);
             if (side) side.replaceChildren(...children);
             renderDocumentsPanel(record.number, "eightd-documents-panel");
         }
@@ -388,7 +562,7 @@ function markSelected(tbody, number) {
 
 /* The same workflow buttons the NCR screen uses. Every record type
    gets them because every record type is a row in the same table. */
-function workflowButtons(record, transitions, refresh) {
+export function workflowButtons(record, transitions, refresh) {
     if (!transitions || transitions.length === 0) return [];
 
     const buttons = transitions.map((step) => {

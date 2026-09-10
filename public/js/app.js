@@ -481,7 +481,13 @@ async function start() {
        record straight on its screen. */
     const params = new URLSearchParams(location.search);
     const deepRecord = params.get("record");
-    if (params.get("panes")) {
+    const printRec = params.get("print");
+    if (printRec) {
+        /* Bare paper-sized page for one record's designed form. */
+        const { openPrintView } = await import("./views/print-view.js");
+        show("print", { reload: false });
+        await openPrintView(printRec).catch(() => show("dashboard"));
+    } else if (params.get("panes")) {
         document.title = "Split view · QMS Guardian";
         show("multi");
     } else if (deepRecord) {
