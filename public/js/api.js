@@ -291,6 +291,8 @@ export const api = {
         request("DELETE", "/record-types/" + encodeURIComponent(typeKey) + "/excel-map"),
     uploadExcelTemplate: (typeKey, formData) =>
         postForm("/record-types/" + encodeURIComponent(typeKey) + "/excel-template", formData),
+    useStarterExcelTemplate: (typeKey) =>
+        request("POST", "/record-types/" + encodeURIComponent(typeKey) + "/excel-template/from-starter"),
     importRecordExcel: (type, formData, dryRun) => postForm(
         "/records/excel?type=" + encodeURIComponent(type) + (dryRun ? "&dry_run=true" : ""),
         formData),

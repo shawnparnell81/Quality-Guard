@@ -91,6 +91,12 @@ export async function renderFormLibrary() {
                 el("span", { class: "form-card-name", text: t.name }),
                 t.standard ? el("span", { class: "form-card-std", text: t.standard }) : null
             ]),
+            t.has_excel_template
+                ? el("p", { class: "form-card-xl sm", title:
+                    "Ships with its own spreadsheet - download the Excel template, fill it in, "
+                    + "and \"Fill from Excel\" reads it straight back onto a record." },
+                "📄  Fills from your own Excel layout")
+                : null,
             el("p", { class: "form-card-desc", text: t.description || "" }),
             el("div", { class: "form-card-foot" }, [
                 el("span", { class: "form-card-meta sm dim", text:

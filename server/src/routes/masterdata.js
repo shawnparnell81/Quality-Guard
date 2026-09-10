@@ -17,6 +17,7 @@ import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { upload } from "../uploads.js";
 import { publish } from "../stream.js";
 import { buildDefaultMap, mapProblem, reconcileMap } from "../excel-fill.js";
+import { getTemplateExcel } from "../form-templates/index.js";
 import { identifiers as exprIdentifiers } from "../../../public/js/expr.js";
 
 const XLSX_EXTENSIONS = new Set([".xlsx"]);
@@ -616,6 +617,7 @@ masterdata.get("/record-types/:key/excel-map", requirePermission("forms.manage")
             response.json({
                 version: fv.version,
                 has_template: Boolean(map && map.template_path),
+                starter_available: Boolean(getTemplateExcel(request.params.key)),
                 built_for_version: (map && map.built_for_version) || null,
                 map,
                 schema: fv.schema,
@@ -658,6 +660,50 @@ masterdata.post("/record-types/:key/excel-template", requirePermission("forms.ma
             `, [request.user.org_id, fv.record_type_id, request.file.originalname, request.user.id]);
 
             response.status(201).json({ version: fv.version, map });
+        } catch (error) {
+            if (error.status) return response.status(error.status).json({ error: error.message });
+            next(error);
+        }
+    });
+
+/* Adopt the bundled starter-template spreadsheet as this form's Excel
+   layout. For a form that was installed from the Library before its
+   template shipped a spreadsheet - or one whose layout was removed -
+   this is the one click that gets "Fill from Excel" working against the
+   customer's own file, without a remove-and-re-add. The record type's
+   key is the starter key (that is how install names it), so the bundle
+   is looked up by :key. */
+masterdata.post("/record-types/:key/excel-template/from-starter", requirePermission("forms.manage"),
+    async (request, response, next) => {
+        try {
+            const fv = await latestVersionRow(request.user.org_id, request.params.key);
+            if (!fv) return response.status(404).json({ error: "No such record type" });
+
+            const bundle = getTemplateExcel(request.params.key);
+            if (!bundle) {
+                return response.status(404).json({ error: "No starter spreadsheet ships for this form" });
+            }
+
+            const templatePath = await saveUploadedFile(
+                "excel-templates", XLSX_EXTENSIONS, request.params.key + ".xlsx", bundle.xlsxBuffer);
+            const map = {
+                template_path: templatePath,
+                template_name: request.params.key + ".xlsx",
+                built_for_version: fv.version,
+                ...bundle.map
+            };
+            const bad = mapProblem(map);
+            if (bad) return response.status(422).json({ error: "The bundled map is invalid: " + bad });
+
+            await query("update form_versions set excel_map = $1 where id = $2",
+                [JSON.stringify(map), fv.id]);
+            await query(`
+                insert into audit_log (org_id, entity, entity_id, field, new_value, changed_by)
+                values ($1, 'form_versions', $2, 'excel_template_from_starter', $3, $4)
+            `, [request.user.org_id, fv.record_type_id, request.params.key, request.user.id]);
+
+            const drift = reconcileMap(map, fv.schema || { fields: [] });
+            response.status(201).json({ version: fv.version, map, unmapped: drift.unmapped });
         } catch (error) {
             if (error.status) return response.status(error.status).json({ error: error.message });
             next(error);
