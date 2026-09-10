@@ -45,8 +45,9 @@ form.addEventListener("submit", async (event) => {
         window.location.href = payload.must_change_password
             ? "/change-password.html"
             : "/app";
-    } catch {
-        showError("Cannot reach the server. Is it running on port 3001?");
+    } catch (error) {
+        console.error("Sign-in request failed:", error);
+        showError("The server could not be reached. Contact your system administrator.");
     } finally {
         submit.disabled = false;
         submit.textContent = "Sign in";

@@ -294,8 +294,32 @@ const CREATE_PERMISSION = {
     ppap:      "ppap.manage"
 };
 
+export function createPermissionForType(type) {
+    return CREATE_PERMISSION[type] || null;
+}
+
+/* The type reaches these routes two ways: ?type= on the template
+   downloads and the multipart uploads (where request.body is not
+   parsed until multer has run, i.e. after this guard), and a body
+   field on the JSON create. Both are read, because the handlers
+   themselves read both.
+
+   Naming no type, or naming two different ones so the guard checks a
+   different type from the one the handler acts on, is refused rather
+   than waved through: records.create_unlisted is not in the
+   permission catalogue, so no role holds it and requirePermission
+   answers 403. A type the catalogue defines no create permission for
+   - an organization's own custom record type - stays open to any
+   signed-in user, the same rule READ_PERMISSION follows. */
 export function createPermissionFor(request) {
-    return CREATE_PERMISSION[request.body?.type] || null;
+    const named = new Set(
+        [request.query?.type, request.body?.type]
+            .map((value) => String(value ?? "").trim())
+            .filter(Boolean)
+    );
+    if (named.size !== 1) return "records.create_unlisted";
+
+    return createPermissionForType([...named][0]);
 }
 
 /* Closing a record is a different authority from opening one. */

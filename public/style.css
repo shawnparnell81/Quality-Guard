@@ -1194,15 +1194,32 @@ td.num, th.num { text-align: right; font-family: "IBM Plex Mono", monospace; }
     white-space: nowrap;
 }
 
-th.th-sortable { cursor: pointer; user-select: none; }
-th.th-sortable:hover { color: var(--ink); }
-th.th-sortable::after {
+/* The sort control is a real button (events.js); it takes over the
+   cell's padding so the whole header stays the hit target and the
+   label keeps sitting where an unsorted header's does. */
+th.th-sortable { padding: 0; user-select: none; }
+
+.th-sort-btn {
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+    text-align: inherit;
+    background: none;
+    border: 0;
+    width: 100%;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+.th-sort-btn:hover { color: var(--ink); }
+.th-sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.th-sort-btn::after {
     content: "\2195";        /* up-down arrow, faint until this column is the sort */
     margin-left: 5px;
     opacity: .3;
 }
-th.th-sortable[data-sort-dir="asc"]::after  { content: "\2191"; opacity: 1; }
-th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
+th.th-sortable[data-sort-dir="asc"] .th-sort-btn::after  { content: "\2191"; opacity: 1; }
+th.th-sortable[data-sort-dir="desc"] .th-sort-btn::after { content: "\2193"; opacity: 1; }
 
 .reg-pager {
     display: flex;
@@ -1305,7 +1322,10 @@ th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
 }
 .rec-id:hover { text-decoration: underline; }
 
-/* Severity stripe - encodes state in form, not colour alone */
+/* Severity stripe - the level reads from the shape as much as the
+   colour, so it survives greyscale and colour blindness: critical is
+   a wide square-cut bar, warning a narrower rounded one, ok a hollow
+   outline with no fill at all. */
 .sev {
     display: inline-block;
     width: 3px;
@@ -1314,9 +1334,9 @@ th.th-sortable[data-sort-dir="desc"]::after { content: "\2193"; opacity: 1; }
     vertical-align: -3px;
     margin-right: 8px;
 }
-.sev-crit { background: var(--crit); }
-.sev-warn { background: var(--warn); }
-.sev-ok   { background: var(--ok); }
+.sev-crit { background: var(--crit); width: 6px; border-radius: 0; }
+.sev-warn { background: var(--warn); width: 4px; border-radius: 2px; }
+.sev-ok   { background: transparent; width: 5px; border: 1px solid var(--ok); border-radius: 5px; }
 
 .dim { color: var(--ink-3); }
 .sm  { font-size: 11.5px; }
@@ -2134,14 +2154,6 @@ button.chip-link:focus-visible { outline: 2px solid var(--accent); outline-offse
     border-bottom: 1px solid var(--crit);
     padding: 9px 24px;
     font-size: 12.5px;
-}
-
-.conn-banner code {
-    background: var(--surface);
-    border: 1px solid var(--hairline);
-    border-radius: 3px;
-    padding: 1px 5px;
-    font-size: 11.5px;
 }
 
 /* ---------- identity and permissions ---------- */

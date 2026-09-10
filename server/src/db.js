@@ -9,6 +9,8 @@
 import pg from "pg";
 import { AsyncLocalStorage } from "node:async_hooks";
 
+import { log } from "./logger.js";
+
 const { Pool } = pg;
 
 /* Carries the signed-in user through a request's async call chain so
@@ -53,6 +55,7 @@ export function query(text, params) {
    borrower of this pooled connection. */
 export async function withTransaction(work) {
     const client = await pool.connect();
+    let result;
 
     try {
         await client.query("BEGIN");
@@ -60,13 +63,25 @@ export async function withTransaction(work) {
         if (userId) {
             await client.query("select set_config('app.user_id', $1, true)", [String(userId)]);
         }
-        const result = await work(client);
+        result = await work(client);
         await client.query("COMMIT");
-        return result;
     } catch (error) {
-        await client.query("ROLLBACK");
+        /* The connection is often already broken by the time we get
+           here, and a throwing ROLLBACK would replace the error the
+           caller has to see - including the 23505 the record-number
+           retry reads. Roll back best-effort; if even that fails,
+           destroy the connection rather than hand one back to the pool
+           mid-transaction. */
+        try {
+            await client.query("ROLLBACK");
+            client.release();
+        } catch (rollbackError) {
+            log.warn("transaction_rollback_failed", { err: rollbackError });
+            client.release(true);
+        }
         throw error;
-    } finally {
-        client.release();
     }
+
+    client.release();
+    return result;
 }

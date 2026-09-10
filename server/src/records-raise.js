@@ -12,21 +12,7 @@
    ============================================================ */
 
 import { log } from "./logger.js";
-
-/* Next PREFIX-YYYY-NNNN for this type and year. Ordered on the numeric
-   suffix, not the text - "X-2026-0010" sorts before "X-2026-0009" as a
-   string, which the old `order by number desc` in di.js / operations.js
-   got wrong once a type passed nine records in a year. */
-async function nextNumber(client, recordType) {
-    const year = new Date().getFullYear();
-    const prefix = recordType.prefix + "-" + year + "-";
-    const seq = await client.query(`
-        select coalesce(max(split_part(number, '-', 3)::int), 0) + 1 as n
-          from records
-         where record_type_id = $1 and number like $2
-    `, [recordType.id, prefix + "%"]);
-    return prefix + String(seq.rows[0].n).padStart(4, "0");
-}
+import { nextRecordNumber } from "./record-numbering.js";
 
 /**
  * @param {import("pg").PoolClient} client  an open transaction
@@ -64,13 +50,15 @@ export async function raiseLinkedRecord(client, {
     }
 
     /* Pin the record to the current form version so its detail view
-       renders every field the manual form has. */
-    const formVersion = await client.query(
-        "select coalesce(max(version), 1) as version from form_versions where record_type_id = $1",
-        [recordType.id]
-    );
+       renders every field the manual form has. Published versions
+       only, the same as the manual create path: an automation must
+       not pin a record to a draft schema nobody has released. */
+    const formVersion = await client.query(`
+        select coalesce(max(version), 1) as version from form_versions
+         where record_type_id = $1 and published_at is not null
+    `, [recordType.id]);
 
-    const number = await nextNumber(client, recordType);
+    const number = await nextRecordNumber(client, orgId, recordType);
 
     const inserted = await client.query(`
         insert into records

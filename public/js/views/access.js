@@ -29,9 +29,10 @@ export async function renderRoles() {
            thing they act on and each group gets a banner. */
         if (matrix) {
             const head = el("tr", {}, [
-                el("th", { text: "Permission" }),
-                el("th", { text: "Clause" }),
+                el("th", { scope: "col", text: "Permission" }),
+                el("th", { scope: "col", text: "Clause" }),
                 ...roles.map((role) => el("th", {
+                    scope: "col",
                     text: shortName(role.name),
                     title: role.name + ". " + (role.description || ""),
                     class: me && me.role === role.key ? "col-you" : null

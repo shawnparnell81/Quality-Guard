@@ -12,7 +12,7 @@ export const jobs = Router();
 
 jobs.get("/jobs/:id", async (request, response, next) => {
     try {
-        const job = await getJob(request.user.org_id, request.params.id);
+        const job = await getJob(request.user.org_id, request.user.id, request.params.id);
         if (!job) return response.status(404).json({ error: "No such job" });
         response.json({
             id: job.id,
@@ -32,7 +32,7 @@ jobs.get("/jobs/:id", async (request, response, next) => {
 
 jobs.get("/jobs/:id/download", async (request, response, next) => {
     try {
-        const job = await getJob(request.user.org_id, request.params.id);
+        const job = await getJob(request.user.org_id, request.user.id, request.params.id);
         if (!job) return response.status(404).json({ error: "No such job" });
         if (job.status === "error") {
             return response.status(422).json({ error: job.error || "The export failed" });
@@ -41,7 +41,7 @@ jobs.get("/jobs/:id/download", async (request, response, next) => {
             return response.status(409).json({ error: "Not ready yet", status: job.status });
         }
 
-        const file = await readJobFile(request.user.org_id, request.params.id);
+        const file = await readJobFile(request.user.org_id, request.user.id, request.params.id);
         if (!file) return response.status(410).json({ error: "The export file is gone" });
 
         response.setHeader("Content-Type", file.contentType || "application/octet-stream");

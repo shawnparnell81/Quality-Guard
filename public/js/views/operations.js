@@ -232,9 +232,9 @@ function dimensionRepeater(editable, rows) {
 
     const table = el("table", { class: "dim-repeater" }, [
         el("thead", {}, el("tr", {}, [
-            el("th", { text: "Characteristic" }), el("th", { text: "Nominal" }),
-            el("th", { text: "Actual" }), el("th", { text: "Result" }),
-            editable ? el("th", {}) : null
+            el("th", { scope: "col", text: "Characteristic" }), el("th", { scope: "col", text: "Nominal" }),
+            el("th", { scope: "col", text: "Actual" }), el("th", { scope: "col", text: "Result" }),
+            editable ? el("th", { scope: "col" }) : null
         ].filter(Boolean))),
         body
     ]);

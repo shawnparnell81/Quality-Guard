@@ -45,7 +45,7 @@ function charTable(rows) {
         return el("p", { class: "sm dim", text: "No characteristics recorded yet." });
     }
     return el("div", { class: "table-wrap" }, el("table", { class: "sm dim-repeater" }, [
-        el("thead", {}, el("tr", {}, CHAR_COLUMNS.map(([label]) => el("th", { text: label })))),
+        el("thead", {}, el("tr", {}, CHAR_COLUMNS.map(([label]) => el("th", { scope: "col", text: label })))),
         el("tbody", {}, rows.map((row) => {
             const fail = row.result === "Fail";
             return el("tr", { class: fail ? "fair-fail-row" : undefined },

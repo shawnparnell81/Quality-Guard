@@ -50,9 +50,9 @@ export async function openCompare(paneA, paneB) {
         el("div", { class: "modal-body" }, [
             el("div", { class: "table-wrap" }, el("table", { class: "sm compare-table" }, [
                 el("thead", {}, el("tr", {}, [
-                    el("th", { text: "Field" }),
-                    el("th", { text: paneA.number }),
-                    el("th", { text: paneB.number })
+                    el("th", { scope: "col", text: "Field" }),
+                    el("th", { scope: "col", text: paneA.number }),
+                    el("th", { scope: "col", text: paneB.number })
                 ])),
                 el("tbody", {}, rows.map((r) => {
                     const differ = r.a !== r.b;

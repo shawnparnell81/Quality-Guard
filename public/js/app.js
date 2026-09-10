@@ -11,6 +11,7 @@
    tries to fetch for them.
    ============================================================ */
 
+import { api } from "./api.js";
 import { getOrganization, describeCountdown } from "./org.js";
 import {
     loadSession, applyPermissions, paintCurrentUser, wireSignOut
@@ -298,7 +299,7 @@ async function showReadinessBadge() {
     if (!badge) return;
 
     try {
-        const { summary } = await (await fetch("/api/dashboard/readiness")).json();
+        const { summary } = await api.readiness();
         badge.textContent = summary.clauses_flagged;
         badge.hidden = summary.clauses_flagged === 0;
     } catch {
@@ -314,7 +315,7 @@ async function updateNavCounts() {
     if (badges.length === 0) return;
 
     try {
-        const summary = await (await fetch("/api/dashboard")).json();
+        const summary = await api.dashboard();
 
         const counts = {
             ncr: summary.events.ncr?.open,
@@ -339,16 +340,45 @@ async function updateNavCounts() {
     }
 }
 
-async function checkConnection() {
+const CONN_UNREACHABLE =
+    "Cannot reach the server - this page may be out of date. Reload to try again, "
+    + "or contact your system administrator.";
+const CONN_NOT_LIVE =
+    "Live updates disconnected - this page may be out of date. Reload to refresh.";
+
+function showConnectionBanner(message) {
     const banner = document.getElementById("connection-banner");
     if (!banner) return;
 
+    if (message) banner.textContent = message;
+    banner.hidden = !message;
+}
+
+async function checkConnection() {
     try {
-        const health = await (await fetch("/api/health")).json();
-        banner.hidden = health.status === "ok";
+        const health = await api.health();
+        showConnectionBanner(health.status === "ok" ? null : CONN_UNREACHABLE);
     } catch {
-        banner.hidden = false;
+        showConnectionBanner(CONN_UNREACHABLE);
     }
+}
+
+/* The state has to keep being surfaced after boot, not just at it: a
+   register whose live refresh has stopped looks exactly like one
+   where nothing has changed. stream.js says when the feed gives up
+   for good (a transient reconnect says nothing, so the banner does
+   not flap), and the browser says when the machine loses its
+   network. Neither reconnects anything - EventSource handles its own
+   retry - they only tell the person what they are looking at. */
+function wireConnection() {
+    document.addEventListener("stream-state", (event) => {
+        showConnectionBanner(event.detail && event.detail.live ? null : CONN_NOT_LIVE);
+    });
+
+    window.addEventListener("online", checkConnection);
+    window.addEventListener("offline", checkConnection);
+
+    checkConnection();
 }
 
 /* ---------- theme ---------- */
@@ -438,8 +468,7 @@ async function start() {
        module-level buildNav call, so this is invisible when there is
        no custom layout. */
     try {
-        const response = await fetch("/api/layout/nav", { credentials: "same-origin" });
-        const nav = response.ok ? await response.json() : null;
+        const nav = await api.layout("nav");
         if (nav && nav.layout) {
             applyNavLayout(nav.layout);
             applyPermissions();   // re-gate the freshly rebuilt menu buttons
@@ -472,9 +501,9 @@ async function start() {
     wireCalibration();
     wireTraining();
     wirePalette();
+    wireConnection();
     startStream();
     wireNotifications();
-    checkConnection();
     fillHeader();
     showReadinessBadge();
     updateNavCounts();

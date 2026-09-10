@@ -27,6 +27,13 @@ export function offStreamEvent(entity, handler) {
     if (set) set.delete(handler);
 }
 
+/* Nothing outside this module can see the EventSource, so the two
+   states worth acting on are announced on document instead. Only a
+   give-up counts as disconnected - see the error handler below. */
+function announce(live) {
+    document.dispatchEvent(new CustomEvent("stream-state", { detail: { live } }));
+}
+
 function dispatch(event) {
     const set = handlers.get(event.entity);
     if (!set) return;
@@ -42,6 +49,8 @@ export function startStream() {
 
     source = new EventSource("/api/stream", { withCredentials: true });
 
+    source.addEventListener("open", () => announce(true));
+
     source.addEventListener("change", (message) => {
         let event;
         try { event = JSON.parse(message.data); } catch { return; }
@@ -49,12 +58,15 @@ export function startStream() {
     });
 
     /* EventSource fires "error" on every transient drop and then
-       reconnects itself; only worth a line when it actually gives up
-       (readyState CLOSED), which happens on a 401 after the session
-       ends - the next API call will redirect to sign-in anyway. */
+       reconnects itself; only worth reporting when it actually gives
+       up (readyState CLOSED), which happens on a 401 after the
+       session ends - the next API call will redirect to sign-in
+       anyway. A CONNECTING readyState is a reconnect in progress, so
+       saying anything there would flap the banner on every blip. */
     source.addEventListener("error", () => {
         if (source && source.readyState === EventSource.CLOSED) {
             console.info("Live updates disconnected.");
+            announce(false);
         }
     });
 }

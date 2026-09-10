@@ -184,7 +184,7 @@ export async function renderCustomDetail(typeKey, number, { slot = "record-view"
             const columns = Array.isArray(field.columns) ? field.columns : [];
             children.push(el("div", { class: "sm", style: "font-weight:600;margin:6px 0 4px", text: field.label }));
             children.push(el("div", { class: "table-wrap" }, el("table", { class: "sm" }, [
-                el("thead", {}, el("tr", {}, columns.map((c) => el("th", { text: c.label })))),
+                el("thead", {}, el("tr", {}, columns.map((c) => el("th", { scope: "col", text: c.label })))),
                 el("tbody", {}, value.map((r) => el("tr", {},
                     columns.map((c) => el("td", { class: "sm", text: formatValue(c, r[c.key], { empty: "-" }) })))))
             ])));

@@ -114,8 +114,8 @@ export function buildEightDForm(record, { editable = true } = {}) {
         return el("div", { class: "d8-grid-wrap" }, [
             el("table", { class: "d8-grid" }, [
                 el("thead", {}, el("tr", {}, [
-                    ...columns.map((c) => el("th", { text: c.label })),
-                    editable ? el("th", { class: "no-print" }) : null
+                    ...columns.map((c) => el("th", { scope: "col", text: c.label })),
+                    editable ? el("th", { scope: "col", class: "no-print" }) : null
                 ])),
                 body
             ]),
@@ -532,7 +532,7 @@ export async function renderChangeDetail(number, { slot = "ecn" } = {}) {
                 el("div", { class: "section-label", style: "margin-top:0", text: "Impact assessment" }),
                 el("div", { class: "table-wrap" }, el("table", {}, [
                     el("thead", {}, el("tr", {}, ["Area", "Impact", "Signed", "Sign-off"]
-                        .map((h) => el("th", { text: h })))),
+                        .map((h) => el("th", { scope: "col", text: h })))),
                     body
                 ])),
                 el("div", { class: "section-label", text: "Change detail" }),

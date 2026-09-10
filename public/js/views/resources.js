@@ -209,10 +209,10 @@ export async function renderTraining() {
 
         if (table) {
             const head = el("tr", {}, [
-                el("th", { text: "Operator" }),
-                el("th", { text: "Role" }),
-                ...trainingDocs.map((doc) => el("th", { text: doc })),
-                el("th", { text: "Documents current" })
+                el("th", { scope: "col", text: "Operator" }),
+                el("th", { scope: "col", text: "Role" }),
+                ...trainingDocs.map((doc) => el("th", { scope: "col", text: doc })),
+                el("th", { scope: "col", text: "Documents current" })
             ]);
 
             const body = matrix.map((row) => {

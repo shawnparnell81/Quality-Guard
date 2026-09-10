@@ -51,8 +51,15 @@ async function request(method, path, body) {
     } catch (cause) {
         /* fetch only rejects when the request never completed, which
            in practice means the server is not running. Say that,
-           rather than surfacing "Failed to fetch". */
-        throw new Error("Cannot reach the server. Is it running on port 3001?");
+           rather than surfacing "Failed to fetch" - and say it in
+           terms an inspector can act on, with the developer detail
+           left in the console. status 0 is the marker error handlers
+           branch on; the wording is load-bearing for the network
+           check in offline-queue.js. */
+        console.error("Request failed:", method, BASE + path, cause);
+        const error = new Error("Cannot reach the server.");
+        error.status = 0;
+        throw error;
     }
 
     /* The session has expired or been revoked. Nothing on the page is
@@ -101,7 +108,10 @@ async function postForm(path, formData, method = "POST") {
             body: formData
         });
     } catch (cause) {
-        throw new Error("Cannot reach the server. Is it running on port 3001?");
+        console.error("Upload failed:", method, BASE + path, cause);
+        const error = new Error("Cannot reach the server.");
+        error.status = 0;
+        throw error;
     }
 
     if (response.status === 401 && !path.startsWith("/auth/")) {
@@ -123,6 +133,45 @@ async function postForm(path, formData, method = "POST") {
     }
 
     return response.json();
+}
+
+/* ---------- form schema cache ----------
+
+   A form schema is the largest payload on the record-open path and
+   changes only when someone publishes a new version, yet it is
+   refetched on every record open, every editor open and every print.
+
+   What is cached is the promise, not the value, so two things opening
+   the same type at once collapse into one request; a rejection drops
+   the entry so a failure is never sticky.
+
+   Publishing from this tab clears the entry - every mutation below
+   that can bump a form version says so. Publishing from someone
+   else's tab cannot be seen, because the change feed has no
+   record-types bucket to listen to, so entries also expire. A stale
+   schema is worse than an extra request, and the TTL is what bounds
+   how long one can survive. */
+const FORM_CACHE_MS = 60000;
+const formCache = new Map();
+
+function cachedForm(typeKey) {
+    const hit = formCache.get(typeKey);
+    if (hit && Date.now() - hit.at < FORM_CACHE_MS) return hit.promise;
+
+    const promise = get("/record-types/" + encodeURIComponent(typeKey) + "/form");
+    formCache.set(typeKey, { at: Date.now(), promise });
+
+    promise.catch(() => {
+        const current = formCache.get(typeKey);
+        if (current && current.promise === promise) formCache.delete(typeKey);
+    });
+
+    return promise;
+}
+
+export function clearFormCache(typeKey) {
+    if (typeKey === undefined) formCache.clear();
+    else formCache.delete(typeKey);
 }
 
 function withQuery(path, params) {
@@ -217,8 +266,12 @@ export function xhrUpload(path, formData, onProgress, method = "POST") {
                 reject(error);
             }
         });
-        xhr.addEventListener("error", () =>
-            reject(new Error("Cannot reach the server. Is it running?")));
+        xhr.addEventListener("error", () => {
+            console.error("Upload failed:", method, BASE + path);
+            const error = new Error("Cannot reach the server.");
+            error.status = 0;
+            reject(error);
+        });
         xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")));
 
         xhr.send(formData);
@@ -259,18 +312,25 @@ export const api = {
         request("PUT", "/layout/" + encodeURIComponent(kind), { layout }),
 
     recordTypes:  ()        => get("/record-types"),
-    recordForm:   (typeKey) => get("/record-types/" + encodeURIComponent(typeKey) + "/form"),
+    recordForm:   (typeKey) => cachedForm(typeKey),
+    /* Anything that can publish a new form version drops the cached
+       schema, whether or not the call came back clean. The ones that
+       do not name a single type clear the lot. */
     updateRecordForm: (typeKey, fields) =>
-        request("PUT", "/record-types/" + encodeURIComponent(typeKey) + "/form", { fields }),
-    createRecordType: (payload) => request("POST", "/record-types", payload),
+        request("PUT", "/record-types/" + encodeURIComponent(typeKey) + "/form", { fields })
+            .finally(() => clearFormCache(typeKey)),
+    createRecordType: (payload) =>
+        request("POST", "/record-types", payload).finally(() => clearFormCache()),
     formTemplates:    ()        => get("/form-templates"),
     installFormTemplate: (key)  =>
-        request("POST", "/form-templates/" + encodeURIComponent(key) + "/install"),
+        request("POST", "/form-templates/" + encodeURIComponent(key) + "/install")
+            .finally(() => clearFormCache()),
     importForm:       (formData) => postForm("/forms/import", formData),
     formImports:      ()        => get("/forms/imports"),
     formImportDetail: (id)      => get("/forms/imports/" + encodeURIComponent(id)),
     applyFormImport:  (id, payload) =>
-        request("POST", "/forms/imports/" + encodeURIComponent(id) + "/apply", payload),
+        request("POST", "/forms/imports/" + encodeURIComponent(id) + "/apply", payload)
+            .finally(() => clearFormCache()),
     records:      (params)  => get(withQuery("/records", params)),
     recordsExportUrl: (params) => "/api" + withQuery("/records/export", params),
     recordsImportTemplateUrl: (type) =>

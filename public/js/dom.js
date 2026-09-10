@@ -51,10 +51,22 @@ export function pill(text, kind = "hold") {
     return el("span", { class: "pill pill-" + kind, text });
 }
 
-/* Severity stripe. Colour alone never carries the meaning: the
-   stripe is a shape as well, and the row text says the same thing. */
+/* Severity stripe. Colour alone never carries the meaning: the three
+   levels differ in width and shape (style.css), and the span carries
+   its level as an accessible name because no register has a severity
+   text column. */
+const SEVERITY_LABELS = { crit: "Critical", warn: "Warning", ok: "OK" };
+
 export function severity(level) {
-    return el("span", { class: "sev sev-" + (level || "ok") });
+    const key = level || "ok";
+    const label = SEVERITY_LABELS[key] || humanize(key);
+
+    return el("span", {
+        class: "sev sev-" + key,
+        role: "img",
+        "aria-label": label,
+        title: label
+    });
 }
 
 /* The record number in a register row. A real link to the record's
@@ -124,8 +136,25 @@ export function loadingRow(tbody, columnCount, rowCount = 5) {
     }));
 }
 
+/* The second line tells the person in front of the table who can
+   unblock them. Anything else - a validation message, a conflict -
+   has already said all there is to say, so it gets no second line
+   rather than a stock instruction that does not apply. status 0 is
+   api.js's marker for a request that never reached the server. */
+function errorHint(error) {
+    const status = error && error.status;
+
+    if (status === 403) return "Your role does not allow this. Ask your quality manager.";
+    if (status === 0) return "The server could not be reached. Contact your system administrator.";
+    if (status >= 500) return "Something went wrong on the server. Contact your system administrator.";
+
+    return null;
+}
+
 export function errorRow(tbody, columnCount, error) {
     if (!tbody) return;
+
+    const hint = errorHint(error);
 
     tbody.replaceChildren(
         el("tr", {}, el("td", {
@@ -133,7 +162,7 @@ export function errorRow(tbody, columnCount, error) {
             style: "text-align:center;padding:24px;color:var(--crit)"
         }, [
             el("div", { class: "sm", text: error.message }),
-            el("div", { class: "sm dim", text: "Start the server with: npm run dev" })
+            hint ? el("div", { class: "sm dim", text: hint }) : null
         ]))
     );
 }

@@ -12,9 +12,10 @@ import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
 import { query, withTransaction } from "../db.js";
 import {
-    requirePermission, createPermissionFor, closePermissionFor,
+    requirePermission, createPermissionFor, createPermissionForType, closePermissionFor,
     readPermissionFor, unreadableTypes
 } from "../auth.js";
+import { nextRecordNumber, withNumberRetry } from "../record-numbering.js";
 import { upload } from "../uploads.js";
 import { log } from "../logger.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
@@ -505,6 +506,40 @@ const SELECT_RECORD = `
  left join users u        on u.id = r.owner_id
      where r.org_id = $1
 `;
+
+/* Find a record in the caller's organization AND check they may read
+   its type, in one place.
+
+   Every route that hands back a record's contents goes through this,
+   not just GET /:number - the PDF, the Excel export, the attachment
+   list, the file stream and the clone all carry the same data, and a
+   read permission enforced on one of six routes is a record hidden
+   from the register and readable by URL. Answers 404 or 403 itself
+   and returns null when it has, so the caller returns immediately. */
+async function readableRecord(request, response) {
+    const found = await query(
+        SELECT_RECORD + " and r.number = $2",
+        [request.user.org_id, request.params.number]
+    );
+
+    if (found.rowCount === 0) {
+        response.status(404).json({ error: "Record not found" });
+        return null;
+    }
+
+    const record = found.rows[0];
+    const needed = readPermissionFor(record.type);
+    if (needed && !request.can(needed)) {
+        response.status(403).json({
+            error: "Your role does not permit this",
+            required: needed,
+            your_role: request.user.role_name
+        });
+        return null;
+    }
+
+    return record;
+}
 
 /* ---------- list ----------
    GET /api/records?type=ncr&status=containment&open=true
@@ -1149,7 +1184,7 @@ records.post("/import", requirePermission(createPermissionFor), upload.single("f
                 });
             }
 
-            const created = await withTransaction(async (client) => {
+            const created = await withNumberRetry(() => withTransaction(async (client) => {
                 const out = [];
                 for (const entry of valid) {
                     const row = await insertRecordRow(client, {
@@ -1160,7 +1195,7 @@ records.post("/import", requirePermission(createPermissionFor), upload.single("f
                     out.push(row.number);
                 }
                 return out;
-            });
+            }));
 
             response.status(201).json({
                 type, created_count: created.length, created,
@@ -1453,10 +1488,10 @@ records.post("/excel", requirePermission(createPermissionFor), upload.single("fi
                 return response.status(422).json({ error: "The sheet has problems", errors });
             }
 
-            const created = await withTransaction((client) => insertRecordRow(client, {
+            const created = await withNumberRetry(() => withTransaction((client) => insertRecordRow(client, {
                 orgId: request.user.org_id, userId: request.user.id,
                 recordType, type, title, severity: "ok", data, formVersion, dueAt: null
-            }));
+            })));
 
             /* Keep the spreadsheet on the record so the user can open
                the file they filled - it becomes an ordinary attachment.
@@ -1541,13 +1576,11 @@ registerExporter("record_excel", ({ orgId, number }) => recordExcelBuffer(orgId,
 
 records.get("/:number/excel", async (request, response, next) => {
     try {
-        const found = await query(
-            "select r.data from records r where r.org_id = $1 and r.number = $2",
-            [request.user.org_id, request.params.number]);
-        if (found.rowCount === 0) return response.status(404).json({ error: "Record not found" });
+        const record = await readableRecord(request, response);
+        if (!record) return;
 
         /* A big grid runs exceljs off the request thread (audit M9). */
-        if (biggestTable(found.rows[0].data) > ASYNC_EXPORT_ROWS) {
+        if (biggestTable(record.data) > ASYNC_EXPORT_ROWS) {
             const { id } = await enqueueExport(request.user.org_id, request.user.id,
                 "record_excel", { orgId: request.user.org_id, number: request.params.number });
             return response.status(202).json({ job_id: id, poll: "/api/jobs/" + id });
@@ -1660,25 +1693,8 @@ records.get("/search", async (request, response, next) => {
    GET /api/records/NCR-2026-0142 */
 records.get("/:number", async (request, response, next) => {
     try {
-        const found = await query(
-            SELECT_RECORD + " and r.number = $2",
-            [request.user.org_id, request.params.number]
-        );
-
-        if (found.rowCount === 0) {
-            return response.status(404).json({ error: "Record not found" });
-        }
-
-        const record = found.rows[0];
-
-        const needed = readPermissionFor(record.type);
-        if (needed && !request.can(needed)) {
-            return response.status(403).json({
-                error: "Your role does not permit this",
-                required: needed,
-                your_role: request.user.role_name
-            });
-        }
+        const record = await readableRecord(request, response);
+        if (!record) return;
 
         /* Links run in both directions. A complaint points at its 8D,
            and from the 8D you still want to see the complaint. */
@@ -2094,10 +2110,8 @@ registerExporter("record_pdf", ({ orgId, number }) => recordPdfBuffer(orgId, num
 
 records.get("/:number/pdf", async (request, response, next) => {
     try {
-        const found = await query(
-            "select r.data from records r where r.org_id = $1 and r.number = $2",
-            [request.user.org_id, request.params.number]);
-        if (found.rowCount === 0) return response.status(404).json({ error: "Record not found" });
+        const record = await readableRecord(request, response);
+        if (!record) return;
 
         /* ?inline=1 previews the PDF in a browser tab (what the Print
            button uses); the default downloads it as a file. */
@@ -2106,7 +2120,7 @@ records.get("/:number/pdf", async (request, response, next) => {
         /* A record with a big grid renders pdfkit off the request
            thread (audit M9) - but not for an inline preview, which a
            person is watching for right now. */
-        if (!inline && biggestTable(found.rows[0].data) > ASYNC_EXPORT_ROWS) {
+        if (!inline && biggestTable(record.data) > ASYNC_EXPORT_ROWS) {
             const { id } = await enqueueExport(request.user.org_id, request.user.id,
                 "record_pdf", { orgId: request.user.org_id, number: request.params.number });
             return response.status(202).json({ job_id: id, poll: "/api/jobs/" + id });
@@ -2135,22 +2149,7 @@ async function insertRecordRow(client, ctx) {
         ownerInitials, data, formVersion, dueAt = null, idempotencyKey = null
     } = ctx;
 
-    const year = new Date().getFullYear();
-    const pattern = recordType.prefix + "-" + year + "-%";
-
-    /* Sequence off the numeric suffix, not the text: legacy seed data
-       mixes widths (AUD-2026-013 and AUD-2026-0014), and `order by
-       number desc` then picks the wrong "highest" and hands out a
-       number that already exists. */
-    const last = await client.query(`
-        select coalesce(max(split_part(number, '-', 3)::int), 0) as n
-          from records
-         where org_id = $1 and record_type_id = $2 and number like $3
-    `, [orgId, recordType.id, pattern]);
-
-    const nextSeq = Number(last.rows[0].n) + 1;
-
-    const number = recordType.prefix + "-" + year + "-" + String(nextSeq).padStart(4, "0");
+    const number = await nextRecordNumber(client, orgId, recordType);
 
     const ownerRow = ownerInitials
         ? await client.query(
@@ -2318,13 +2317,13 @@ records.post("/", requirePermission(createPermissionFor), async (request, respon
             }
         }
 
-        const created = await withTransaction(async (client) => {
+        const created = await withNumberRetry(() => withTransaction(async (client) => {
             return insertRecordRow(client, {
                 orgId: request.user.org_id, userId: request.user.id,
                 recordType, type, title, severity, ownerInitials: owner,
                 data, formVersion, dueAt: dueAt.value, idempotencyKey: idempotency_key || null
             });
-        }).catch(async (error) => {
+        })).catch(async (error) => {
             /* Lost a race to a concurrent identical retry - the unique
                index caught what the check above could not. Hand back
                the winner's record instead of failing the request. */
@@ -2911,13 +2910,8 @@ records.get("/:number/attachments", async (request, response, next) => {
     try {
         if (!request.user) return response.status(401).json({ error: "Not signed in" });
 
-        const record = await query(
-            "select id from records where org_id = $1 and number = $2",
-            [request.user.org_id, request.params.number]
-        );
-        if (record.rowCount === 0) {
-            return response.status(404).json({ error: "Record not found" });
-        }
+        const record = await readableRecord(request, response);
+        if (!record) return;
 
         const result = await query(`
             select a.id, a.filename, a.mime_type, a.size_bytes, a.storage_key,
@@ -2927,7 +2921,7 @@ records.get("/:number/attachments", async (request, response, next) => {
          left join users u on u.id = a.uploaded_by
              where a.record_id = $1
              order by a.uploaded_at desc
-        `, [record.rows[0].id]);
+        `, [record.id]);
 
         response.json({ count: result.rowCount, attachments: result.rows });
     } catch (error) {
@@ -3027,12 +3021,14 @@ records.get("/:number/attachments/:id/file", async (request, response, next) => 
     try {
         if (!request.user) return response.status(401).json({ error: "Not signed in" });
 
+        const record = await readableRecord(request, response);
+        if (!record) return;
+
         const found = await query(`
             select a.filename, a.mime_type, a.storage_path
               from attachments a
-              join records r on r.id = a.record_id
-             where r.org_id = $1 and r.number = $2 and a.id = $3
-        `, [request.user.org_id, request.params.number, request.params.id]);
+             where a.record_id = $1 and a.id = $2
+        `, [record.id, request.params.id]);
 
         if (found.rowCount === 0 || !found.rows[0].storage_path) {
             return response.status(404).json({ error: "No file on that attachment" });
@@ -3060,12 +3056,24 @@ records.get("/:number/attachments/:id/file", async (request, response, next) => 
    over, you edit the deltas. Computed columns recompute; a SCAR's
    triggered_by link is dropped so the copy does not re-wire itself
    to the original's trigger. */
-records.post("/:number/clone", requirePermission(createPermissionFor), async (request, response, next) => {
+records.post("/:number/clone", async (request, response, next) => {
     try {
-        const src = await query(SELECT_RECORD + " and r.number = $2",
-            [request.user.org_id, request.params.number]);
-        if (src.rowCount === 0) return response.status(404).json({ error: "Record not found" });
-        const source = src.rows[0];
+        const source = await readableRecord(request, response);
+        if (!source) return;
+
+        /* The one create route whose type cannot come from the request:
+           the copy is always of the source's type, so the authority to
+           raise one is only knowable after the source is loaded. Hence
+           checked here rather than in a requirePermission guard, which
+           runs before any query. */
+        const needed = createPermissionForType(source.type);
+        if (needed && !request.can(needed)) {
+            return response.status(403).json({
+                error: "Your role does not permit this",
+                required: needed,
+                your_role: request.user.role_name
+            });
+        }
 
         const typeRow = await query(
             "select id, prefix from record_types where org_id = $1 and key = $2",
@@ -3091,11 +3099,11 @@ records.post("/:number/clone", requirePermission(createPermissionFor), async (re
 
         const me = await query("select initials from users where id = $1", [request.user.id]);
 
-        const created = await withTransaction((client) => insertRecordRow(client, {
+        const created = await withNumberRetry(() => withTransaction((client) => insertRecordRow(client, {
             orgId: request.user.org_id, userId: request.user.id,
             recordType, type: source.type, title, severity: "ok",
             ownerInitials: me.rows[0]?.initials, data, formVersion, dueAt: null
-        }));
+        })));
 
         publish(request.user.org_id, { entity: "records", id: created.number, action: "created" });
         response.status(201).json({ number: created.number, cloned_from: source.number });

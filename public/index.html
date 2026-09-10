@@ -10,7 +10,9 @@
 <link rel="apple-touch-icon" href="/img/favicon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" media="print" data-font-css href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<script src="/js/fonts.js" defer></script>
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap"></noscript>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -80,9 +82,9 @@
 
 <!-- ==================== MAIN ==================== -->
 <div class="main">
-    <div id="connection-banner" class="conn-banner" hidden>
-        Cannot reach the API. Start it with <code>npm run dev</code> in the server folder,
-        then reload this page.
+    <div id="connection-banner" class="conn-banner" role="status" hidden>
+        Cannot reach the server - this page may be out of date. Reload to try again,
+        or contact your system administrator.
     </div>
 
     <!-- Workspace tabs: one closable tab per open module, rendered by
@@ -175,8 +177,8 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Record</th><th>Description</th>
-                                    <th>Owner</th><th>Age</th><th>Status</th>
+                                    <th scope="col">Record</th><th scope="col">Description</th>
+                                    <th scope="col">Owner</th><th scope="col">Age</th><th scope="col">Status</th>
                                 </tr>
                             </thead>
                             <tbody id="dashboard-events"></tbody>
@@ -192,7 +194,7 @@
                     <div class="table-wrap">
                         <table>
                             <thead>
-                                <tr><th>Record</th><th>Type</th><th>Owner</th><th>Due</th></tr>
+                                <tr><th scope="col">Record</th><th scope="col">Type</th><th scope="col">Owner</th><th scope="col">Due</th></tr>
                             </thead>
                             <tbody id="dashboard-escalations"></tbody>
                         </table>
@@ -207,7 +209,7 @@
                     <div class="table-wrap">
                         <table>
                             <thead>
-                                <tr><th>Vendor</th><th>Scope</th><th class="num">OTD</th><th class="num">PPM</th><th class="num">Grade</th><th>Status</th></tr>
+                                <tr><th scope="col">Vendor</th><th scope="col">Scope</th><th scope="col" class="num">OTD</th><th scope="col" class="num">PPM</th><th scope="col" class="num">Grade</th><th scope="col">Status</th></tr>
                             </thead>
                             <tbody id="dashboard-suppliers"></tbody>
                         </table>
@@ -257,7 +259,7 @@
                     <div class="panel-head"><h2 class="panel-title">Calibration due</h2><span class="panel-note">next 30 d</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Gage</th><th>Type</th><th>Due</th></tr></thead>
+                            <thead><tr><th scope="col">Gage</th><th scope="col">Type</th><th scope="col">Due</th></tr></thead>
                             <tbody id="dashboard-cal"></tbody>
                         </table>
                     </div>
@@ -267,7 +269,7 @@
                     <div class="panel-head"><h2 class="panel-title">Training gaps</h2><span class="panel-note">clause 7.2</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Operator</th><th>Missing</th></tr></thead>
+                            <thead><tr><th scope="col">Operator</th><th scope="col">Missing</th></tr></thead>
                             <tbody id="dashboard-training"></tbody>
                         </table>
                     </div>
@@ -328,8 +330,8 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Clause</th><th>Requirement</th><th>Finding</th>
-                            <th>Evidence in</th><th class="num">Records</th>
+                            <th scope="col">Clause</th><th scope="col">Requirement</th><th scope="col">Finding</th>
+                            <th scope="col">Evidence in</th><th scope="col" class="num">Records</th>
                         </tr>
                     </thead>
                     <tbody id="readiness-table"></tbody>
@@ -349,7 +351,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">NCR register</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="ncr" title="Filter by severity">
+                    <select class="filter-severity" data-type="ncr" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -361,7 +363,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>NCR</th><th>Part</th><th>Defect</th><th class="num">Qty</th><th>Disposition</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">NCR</th><th scope="col">Part</th><th scope="col">Defect</th><th scope="col" class="num">Qty</th><th scope="col">Disposition</th><th scope="col">Status</th></tr></thead>
                     <tbody id="ncr-register"></tbody>
                 </table>
             </div>
@@ -379,7 +381,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">CAPA register</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="capa" title="Filter by severity">
+                    <select class="filter-severity" data-type="capa" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -391,7 +393,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>CAPA</th><th>Trigger</th><th>Owner</th><th>Due</th><th>Stage</th></tr></thead>
+                    <thead><tr><th scope="col">CAPA</th><th scope="col">Trigger</th><th scope="col">Owner</th><th scope="col">Due</th><th scope="col">Stage</th></tr></thead>
                     <tbody id="capa-register"></tbody>
                 </table>
             </div>
@@ -411,7 +413,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">Complaint register</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="complaint" title="Filter by severity">
+                    <select class="filter-severity" data-type="complaint" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -423,7 +425,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Complaint</th><th>Customer</th><th>Issue</th><th class="num">Qty</th><th>Response due</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Complaint</th><th scope="col">Customer</th><th scope="col">Issue</th><th scope="col" class="num">Qty</th><th scope="col">Response due</th><th scope="col">Status</th></tr></thead>
                     <tbody id="complaint-register"></tbody>
                 </table>
             </div>
@@ -461,7 +463,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Doc</th><th>Title</th><th>Rev</th><th>Owner</th><th class="num">Revisions</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">Doc</th><th scope="col">Title</th><th scope="col">Rev</th><th scope="col">Owner</th><th scope="col" class="num">Revisions</th><th scope="col">Status</th></tr></thead>
                         <tbody id="documents-table"></tbody>
                     </table>
                 </div>
@@ -477,7 +479,7 @@
                 <div class="panel-body" id="document-summary"></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Rev</th><th>Change</th><th>Author</th><th>Approved by</th><th>Effective</th><th>Actions</th></tr></thead>
+                        <thead><tr><th scope="col">Rev</th><th scope="col">Change</th><th scope="col">Author</th><th scope="col">Approved by</th><th scope="col">Effective</th><th scope="col">Actions</th></tr></thead>
                         <tbody id="document-revisions"></tbody>
                     </table>
                 </div>
@@ -499,7 +501,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Drawing</th><th>Title</th><th>Rev</th><th>Customer</th><th>Open ECN</th><th>Access</th></tr></thead>
+                        <thead><tr><th scope="col">Drawing</th><th scope="col">Title</th><th scope="col">Rev</th><th scope="col">Customer</th><th scope="col">Open ECN</th><th scope="col">Access</th></tr></thead>
                         <tbody id="drawing-table"></tbody>
                     </table>
                 </div>
@@ -513,7 +515,7 @@
                     <div class="panel-head"><h2 class="panel-title">Revision history</h2><span class="panel-note">clause 7.5.3</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Rev</th><th>Change</th><th>ECN</th><th>Released</th><th>File</th><th>Status</th></tr></thead>
+                            <thead><tr><th scope="col">Rev</th><th scope="col">Change</th><th scope="col">ECN</th><th scope="col">Released</th><th scope="col">File</th><th scope="col">Status</th></tr></thead>
                             <tbody id="revision-table"></tbody>
                         </table>
                     </div>
@@ -535,7 +537,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Number</th><th>Title</th><th>Rev</th><th>Owner</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Number</th><th scope="col">Title</th><th scope="col">Rev</th><th scope="col">Owner</th><th scope="col">Status</th></tr></thead>
                     <tbody id="eng-doc-table"></tbody>
                 </table>
             </div>
@@ -556,7 +558,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Record</th><th>Problem</th><th>Customer</th><th>Champion</th><th>Discipline</th></tr></thead>
+                    <thead><tr><th scope="col">Record</th><th scope="col">Problem</th><th scope="col">Customer</th><th scope="col">Champion</th><th scope="col">Discipline</th></tr></thead>
                     <tbody id="eightd-register"></tbody>
                 </table>
             </div>
@@ -576,7 +578,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>ECN</th><th>Change</th><th>Part</th><th>Effectivity</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">ECN</th><th scope="col">Change</th><th scope="col">Part</th><th scope="col">Effectivity</th><th scope="col">Status</th></tr></thead>
                     <tbody id="ecn-register"></tbody>
                 </table>
             </div>
@@ -596,7 +598,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>WO</th><th>Part</th><th>Lot</th><th class="num">Qty</th><th>Ops</th><th>Cell</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">WO</th><th scope="col">Part</th><th scope="col">Lot</th><th scope="col" class="num">Qty</th><th scope="col">Ops</th><th scope="col">Cell</th><th scope="col">Status</th></tr></thead>
                         <tbody id="wo-table"></tbody>
                     </table>
                 </div>
@@ -615,7 +617,7 @@
                     <div class="panel-head"><h2 class="panel-title">Traveller</h2><span class="panel-note">operation sign-off</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Op</th><th>Description</th><th>Operator</th><th>Check</th></tr></thead>
+                            <thead><tr><th scope="col">Op</th><th scope="col">Description</th><th scope="col">Operator</th><th scope="col">Check</th></tr></thead>
                             <tbody id="traveller-table"></tbody>
                         </table>
                     </div>
@@ -625,7 +627,7 @@
                     <div class="panel-head"><h2 class="panel-title">First article</h2><span class="panel-note">AS9102 form 3</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Char.</th><th>Spec</th><th>Actual</th><th>Gage</th><th>Result</th></tr></thead>
+                            <thead><tr><th scope="col">Char.</th><th scope="col">Spec</th><th scope="col">Actual</th><th scope="col">Gage</th><th scope="col">Result</th></tr></thead>
                             <tbody id="fai-table"></tbody>
                         </table>
                     </div>
@@ -649,7 +651,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Receipt</th><th>PO</th><th>Vendor</th><th>Part</th><th class="num">Qty</th><th>Plan</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">Receipt</th><th scope="col">PO</th><th scope="col">Vendor</th><th scope="col">Part</th><th scope="col" class="num">Qty</th><th scope="col">Plan</th><th scope="col">Status</th></tr></thead>
                         <tbody id="receipt-table"></tbody>
                     </table>
                 </div>
@@ -663,7 +665,7 @@
                     <div class="panel-head"><h2 class="panel-title">Measurements</h2></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Characteristic</th><th>Spec</th><th>Actual</th><th>Gage</th><th>Result</th></tr></thead>
+                            <thead><tr><th scope="col">Characteristic</th><th scope="col">Spec</th><th scope="col">Actual</th><th scope="col">Gage</th><th scope="col">Result</th></tr></thead>
                             <tbody id="measurement-table"></tbody>
                         </table>
                     </div>
@@ -688,7 +690,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>PO</th><th>Vendor</th><th>Ordered</th><th>Need by</th><th class="num">Amount</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">PO</th><th scope="col">Vendor</th><th scope="col">Ordered</th><th scope="col">Need by</th><th scope="col" class="num">Amount</th><th scope="col">Status</th></tr></thead>
                         <tbody id="po-log-table"></tbody>
                     </table>
                 </div>
@@ -715,7 +717,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>WO</th><th>Part</th><th>Customer</th><th class="num">Qty</th><th>Cell</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">WO</th><th scope="col">Part</th><th scope="col">Customer</th><th scope="col" class="num">Qty</th><th scope="col">Cell</th><th scope="col">Status</th></tr></thead>
                         <tbody id="wo-log-table"></tbody>
                     </table>
                 </div>
@@ -742,7 +744,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Entry</th><th>WO</th><th>Customer</th><th class="num">Ordered</th><th class="num">Shipped</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">Entry</th><th scope="col">WO</th><th scope="col">Customer</th><th scope="col" class="num">Ordered</th><th scope="col" class="num">Shipped</th><th scope="col">Status</th></tr></thead>
                         <tbody id="pl-log-table"></tbody>
                     </table>
                 </div>
@@ -769,7 +771,7 @@
                 </div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>PR</th><th>What is needed</th><th>Dept</th><th>Needed by</th><th>PO</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">PR</th><th scope="col">What is needed</th><th scope="col">Dept</th><th scope="col">Needed by</th><th scope="col">PO</th><th scope="col">Status</th></tr></thead>
                         <tbody id="pr-log-table"></tbody>
                     </table>
                 </div>
@@ -801,7 +803,7 @@
                     <div class="panel-head"><h2 class="panel-title">Material on hold</h2><span class="panel-note">clause 8.7</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Lot</th><th>Location</th><th class="num">Qty</th><th>Reason</th></tr></thead>
+                            <thead><tr><th scope="col">Lot</th><th scope="col">Location</th><th scope="col" class="num">Qty</th><th scope="col">Reason</th></tr></thead>
                             <tbody id="holds-table"></tbody>
                         </table>
                     </div>
@@ -810,7 +812,7 @@
                     <div class="panel-head"><h2 class="panel-title">Preservation checks</h2><span class="panel-note">clause 8.5.4</span></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Control</th><th>Area</th><th>Status</th></tr></thead>
+                            <thead><tr><th scope="col">Control</th><th scope="col">Area</th><th scope="col">Status</th></tr></thead>
                             <tbody>
                                 <tr><td class="sm">Humidity, 45% max</td><td class="sm">Finished goods</td><td><span class="pill pill-done">38%</span></td></tr>
                                 <tr><td class="sm">Shelf life, adhesives</td><td class="sm">Consumables</td><td><span class="pill pill-prog">2 expiring</span></td></tr>
@@ -835,7 +837,7 @@
                 <div class="panel-head"><h2 class="panel-title">Shipments</h2><span class="panel-note">blocked first</span></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Shipment</th><th>Customer</th><th>Part</th><th>Lot</th><th class="num">Qty</th><th>Checks</th><th>Status</th></tr></thead>
+                        <thead><tr><th scope="col">Shipment</th><th scope="col">Customer</th><th scope="col">Part</th><th scope="col">Lot</th><th scope="col" class="num">Qty</th><th scope="col">Checks</th><th scope="col">Status</th></tr></thead>
                         <tbody id="shipment-table"></tbody>
                     </table>
                 </div>
@@ -848,7 +850,7 @@
                     </div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Verification</th><th>Evidence</th><th>Status</th><th></th></tr></thead>
+                            <thead><tr><th scope="col">Verification</th><th scope="col">Evidence</th><th scope="col">Status</th><th scope="col"></th></tr></thead>
                             <tbody id="check-table"></tbody>
                         </table>
                     </div>
@@ -882,7 +884,7 @@
         <div class="panel">
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Person</th><th>Document</th><th>Revision</th><th>Trained on</th><th>Next review</th><th>Trainer</th></tr></thead>
+                    <thead><tr><th scope="col">Person</th><th scope="col">Document</th><th scope="col">Revision</th><th scope="col">Trained on</th><th scope="col">Next review</th><th scope="col">Trainer</th></tr></thead>
                     <tbody id="training-records-table"></tbody>
                 </table>
             </div>
@@ -892,7 +894,7 @@
         <div class="panel">
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Operator</th><th>Role</th><th>Required document</th><th>Gap</th></tr></thead>
+                    <thead><tr><th scope="col">Operator</th><th scope="col">Role</th><th scope="col">Required document</th><th scope="col">Gap</th></tr></thead>
                     <tbody id="training-gaps-table"></tbody>
                 </table>
             </div>
@@ -920,7 +922,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Gage ID</th><th>Description</th><th>Range</th><th>Interval</th><th>Last cal</th><th>Due</th><th>Status</th><th>Availability</th><th></th></tr></thead>
+                    <thead><tr><th scope="col">Gage ID</th><th scope="col">Description</th><th scope="col">Range</th><th scope="col">Interval</th><th scope="col">Last cal</th><th scope="col">Due</th><th scope="col">Status</th><th scope="col">Availability</th><th scope="col"></th></tr></thead>
                     <tbody id="calibration-table"></tbody>
                 </table>
             </div>
@@ -937,7 +939,7 @@
             <div class="panel-head"><h2 class="panel-title">Approved vendors</h2><span class="panel-note" id="vendors-note"></span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Vendor</th><th>Approved scope</th><th>Cert</th><th>Expires</th><th class="num">OTD</th><th class="num">PPM</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Vendor</th><th scope="col">Approved scope</th><th scope="col">Cert</th><th scope="col">Expires</th><th scope="col" class="num">OTD</th><th scope="col" class="num">PPM</th><th scope="col">Status</th></tr></thead>
                     <tbody id="vendors-table"></tbody>
                 </table>
             </div>
@@ -947,7 +949,7 @@
         <div class="panel">
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>SCAR</th><th>Vendor</th><th>Issue</th><th>Raised</th><th>Response due</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">SCAR</th><th scope="col">Vendor</th><th scope="col">Issue</th><th scope="col">Raised</th><th scope="col">Response due</th><th scope="col">Status</th></tr></thead>
                     <tbody>
                         <tr><td><span class="sev sev-crit"></span><span class="rec-id">SCAR-2026-0004</span></td><td class="sm">Nordvik Heat Treat</td><td class="sm">Case hardness below spec, 2 of 3 samples</td><td class="mono sm">02 Sep 2026</td><td class="mono sm">16 Sep 2026</td><td><span class="pill pill-open">Awaiting 8D</span></td></tr>
                         <tr><td><span class="sev sev-warn"></span><span class="rec-id">SCAR-2026-0003</span></td><td class="sm">Corveil Coatings</td><td class="sm">Coating thickness variation</td><td class="mono sm">11 Aug 2026</td><td class="mono sm">25 Aug 2026</td><td><span class="pill pill-prog">Response received</span></td></tr>
@@ -967,7 +969,7 @@
             <div class="panel-head"><h2 class="panel-title">Candidates</h2><span class="panel-note">click a row to open its packet</span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Vendor</th><th>Scope</th><th>Progress</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Vendor</th><th scope="col">Scope</th><th scope="col">Progress</th><th scope="col">Status</th></tr></thead>
                     <tbody id="candidate-table"></tbody>
                 </table>
             </div>
@@ -999,7 +1001,7 @@
             <div class="panel-head"><h2 class="panel-title">All customers</h2><span class="panel-note">click a row to open its folder</span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Customer</th><th>Code</th><th>Onboarding</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Customer</th><th scope="col">Code</th><th scope="col">Onboarding</th><th scope="col">Status</th></tr></thead>
                     <tbody id="customer-table"></tbody>
                 </table>
             </div>
@@ -1021,7 +1023,7 @@
             <div class="panel-head"><h2 class="panel-title">Onboarding</h2><span class="panel-note">click a row to open its folder</span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Customer</th><th>Code</th><th>Progress</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Customer</th><th scope="col">Code</th><th scope="col">Progress</th><th scope="col">Status</th></tr></thead>
                     <tbody id="customer-onboarding-table"></tbody>
                 </table>
             </div>
@@ -1050,7 +1052,7 @@
                 <h2 class="panel-title">Audit schedule 2026</h2>
                 <span class="panel-note" id="audit-overdue-note"></span>
                 <div class="row">
-                    <select class="filter-severity" data-type="audit" title="Filter by severity">
+                    <select class="filter-severity" data-type="audit" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -1062,7 +1064,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Audit</th><th>Scope</th><th>Auditor</th><th>Planned</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Audit</th><th scope="col">Scope</th><th scope="col">Auditor</th><th scope="col">Planned</th><th scope="col">Status</th></tr></thead>
                     <tbody id="audit-register"></tbody>
                 </table>
             </div>
@@ -1083,7 +1085,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Reference</th><th>Period</th><th>Held</th><th>Chair</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">Reference</th><th scope="col">Period</th><th scope="col">Held</th><th scope="col">Chair</th><th scope="col">Status</th></tr></thead>
                     <tbody id="review-table"></tbody>
                 </table>
             </div>
@@ -1102,7 +1104,7 @@
                 <div class="panel-head"><h2 class="panel-title">Clause 9.3.2 inputs</h2><span class="panel-note">auto-compiled</span></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Clause</th><th>Required input</th><th>From</th><th>Now</th></tr></thead>
+                        <thead><tr><th scope="col">Clause</th><th scope="col">Required input</th><th scope="col">From</th><th scope="col">Now</th></tr></thead>
                         <tbody id="review-inputs"></tbody>
                     </table>
                 </div>
@@ -1126,7 +1128,8 @@
                 <h2 class="panel-title">Trends &amp; charts</h2>
                 <span class="panel-note">built and edited here, no export</span>
                 <span style="margin-left:auto"></span>
-                <select id="review-chart-seed" class="filter-severity no-print" data-requires="review.manage"></select>
+                <select id="review-chart-seed" class="filter-severity no-print" data-requires="review.manage"
+                        aria-label="Add a chart from a preset"></select>
                 <button class="btn btn-primary no-print" type="button" id="review-add-chart" data-requires="review.manage">Add chart</button>
             </div>
             <div class="panel-body" id="review-charts"></div>
@@ -1142,7 +1145,7 @@
         <div class="panel">
             <div class="panel-head">
                 <h2 class="panel-title">Process</h2>
-                <select id="turtle-dept" class="filter-severity">
+                <select id="turtle-dept" class="filter-severity" aria-label="Process">
                     <option value="purchasing">Purchasing</option>
                     <option value="production">Production</option>
                     <option value="tooling">Tooling</option>
@@ -1177,7 +1180,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">Risks and opportunities</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="risk" title="Filter by severity">
+                    <select class="filter-severity" data-type="risk" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -1189,7 +1192,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>ID</th><th>Risk or opportunity</th><th>Process</th><th class="num">Sev</th><th class="num">Occ</th><th class="num">Det</th><th class="num">RPN</th><th>Action</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">ID</th><th scope="col">Risk or opportunity</th><th scope="col">Process</th><th scope="col" class="num">Sev</th><th scope="col" class="num">Occ</th><th scope="col" class="num">Det</th><th scope="col" class="num">RPN</th><th scope="col">Action</th><th scope="col">Status</th></tr></thead>
                     <tbody id="risk-table"></tbody>
                 </table>
             </div>
@@ -1210,7 +1213,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Program</th><th>Customer</th><th>Name</th><th>Part</th><th>Target SOP</th><th>PSW</th><th>Phase</th></tr></thead>
+                    <thead><tr><th scope="col">Program</th><th scope="col">Customer</th><th scope="col">Name</th><th scope="col">Part</th><th scope="col">Target SOP</th><th scope="col">PSW</th><th scope="col">Phase</th></tr></thead>
                     <tbody id="apqp-register"></tbody>
                 </table>
             </div>
@@ -1232,7 +1235,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>DI</th><th>Department</th><th>Finding</th><th>Investigator</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">DI</th><th scope="col">Department</th><th scope="col">Finding</th><th scope="col">Investigator</th><th scope="col">Status</th></tr></thead>
                     <tbody id="di-register"></tbody>
                 </table>
             </div>
@@ -1251,7 +1254,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">SCAR register</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="scar" title="Filter by severity">
+                    <select class="filter-severity" data-type="scar" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -1263,7 +1266,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>SCAR</th><th>Supplier</th><th>Defect</th><th>Part</th><th>Response due</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">SCAR</th><th scope="col">Supplier</th><th scope="col">Defect</th><th scope="col">Part</th><th scope="col">Response due</th><th scope="col">Status</th></tr></thead>
                     <tbody id="scar-register"></tbody>
                 </table>
             </div>
@@ -1281,7 +1284,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">FAIR register</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="fair" title="Filter by severity">
+                    <select class="filter-severity" data-type="fair" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -1293,7 +1296,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>FAIR</th><th>Part / rev</th><th>Customer</th><th>Inspected</th><th class="num">Conforming</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">FAIR</th><th scope="col">Part / rev</th><th scope="col">Customer</th><th scope="col">Inspected</th><th scope="col" class="num">Conforming</th><th scope="col">Status</th></tr></thead>
                     <tbody id="fair-register"></tbody>
                 </table>
             </div>
@@ -1357,7 +1360,7 @@
             <div class="panel-head">
                 <h2 class="panel-title">PPAP register</h2>
                 <div class="row">
-                    <select class="filter-severity" data-type="ppap" title="Filter by severity">
+                    <select class="filter-severity" data-type="ppap" aria-label="Filter by severity" title="Filter by severity">
                         <option value="">All severities</option>
                         <option value="crit">Critical</option>
                         <option value="warn">Warning</option>
@@ -1369,7 +1372,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>PPAP</th><th>Part / rev</th><th>Customer</th><th>Level</th><th>Reason</th><th>Status</th></tr></thead>
+                    <thead><tr><th scope="col">PPAP</th><th scope="col">Part / rev</th><th scope="col">Customer</th><th scope="col">Level</th><th scope="col">Reason</th><th scope="col">Status</th></tr></thead>
                     <tbody id="ppap-register"></tbody>
                 </table>
             </div>
@@ -1412,7 +1415,7 @@
             </div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Objective</th><th>Clause</th><th class="num">Target</th><th class="num">Actual</th><th>Unit</th><th>Owner</th><th>State</th></tr></thead>
+                    <thead><tr><th scope="col">Objective</th><th scope="col">Clause</th><th scope="col" class="num">Target</th><th scope="col" class="num">Actual</th><th scope="col">Unit</th><th scope="col">Owner</th><th scope="col">State</th></tr></thead>
                     <tbody id="objective-table"></tbody>
                 </table>
             </div>
@@ -1438,8 +1441,8 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Name</th><th>Job title</th><th>Discipline</th>
-                            <th>Role</th><th class="num">Permissions</th><th>Access</th><th>Actions</th>
+                            <th scope="col">Name</th><th scope="col">Job title</th><th scope="col">Discipline</th>
+                            <th scope="col">Role</th><th scope="col" class="num">Permissions</th><th scope="col">Access</th><th scope="col">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="people-table"></tbody>
@@ -1505,7 +1508,7 @@
                 <div class="panel-head"><h2 class="panel-title">Record types</h2><span class="panel-note">published forms</span></div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Type</th><th>Prefix</th><th>Clause</th><th class="num">Records</th><th>Form</th><th>Fields</th></tr></thead>
+                        <thead><tr><th scope="col">Type</th><th scope="col">Prefix</th><th scope="col">Clause</th><th scope="col" class="num">Records</th><th scope="col">Form</th><th scope="col">Fields</th></tr></thead>
                         <tbody id="record-type-table"></tbody>
                     </table>
                 </div>
@@ -1520,7 +1523,7 @@
                     </div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Type</th><th>Label</th><th>Key</th><th>Validation</th></tr></thead>
+                            <thead><tr><th scope="col">Type</th><th scope="col">Label</th><th scope="col">Key</th><th scope="col">Validation</th></tr></thead>
                             <tbody id="schema-fields"></tbody>
                         </table>
                     </div>
@@ -1569,7 +1572,7 @@
             <div class="panel-head"><h2 class="panel-title">Records</h2><span class="panel-note" id="form-record-note"></span></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Number</th><th>Summary</th><th>Status</th><th>Opened</th></tr></thead>
+                    <thead><tr><th scope="col">Number</th><th scope="col">Summary</th><th scope="col">Status</th><th scope="col">Opened</th></tr></thead>
                     <tbody id="form-record-table"></tbody>
                 </table>
             </div>
@@ -1606,7 +1609,7 @@
             <div class="panel-head"><h2 class="panel-title">Past imports</h2></div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>File</th><th class="num">Fields</th><th>Status</th><th>Applied to</th><th>Imported</th></tr></thead>
+                    <thead><tr><th scope="col">File</th><th scope="col" class="num">Fields</th><th scope="col">Status</th><th scope="col">Applied to</th><th scope="col">Imported</th></tr></thead>
                     <tbody id="form-import-list"></tbody>
                 </table>
             </div>
@@ -1640,7 +1643,7 @@
                     <div class="panel-head"><h2 class="panel-title">Roles</h2></div>
                     <div class="table-wrap">
                         <table>
-                            <thead><tr><th>Role</th><th>Authority</th><th class="num">Permissions</th></tr></thead>
+                            <thead><tr><th scope="col">Role</th><th scope="col">Authority</th><th scope="col" class="num">Permissions</th></tr></thead>
                             <tbody id="roles-table"></tbody>
                         </table>
                     </div>

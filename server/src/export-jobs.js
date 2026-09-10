@@ -44,21 +44,26 @@ export async function enqueueExport(orgId, userId, kind, params) {
     return { id: row.rows[0].id };
 }
 
-export async function getJob(orgId, id) {
+/* Scoped to the person who asked for it, not just their organization:
+   the file is a whole record rendered out, so a colleague who may not
+   read that record's type must not be able to fetch it by job id
+   either. */
+export async function getJob(orgId, userId, id) {
     const row = await query(`
         select id, kind, status, filename, content_type, error,
                created_at, started_at, finished_at,
                (storage_path is not null) as has_file
           from export_jobs
-         where id = $1 and org_id = $2
-    `, [id, orgId]);
+         where id = $1 and org_id = $2 and requested_by = $3
+    `, [id, orgId, userId]);
     return row.rows[0] || null;
 }
 
-export async function readJobFile(orgId, id) {
-    const row = await query(
-        "select storage_path, filename, content_type from export_jobs where id = $1 and org_id = $2 and status = 'done'",
-        [id, orgId]);
+export async function readJobFile(orgId, userId, id) {
+    const row = await query(`
+        select storage_path, filename, content_type from export_jobs
+         where id = $1 and org_id = $2 and requested_by = $3 and status = 'done'
+    `, [id, orgId, userId]);
     if (row.rowCount === 0) return null;
     const buffer = await readUploadedFile(row.rows[0].storage_path);
     return { buffer, filename: row.rows[0].filename, contentType: row.rows[0].content_type };

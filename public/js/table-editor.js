@@ -93,7 +93,17 @@ export function createTableEditor({ field, options = {}, value, recordNumber, on
 
     /* ---------- inputs ---------- */
 
+    /* A grid cell is anonymous on its own - the column label lives on
+       the wrapping <td> as data-label, which nothing announces - so
+       every control carries its column as an accessible name. */
     function cellInput(column, value) {
+        const input = buildCellInput(column, value);
+        const name = column.label || column.key;
+        if (name) input.setAttribute("aria-label", name);
+        return input;
+    }
+
+    function buildCellInput(column, value) {
         if (column.type === "memo") {
             const t = el("textarea", { rows: 1 });
             if (value != null && value !== "") t.value = String(value);
@@ -382,8 +392,8 @@ export function createTableEditor({ field, options = {}, value, recordNumber, on
 
     const table = el("table", { class: "dim-repeater" }, [
         el("thead", {}, el("tr", {}, [
-            ...columns.map((c) => el("th", { text: c.label })),
-            el("th", {})
+            ...columns.map((c) => el("th", { scope: "col", text: c.label })),
+            el("th", { scope: "col" })
         ])),
         body
     ]);

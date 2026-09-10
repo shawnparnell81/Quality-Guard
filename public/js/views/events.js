@@ -319,6 +319,7 @@ function registerChrome(type, config) {
     if (!toolbar) {
         const search = el("input", {
             type: "search", class: "reg-search", placeholder: "Search number or title...",
+            "aria-label": "Search this register by number or title",
             value: (activeFilters[type] || {}).q || ""
         });
         let debounce = null;
@@ -372,7 +373,10 @@ function registerChrome(type, config) {
     }
 
     /* Sort headers: match each <th> to a column's sortKey by position.
-       Operable by mouse and keyboard - a real button in all but tag. */
+       The control is a real <button> inside the cell rather than a
+       role on the <th> itself - the cell has to stay a columnheader
+       for aria-sort below to mean anything, and for the data cells
+       under it to keep their header. Enter and Space come free. */
     const headRow = tbody.closest("table")?.tHead?.rows[0];
     if (headRow && !headRow.dataset.sortWired) {
         headRow.dataset.sortWired = "1";
@@ -380,8 +384,6 @@ function registerChrome(type, config) {
             const th = headRow.cells[index];
             if (!th || !col.sortKey) return;
             th.classList.add("th-sortable");
-            th.tabIndex = 0;
-            th.setAttribute("role", "button");
             const sort = () => {
                 const v = loadView(type);
                 if (v.sort === col.sortKey) v.dir = v.dir === "asc" ? "desc" : "asc";
@@ -390,10 +392,11 @@ function registerChrome(type, config) {
                 saveView(type);
                 renderRegister(type);
             };
-            th.addEventListener("click", sort);
-            th.addEventListener("keydown", (event) => {
-                if (event.key === "Enter" || event.key === " ") { event.preventDefault(); sort(); }
+            const button = el("button", {
+                class: "th-sort-btn", type: "button", text: th.textContent
             });
+            button.addEventListener("click", sort);
+            th.replaceChildren(button);
         });
     }
     const v = activeFilters[type] || {};
@@ -1195,7 +1198,7 @@ export async function renderRecordDetail(type, number, { slot = type } = {}) {
                     children.push(el("div", { class: "sm", style: "font-weight:600;margin:6px 0 4px",
                         text: labelFor(field) }));
                     children.push(el("div", { class: "table-wrap" }, el("table", { class: "sm" }, [
-                        el("thead", {}, el("tr", {}, columns.map((c) => el("th", { text: c.label })))),
+                        el("thead", {}, el("tr", {}, columns.map((c) => el("th", { scope: "col", text: c.label })))),
                         el("tbody", {}, value.map((row) => el("tr", {},
                             columns.map((c) => {
                                 const raw = row[c.key];
