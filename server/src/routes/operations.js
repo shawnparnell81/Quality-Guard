@@ -12,6 +12,7 @@ import { requirePermission } from "../auth.js";
 import { upload } from "../uploads.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
 import { scoredVendors, samplePlanForGrade, receivingSamplePlan } from "../vendor-scoring.js";
+import { raiseLinkedRecord } from "../records-raise.js";
 
 export const operations = Router();
 
@@ -419,37 +420,6 @@ const DISPOSITION_RESULTS = new Set(["accepted", "accepted_with_notes", "rejecte
    state, its data prefilled from the receipt. Returns the new NCR
    number, or null if the org has no ncr record type. */
 async function raiseReceiptNcr(client, orgId, user, receipt, rejectionReason) {
-    const { id: userId } = user;
-    const typeRow = await client.query(
-        "select id, prefix from record_types where org_id = $1 and key = 'ncr'",
-        [orgId]
-    );
-    if (typeRow.rowCount === 0) return null;
-    const recordType = typeRow.rows[0];
-
-    const firstState = await client.query(
-        "select key from workflow_states where record_type_id = $1 order by position limit 1",
-        [recordType.id]
-    );
-
-    /* Pin the record to the current NCR form so its detail view
-       renders every field the manual form has. */
-    const formVersion = await client.query(
-        "select coalesce(max(version), 1) as version from form_versions where record_type_id = $1",
-        [recordType.id]
-    );
-
-    const year = new Date().getFullYear();
-    const last = await client.query(`
-        select number from records
-         where org_id = $1 and record_type_id = $2 and number like $3
-         order by number desc limit 1
-    `, [orgId, recordType.id, recordType.prefix + "-" + year + "-%"]);
-    const nextSeq = last.rowCount === 0
-        ? 1
-        : Number(last.rows[0].number.split("-").pop()) + 1;
-    const number = recordType.prefix + "-" + year + "-" + String(nextSeq).padStart(4, "0");
-
     const rd = receipt.data || {};
     const data = {
         source: receipt.receipt_number,
@@ -465,21 +435,15 @@ async function raiseReceiptNcr(client, orgId, user, receipt, rejectionReason) {
             || "Rejected at incoming inspection - see receipt " + receipt.receipt_number
     };
 
-    const inserted = await client.query(`
-        insert into records
-            (org_id, record_type_id, number, title, status, severity, data, form_version, created_by)
-        values ($1, $2, $3, $4, $5, 'crit', $6, $7, $8)
-        returning id, number
-    `, [orgId, recordType.id, number,
-        "Incoming rejection - " + receipt.receipt_number,
-        firstState.rows[0].key, data, formVersion.rows[0].version, userId]);
-
-    await client.query(`
-        insert into audit_log (org_id, record_id, entity, entity_id, field, new_value, changed_by)
-        values ($1, $2, 'records', $2, 'created', $3, $4)
-    `, [orgId, inserted.rows[0].id, number, userId]);
-
-    return inserted.rows[0].number;
+    const raised = await raiseLinkedRecord(client, {
+        orgId,
+        typeKey: "ncr",
+        title: "Incoming rejection - " + receipt.receipt_number,
+        data,
+        severity: "crit",
+        userId: user.id
+    });
+    return raised ? raised.number : null;
 }
 
 /* POST /api/receipts/RCV-20260904-1/disposition

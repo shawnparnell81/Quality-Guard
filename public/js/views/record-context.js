@@ -17,6 +17,7 @@ import { applyPermissions } from "../session.js";
 import { buildUploader } from "../attach-upload.js";
 import { openFileWindow } from "../doc-windows.js";
 import { recordLink } from "../record-nav.js";
+import { paintAuditAutomationPanel } from "./audit-automation-panel.js";
 import { el, pill, formatDate, humanize, statusKind, toast } from "../dom.js";
 
 const LINK_KINDS = ["related", "caused_by", "corrects", "supersedes", "child_of"];
@@ -170,6 +171,13 @@ export function buildRecordContext(type, number, { onWorkflow } = {}) {
                 });
                 children.push(raise);
             }
+
+            /* ---- audit automation ---- */
+            children.push(el("div", { class: "section-label", text: "Automation" }));
+            const autoHost = el("div", { class: "audit-automation" },
+                el("p", { class: "sm dim", text: "Loading…" }));
+            children.push(autoHost);
+            paintAuditAutomationPanel(autoHost, "internal", number, render);
         }
 
         host.replaceChildren(

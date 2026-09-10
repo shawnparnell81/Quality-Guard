@@ -28,6 +28,7 @@ import { notify } from "./notifications.js";
 import { publish } from "../stream.js";
 import { heartbeat, leaveEditing } from "../presence.js";
 import { enqueueExport, registerExporter } from "../export-jobs.js";
+import { onAuditTransition } from "../audit-automation.js";
 
 export const records = Router();
 
@@ -2137,15 +2138,17 @@ async function insertRecordRow(client, ctx) {
     const year = new Date().getFullYear();
     const pattern = recordType.prefix + "-" + year + "-%";
 
+    /* Sequence off the numeric suffix, not the text: legacy seed data
+       mixes widths (AUD-2026-013 and AUD-2026-0014), and `order by
+       number desc` then picks the wrong "highest" and hands out a
+       number that already exists. */
     const last = await client.query(`
-        select number from records
+        select coalesce(max(split_part(number, '-', 3)::int), 0) as n
+          from records
          where org_id = $1 and record_type_id = $2 and number like $3
-         order by number desc limit 1
     `, [orgId, recordType.id, pattern]);
 
-    const nextSeq = last.rowCount === 0
-        ? 1
-        : Number(last.rows[0].number.split("-").pop()) + 1;
+    const nextSeq = Number(last.rows[0].n) + 1;
 
     const number = recordType.prefix + "-" + year + "-" + String(nextSeq).padStart(4, "0");
 
@@ -3303,6 +3306,11 @@ records.post("/:number/transition", async (request, response, next) => {
             publish(request.user.org_id, {
                 entity: "records", id: outcome.body.number, action: "transitioned"
             });
+            /* Internal-audit automation: build folders + checklist when an
+               audit goes to `scheduled`, log findings + actions + report
+               when it closes. No-op for every other record type; never
+               undoes the transition. */
+            await onAuditTransition(request.user.org_id, outcome.body, request.user.id);
         }
         response.status(outcome.code).json(outcome.body);
     } catch (error) {
