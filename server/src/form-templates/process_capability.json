@@ -1,0 +1,32 @@
+{
+  "key": "process_capability",
+  "name": "Process Capability Study (Cpk / Ppk)",
+  "prefix": "PCS",
+  "clause": "9.1.1",
+  "category": "Measurement",
+  "standard": "AIAG / IATF 16949",
+  "description": "Statistical variance analysis and machine qualification - the CTQ feature with its USL / LSL, a live mean / sigma / sample-size / Cpk panel, and the subgroup measurement log with a within / out-of-spec status per sample.",
+  "fields": [
+    { "key": "part_asset_id", "label": "Part / Asset Reference ID", "type": "text", "required": true, "section": "Study parameters" },
+    { "key": "ctq_feature", "label": "Critical-to-Quality Parameter Feature", "type": "text", "section": "Study parameters" },
+    { "key": "usl", "label": "Upper Specification Limit (USL)", "type": "number", "section": "Study parameters" },
+    { "key": "lsl", "label": "Lower Specification Limit (LSL)", "type": "number", "section": "Study parameters" },
+
+    { "key": "stat_mean", "label": "Mean (μ)", "type": "number", "section": "Calculated capability" },
+    { "key": "stat_sigma", "label": "Sigma (σ)", "type": "number", "section": "Calculated capability" },
+    { "key": "stat_count", "label": "Sample Size", "type": "number", "section": "Calculated capability" },
+    { "key": "cpk_value", "label": "Critical Cpk Value", "type": "number", "section": "Calculated capability" },
+
+    {
+      "key": "samples", "label": "Subgroup Data Log Registry", "type": "table", "required": true,
+      "section": "Subgroup data",
+      "columns": [
+        { "key": "sample_id", "label": "Sample ID", "type": "text" },
+        { "key": "observed_value", "label": "Observed Dimension Value", "type": "number" },
+        { "key": "inspection_timestamp", "label": "Inspection Timestamp", "type": "text" },
+        { "key": "tooling_machine_id", "label": "Traceable Tooling / Machine ID", "type": "text" },
+        { "key": "spec_status", "label": "Specification Status", "type": "text" }
+      ]
+    }
+  ]
+}

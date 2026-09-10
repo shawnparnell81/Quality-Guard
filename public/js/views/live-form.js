@@ -27,13 +27,25 @@ import { renderDocumentsPanel } from "./resources.js";
 import { workflowButtons } from "./change.js";
 
 /* Per-type client calc that isn't a plain compute/expr column - keyed
-   by record-type key. Given `entries` (buildField results for every
-   field); runs on each edit and before every save. It may write into a
-   table editor (calibration) or into a flat field's input (the audit
-   tally). RPN and product/sum columns need nothing here. */
+   by record-type key. recompute(entries, { tables }) runs on each edit
+   and before every save; `tables` is false on a keystroke (only cheap
+   flat-field aggregates) and true on blur / before save (also writes
+   derived table cells, which re-renders that grid). RPN and
+   product/sum columns need nothing here. */
 const RECOMPUTE = {
     calibration_log: recomputeCalibration,
-    internal_audit_checklist: recomputeAuditTally
+    internal_audit_checklist: recomputeAuditTally,
+    process_capability: recomputeCpk
+};
+
+/* set a flat field's input read-only to a computed value */
+function setDerived(entries, key, value) {
+    const e = entries.find((x) => x.field.key === key);
+    if (e && e.input) { e.input.value = value; e.input.readOnly = true; }
+}
+const numOf = (entries, key) => {
+    const e = entries.find((x) => x.field.key === key);
+    return e && e.input ? Number(e.input.value) : NaN;
 };
 
 /* Live Compliant / OFI / NC counts from the findings table. */
@@ -46,15 +58,46 @@ function recomputeAuditTally(entries) {
         else if (r.finding === "Opportunity for improvement") n.count_ofi += 1;
         else if (r.finding === "Non-conformance") n.count_nc += 1;
     }
-    for (const [key, val] of Object.entries(n)) {
-        const e = entries.find((x) => x.field.key === key);
-        if (e && e.input) { e.input.value = String(val); e.input.readOnly = true; }
+    for (const [key, val] of Object.entries(n)) setDerived(entries, key, String(val));
+}
+
+/* Cpk study: mean / sigma / count / Cpk from the observed values, and
+   a WITHIN / OUT OF SPEC per sample row against the form's USL / LSL. */
+function recomputeCpk(entries, { tables } = {}) {
+    const usl = numOf(entries, "usl");
+    const lsl = numOf(entries, "lsl");
+    const t = entries.find((e) => e.field.key === "samples" && e.readTable);
+    if (!t) return;
+    const rows = t.readTable();
+    const vals = rows.map((r) => Number(r.observed_value)).filter(Number.isFinite);
+    const n = vals.length;
+    const mean = n ? vals.reduce((a, b) => a + b, 0) / n : NaN;
+    const sigma = n >= 2
+        ? Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1))
+        : NaN;
+    let cpk = NaN;
+    if (n >= 2 && Number.isFinite(usl) && Number.isFinite(lsl) && usl > lsl && sigma > 0) {
+        cpk = Math.min((usl - mean) / (3 * sigma), (mean - lsl) / (3 * sigma));
+    }
+    setDerived(entries, "stat_count", String(n));
+    setDerived(entries, "stat_mean", Number.isFinite(mean) ? mean.toFixed(3) : "");
+    setDerived(entries, "stat_sigma", Number.isFinite(sigma) ? sigma.toFixed(4) : "");
+    setDerived(entries, "cpk_value", Number.isFinite(cpk) ? cpk.toFixed(2) : "");
+
+    if (tables && Number.isFinite(usl) && Number.isFinite(lsl)) {
+        let touched = false;
+        for (const r of rows) {
+            const v = Number(r.observed_value);
+            const s = !Number.isFinite(v) ? "" : (v > usl || v < lsl) ? "Out of spec" : "Within spec";
+            if (r.spec_status !== s) { r.spec_status = s; touched = true; }
+        }
+        if (touched) t.writeTable(rows);
     }
 }
 
 const DAY = 86400000;
 
-function recomputeCalibration(entries) {
+function recomputeCalibration(entries, { tables } = {}) {
     const t = entries.find((e) => e.field.key === "equipment" && e.readTable);
     if (!t) return;
     const rows = t.readTable();
@@ -77,7 +120,7 @@ function recomputeCalibration(entries) {
             touched = true;
         }
     }
-    if (touched) t.writeTable(rows);
+    if (touched && tables) t.writeTable(rows);
 }
 
 function addMonths(iso, months) {
@@ -180,9 +223,12 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
     const { node, entries } = buildLiveForm(record, definition, { editable: true });
 
     const recompute = RECOMPUTE[record.type];
-    const runRecompute = () => { if (recompute) { try { recompute(entries); } catch { /* leave as typed */ } } };
+    const runRecompute = (tables) => {
+        if (recompute) { try { recompute(entries, { tables }); } catch { /* leave as typed */ } }
+    };
 
     const save = debounce(async () => {
+        runRecompute(true);   // make sure persisted derived values are current
         const data = {};
         for (const e of entries) {
             const v = readValue(e);
@@ -192,12 +238,12 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
         catch (error) { toast(error.message, "error"); }
     }, 500);
 
-    /* Derived values update on the keystroke; the record saves 500ms
-       after the burst settles. */
-    const onEdit = () => { runRecompute(); save(); };
-    node.addEventListener("input", onEdit);
-    node.addEventListener("change", onEdit);
-    runRecompute();
+    /* A keystroke updates the cheap flat-field aggregates only; leaving
+       a field (change/blur) also writes derived table cells (one grid
+       redraw). The record saves 500ms after the burst settles. */
+    node.addEventListener("input", () => { runRecompute(false); save(); });
+    node.addEventListener("change", () => { runRecompute(true); save(); });
+    runRecompute(true);
 
     const tail = [];
     if (links.length) {
