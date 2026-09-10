@@ -1,0 +1,52 @@
+{
+  "key": "appearance_approval",
+  "name": "Appearance Approval Report",
+  "prefix": "AAR",
+  "clause": "8.3.4.4",
+  "category": "Inspection",
+  "standard": "AIAG / IATF 16949",
+  "description": "Aesthetic parameter, surface finish and colorimetry sign-off - the part and submission data, tristimulus colour and gloss readings per master, pre-texture surface and visual evaluation, and the auditor / quality-manager sign-off with the final disposition.",
+  "fields": [
+    { "key": "part_number", "label": "Part Number / Asset ID", "type": "text", "required": true, "section": "1. Material & submission information" },
+    { "key": "drawing_revision", "label": "Drawing / Revision Number", "type": "text", "section": "1. Material & submission information" },
+    { "key": "part_name", "label": "Part Name Description", "type": "text", "section": "1. Material & submission information" },
+    { "key": "engineering_change_level", "label": "Engineering Change Level", "type": "text", "section": "1. Material & submission information" },
+
+    {
+      "key": "color_data", "label": "Tristimulus Colour & Gloss Data (Instrumental Analysis)", "type": "table",
+      "section": "2. Colour & gloss",
+      "columns": [
+        { "key": "color_std_id", "label": "Colour Std / Master ID", "type": "text" },
+        { "key": "light_src", "label": "Light Src", "type": "select", "options": ["D65", "TL84", "A"] },
+        { "key": "dl", "label": "DL*", "type": "number" },
+        { "key": "da", "label": "Da*", "type": "number" },
+        { "key": "db", "label": "Db*", "type": "number" },
+        { "key": "de", "label": "DE*", "type": "number" },
+        { "key": "measured_gloss", "label": "Measured Gloss", "type": "number" },
+        {
+          "key": "disposition", "label": "Disposition", "type": "select",
+          "options": ["Conforms", "Out of tolerance"]
+        }
+      ]
+    },
+
+    {
+      "key": "surface_finish_polish", "label": "Surface Finish / Polish", "type": "select",
+      "options": ["Pass / Acceptable", "Tooling Scratches"], "section": "3. Pre-texture surface status"
+    },
+    {
+      "key": "graining_structure", "label": "Graining Structure Map", "type": "select",
+      "options": ["Uniform Matching", "Non-Uniform Pattern"], "section": "3. Pre-texture surface status"
+    },
+
+    { "key": "hue_chroma_assessment", "label": "Hue / Chroma Assessment", "type": "text", "section": "4. Visual evaluation (master reference)" },
+    { "key": "metallic_brilliance", "label": "Metallic Brilliance", "type": "text", "section": "4. Visual evaluation (master reference)" },
+
+    { "key": "auditor_inspector", "label": "Auditor / Laboratory Inspector", "type": "signature", "section": "Disposition & sign-off" },
+    { "key": "quality_manager_signoff", "label": "Quality Manager Sign-Off", "type": "signature", "section": "Disposition & sign-off" },
+    {
+      "key": "aar_final_disposition", "label": "AAR Final Disposition", "type": "select",
+      "options": ["Part Approved", "Interim Approved", "Rejected"], "section": "Disposition & sign-off"
+    }
+  ]
+}
