@@ -126,7 +126,7 @@ header is present), both must hold:
 |---|---|
 | Flags | `SameSite=Lax`, `Path=/`, `Max-Age = SESSION_HOURS`; `Secure` in production. **Not** `HttpOnly` — the SPA has to read it. |
 | Issued by | `identify`, on the first authenticated **GET** that lacks it. The SPA's first call is `GET /api/me`, so the token is always in place before its first write. |
-| Sent by | `public/js/api.js` — `withCsrf()` attaches `X-CSRF-Token` to every non-GET (`request()` and `postForm()`). |
+| Sent by | `public/js/api.js` — `withCsrf()` attaches `X-CSRF-Token` to every non-GET (`request()`, `postForm()`, and the progress-reporting multipart `xhrUpload()` used by `buildUploader`). |
 | Cleared | alongside `qg_session` on logout. |
 
 A caller with **no `Origin` and no `Referer`** is not a browser
