@@ -10,7 +10,7 @@
    ============================================================ */
 
 import { api } from "../api.js";
-import { can } from "../session.js";
+import { can, applyPermissions } from "../session.js";
 import { openRecordEditor, confirmStep, editDueDate, ensureDialog } from "../forms.js";
 import { renderEightD, renderChange } from "./change.js";
 import { renderApqpDetail } from "./apqp.js";
@@ -505,6 +505,18 @@ function openRegisterImport(type) {
         }
     };
 
+    /* Same create permission as raising one of these. Fetched rather
+       than linked, so a refusal is a toast instead of a JSON tab. */
+    const createPermission = document.querySelector('[data-new-record="' + type + '"]')
+        ?.dataset.requires;
+    const downloadTemplate = async () => {
+        try {
+            await api.downloadRecordsImportTemplate(type);
+        } catch (err) {
+            toast(err.message, "error");
+        }
+    };
+
     fileInput.addEventListener("change", () => {
         lastValidCount = 0;
         report.replaceChildren();
@@ -519,7 +531,11 @@ function openRegisterImport(type) {
         el("div", { class: "modal-body imp" }, [
             el("p", { class: "sm", style: "margin:0 0 12px" }, [
                 "One row per record. ",
-                el("a", { href: api.recordsImportTemplateUrl(type), text: "Download a blank template" }),
+                el("button", {
+                    class: "link-btn", type: "button", text: "Download a blank template",
+                    "data-requires": createPermission || undefined,
+                    onClick: downloadTemplate
+                }),
                 " with the right columns."
             ]),
             fileInput,
@@ -531,6 +547,7 @@ function openRegisterImport(type) {
             commitBtn
         ])
     );
+    applyPermissions(dialog);
     dialog.showModal();
 }
 

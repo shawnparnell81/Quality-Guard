@@ -266,6 +266,13 @@ export function requirePermission(keyOrResolver) {
             return response.status(401).json({ error: "Sign in required" });
         }
 
+        /* CREATE_TYPE_MISSING is a client error (no type named), not a
+           missing grant. The sentinel is ungrantable, so the handler
+           still never runs. Conflicting types keep the 403 below. */
+        if (key === CREATE_TYPE_MISSING) {
+            return response.status(400).json({ error: "type is required" });
+        }
+
         if (!request.can(key)) {
             return response.status(403).json({
                 error: "Your role does not permit this",
@@ -298,26 +305,28 @@ export function createPermissionForType(type) {
     return CREATE_PERMISSION[type] || null;
 }
 
-/* The type reaches these routes two ways: ?type= on the template
-   downloads and the multipart uploads (where request.body is not
-   parsed until multer has run, i.e. after this guard), and a body
-   field on the JSON create. Both are read, because the handlers
-   themselves read both.
+/* The create type may arrive as ?type= (template downloads and
+   multipart uploads, whose body is not parsed until after this guard)
+   or as a JSON body field. The guard must see the same type the
+   handler will act on, so both sources are considered.
 
-   Naming no type, or naming two different ones so the guard checks a
-   different type from the one the handler acts on, is refused rather
-   than waved through: records.create_unlisted is not in the
-   permission catalogue, so no role holds it and requirePermission
-   answers 403. A type the catalogue defines no create permission for
-   - an organization's own custom record type - stays open to any
-   signed-in user, the same rule READ_PERMISSION follows. */
+   Exactly one type must be named. CREATE_TYPE_MISSING and
+   CREATE_TYPE_CONFLICT are not in the permission catalogue, so no
+   role holds them and a request that names none, or two, never
+   reaches a handler. A type the catalogue defines no create
+   permission for - an organization's own custom record type - stays
+   open to any signed-in user, the same rule READ_PERMISSION follows. */
+export const CREATE_TYPE_MISSING = "records.create_untyped";
+export const CREATE_TYPE_CONFLICT = "records.create_unlisted";
+
 export function createPermissionFor(request) {
     const named = new Set(
         [request.query?.type, request.body?.type]
             .map((value) => String(value ?? "").trim())
             .filter(Boolean)
     );
-    if (named.size !== 1) return "records.create_unlisted";
+    if (named.size === 0) return CREATE_TYPE_MISSING;
+    if (named.size > 1) return CREATE_TYPE_CONFLICT;
 
     return createPermissionForType([...named][0]);
 }

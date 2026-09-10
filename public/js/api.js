@@ -333,14 +333,18 @@ export const api = {
             .finally(() => clearFormCache()),
     records:      (params)  => get(withQuery("/records", params)),
     recordsExportUrl: (params) => "/api" + withQuery("/records/export", params),
-    recordsImportTemplateUrl: (type) =>
-        "/api/records/import-template?type=" + encodeURIComponent(type),
+    /* Fetched rather than linked: these routes need the type's create
+       permission, and a navigation to a 403 would show raw JSON. */
+    downloadRecordsImportTemplate: (type) =>
+        downloadFile("/api/records/import-template?type=" + encodeURIComponent(type),
+            { fallbackName: type + "-import-template.xlsx" }),
     importRecords: (type, formData, dryRun) => postForm(
         "/records/import?type=" + encodeURIComponent(type) + (dryRun ? "&dry_run=true" : ""),
         formData),
     /* one form <-> one Excel file */
-    recordExcelTemplateUrl: (type) =>
-        "/api/records/excel-template?type=" + encodeURIComponent(type),
+    downloadRecordExcelTemplate: (type) =>
+        downloadFile("/api/records/excel-template?type=" + encodeURIComponent(type),
+            { fallbackName: type + "-template.xlsx" }),
     recordExcelUrl: (number) => "/api/records/" + encodeURIComponent(number) + "/excel",
     /* PDF / Excel download that transparently handles a 202 async job */
     downloadRecordPdf:   (number, opts) =>

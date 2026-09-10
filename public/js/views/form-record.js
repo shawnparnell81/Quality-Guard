@@ -81,10 +81,6 @@ export async function renderFormRecord() {
 async function renderTypeRecords(typeKey) {
     currentType = typeKey;
 
-    /* keep the "Excel template" link pointed at the chosen form */
-    const tpl = document.getElementById("form-record-template");
-    if (tpl) tpl.href = api.recordExcelTemplateUrl(typeKey);
-
     const table = document.getElementById("form-record-table");
     const note = document.getElementById("form-record-note");
     loadingRow(table, 4);
@@ -428,6 +424,18 @@ export function wireFormRecord() {
     const newType = document.getElementById("form-record-newtype");
     if (newType) newType.addEventListener("click", () => {
         if (can("forms.manage")) openNewTypeDialog();
+    });
+
+    /* Fetched rather than linked: this route needs the type's create
+       permission, and a navigation to a 403 would show raw JSON. */
+    const template = document.getElementById("form-record-template");
+    if (template) template.addEventListener("click", async () => {
+        if (!currentType) { toast("Pick a form type first", "error"); return; }
+        try {
+            await api.downloadRecordExcelTemplate(currentType);
+        } catch (err) {
+            toast(err.message, "error");
+        }
     });
 
     /* Fill from Excel: pick a file, the server parses the Form sheet

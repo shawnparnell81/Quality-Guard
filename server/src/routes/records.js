@@ -528,17 +528,40 @@ async function readableRecord(request, response) {
     }
 
     const record = found.rows[0];
-    const needed = readPermissionFor(record.type);
-    if (needed && !request.can(needed)) {
-        response.status(403).json({
-            error: "Your role does not permit this",
-            required: needed,
-            your_role: request.user.role_name
-        });
+    const denial = readDenial(request, record.type);
+    if (denial) {
+        refuseRead(request, response, denial.readBlocked);
         return null;
     }
 
     return record;
+}
+
+/* The read check on its own, for the write paths.
+
+   PATCH /:number and PATCH /:number/table/:field hand a record's
+   contents back in their responses, so an edit is also a read and
+   needs the type's read permission on top of whatever editPermissionFor
+   demanded. They already hold the row `for update` inside their
+   transaction, and its type with it, so the check happens there rather
+   than in a pre-flight SELECT: a second read would judge the
+   permission against a row the write does not hold.
+
+   Returns the sentinel the surrounding transaction hands back, in the
+   same shape as its other refusals, or null when the caller may read. */
+function readDenial(request, type) {
+    const needed = readPermissionFor(type);
+    return needed && !request.can(needed) ? { readBlocked: needed } : null;
+}
+
+/* One envelope for every read refusal. The client matches on its
+   shape, so the routes that answer it may not drift apart. */
+function refuseRead(request, response, needed) {
+    return response.status(403).json({
+        error: "Your role does not permit this",
+        required: needed,
+        your_role: request.user.role_name
+    });
 }
 
 /* ---------- list ----------
@@ -2394,6 +2417,11 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
 
             const record = current.rows[0];
 
+            /* Before the version check, so a refusal cannot report on a
+               record the caller may not see. */
+            const denial = readDenial(request, record.type);
+            if (denial) return denial;
+
             const want = requestedVersion(request);
             if (want && recordVersion(record.updated_at) !== want) {
                 return { stale: true, currentVersion: recordVersion(record.updated_at) };
@@ -2537,6 +2565,10 @@ records.patch("/:number", requirePermission(editPermissionFor), async (request, 
             return response.status(404).json({ error: "Record not found" });
         }
 
+        if (updated.readBlocked) {
+            return refuseRead(request, response, updated.readBlocked);
+        }
+
         if (updated.ruleBlocked) {
             return response.status(422).json({
                 error: "This record breaks a form rule",
@@ -2628,6 +2660,11 @@ records.patch("/:number/table/:field", requirePermission(editPermissionFor),
             if (current.rowCount === 0) return null;
             const record = current.rows[0];
 
+            /* Before the version check, so a refusal cannot report on a
+               record the caller may not see. */
+            const denial = readDenial(request, record.type);
+            if (denial) return denial;
+
             const want = requestedVersion(request);
             if (want && recordVersion(record.updated_at) !== want) {
                 return { stale: true, currentVersion: recordVersion(record.updated_at) };
@@ -2683,6 +2720,7 @@ records.patch("/:number/table/:field", requirePermission(editPermissionFor),
         });
 
         if (outcome === null) return response.status(404).json({ error: "Record not found" });
+        if (outcome.readBlocked) return refuseRead(request, response, outcome.readBlocked);
         if (outcome.stale) {
             return response.status(409).json({
                 error: "This record changed since you opened it. Reload before saving so you do not overwrite the other change.",

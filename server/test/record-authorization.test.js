@@ -1,7 +1,7 @@
 /* ============================================================
    Authorization on the record side doors, and numbering under load.
 
-   Three P0 findings, proven through the HTTP API:
+   Four P0 findings, proven through the HTTP API:
 
      1. requirePermission(createPermissionFor) read the type out of
         request.body only. Four of the six create routes carry it in
@@ -16,6 +16,12 @@
      3. Record numbers were max(seq)+1 with no lock, so concurrent
         creates of the same type collided on
         records_org_id_number_key and the loser got a 500.
+
+     4. Both PATCH routes are guarded by editPermissionFor, which
+        names no permission for an ordinary field correction, and a
+        null key means "no permission needed". Anyone signed in could
+        therefore write - and read back - a record of a type they hold
+        no read permission for.
 
    Roles used: operator holds ncr.read / ncr.create and no capa
    permission at all; quality_inspector holds capa.read but NOT
@@ -112,6 +118,20 @@ function assertRefused(result, requiredKey) {
         "a refusal must not carry the export it refused: " + result.contentType);
 }
 
+/* Nor may it carry the record. The ZEBRA markers are unique to the
+   fixtures, so a body holding one has leaked the very thing the
+   permission exists to withhold. */
+function assertNeverLeaked(result) {
+    assert.ok(!result.text.includes("ZEBRACAPA"), "the refusal leaked the record's title");
+    assert.ok(!result.text.includes("press force out of window"),
+        "the refusal leaked a data field value");
+    assert.ok(!result.text.includes("ZEBRAROW"), "the refusal leaked a table row");
+    assert.equal(result.body?.data, undefined);
+    assert.equal(result.body?.title, undefined);
+    assert.equal(result.body?.rows, undefined);
+    assert.equal(result.body?.row_count, undefined);
+}
+
 before(async () => {
     serverProcess = spawn(process.execPath, ["--env-file=.env", "src/app.js"],
         { cwd: serverRoot, env: { ...process.env, PORT: String(PORT) }, stdio: "pipe" });
@@ -139,6 +159,13 @@ before(async () => {
     });
     assert.equal(capa.status, 201, JSON.stringify(capa.body));
     capaNumber = capa.body.number;
+
+    /* A row in the action plan, so a table-field refusal that leaked
+       its rows would be visible rather than an empty array. */
+    const seeded = await api(adminCookie, "PATCH", "/api/records/" + capaNumber + "/table/actions", {
+        upsert: [{ action: "Re-validate press force ZEBRAROW", type: "Corrective" }]
+    });
+    assert.equal(seeded.status, 200, JSON.stringify(seeded.body));
 
     const ncr = await api(adminCookie, "POST", "/api/records", {
         type: "ncr", title: "Bore oversize ZEBRANCR", data: { disposition: "Rework" }
@@ -208,8 +235,13 @@ test("the template downloads are gated by the same create permission", async () 
 });
 
 test("a create that names no type, or two, is refused rather than waved through", async () => {
+    /* Naming no type is a malformed request, so it is answered as one
+       - but still by the guard, before any handler runs. */
     const none = await api(adminCookie, "POST", "/api/records", { title: "No type at all" });
-    assertRefused(none, "records.create_unlisted");
+    assert.equal(none.status, 400, none.text.slice(0, 200));
+    assert.equal(none.body?.error, "type is required");
+    assert.equal(none.body?.required, undefined, "must not name an ungrantable permission");
+    assert.equal(none.body?.number, undefined, "the refused create must not have made a record");
 
     /* ?type= must not be able to buy a permission check for a type
        the body does not actually create. */
@@ -267,6 +299,55 @@ test("attachments of an unreadable record are neither listed nor streamed", asyn
     const ok = await api(inspectorCookie, "GET", "/api/records/" + capaNumber + "/attachments");
     assert.equal(ok.status, 200);
     assert.equal(ok.body.count, 1);
+});
+
+/* ---------- fix 4: an edit is also a read ----------
+
+   editPermissionFor names no permission for a body that sets no
+   disposition, and requirePermission treats a null key as "no
+   permission needed", so both PATCH routes ran for anyone signed in
+   and answered with the record they had just written. */
+
+test("PATCH of a record the caller may not read is refused and leaks nothing", async () => {
+    const denied = await api(operatorCookie, "PATCH", "/api/records/" + capaNumber, {});
+    assertRefused(denied, "capa.read");
+    assertNeverLeaked(denied);
+
+    /* And it is a write path, not only a leak: an empty body was a
+       no-op rewrite, but a title is not. */
+    const renamed = await api(operatorCookie, "PATCH", "/api/records/" + capaNumber,
+        { title: "Renamed by someone who cannot read it" });
+    assertRefused(renamed, "capa.read");
+
+    const still = await api(inspectorCookie, "GET", "/api/records/" + capaNumber);
+    assert.equal(still.body.record.title, "Bearing press force drift ZEBRACAPA");
+});
+
+test("PATCH of a table field on an unreadable record leaks no rows", async () => {
+    const denied = await api(operatorCookie, "PATCH",
+        "/api/records/" + capaNumber + "/table/actions", { remove: ["not-a-real-row-id"] });
+    assertRefused(denied, "capa.read");
+    assertNeverLeaked(denied);
+});
+
+test("someone who may read the type still edits it", async () => {
+    /* The inspector holds capa.read and no capa write permission at
+       all, which is exactly the case editPermissionFor waves through.
+       The read check has to be additive, not a new gate on every
+       ordinary field correction. */
+    const edited = await api(inspectorCookie, "PATCH", "/api/records/" + capaNumber, {
+        data: { root_cause: "press regulator drift" },
+        reason: "investigation closed out"
+    });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    assert.equal(edited.body.data.root_cause, "press regulator drift");
+    assert.equal(edited.body.title, "Bearing press force drift ZEBRACAPA");
+
+    const rows = await api(inspectorCookie, "PATCH",
+        "/api/records/" + capaNumber + "/table/actions",
+        { upsert: [{ action: "Verify at 30 days" }] });
+    assert.equal(rows.status, 200, JSON.stringify(rows.body));
+    assert.equal(rows.body.row_count, 2);
 });
 
 /* ---------- fix 3: numbering under concurrency ---------- */
