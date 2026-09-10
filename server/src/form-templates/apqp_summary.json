@@ -1,0 +1,25 @@
+{
+  "key": "apqp_summary",
+  "name": "APQP Planning Summary",
+  "prefix": "APQPS",
+  "clause": "8.3",
+  "category": "APQP",
+  "standard": "AIAG",
+  "description": "Your product quality planning summary and sign-off - product and plant header, control plan approval, and a note per APQP element (capability study, initial samples, gage / MSA, process monitoring, packaging). Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record. The required / acceptable / pending quantities are captured as notes per section.",
+  "fields": [
+    { "key": "product_name", "label": "Product name", "type": "text", "required": true, "section": "Header" },
+    { "key": "part_number", "label": "Part Number", "type": "text", "section": "Header" },
+    { "key": "customer", "label": "Customer", "type": "text", "section": "Header" },
+    { "key": "manufacturing_plant", "label": "Manufacturing Plant", "type": "text", "section": "Header" },
+    { "key": "capability_study_notes", "label": "1. Preliminary process capability study (Ppk - special characteristics)", "type": "memo", "section": "APQP elements" },
+    { "key": "control_plan_approved", "label": "2. Control plan approved (YES/NO)", "type": "text", "section": "APQP elements" },
+    { "key": "control_plan_date_approved", "label": "2. Control plan date approved", "type": "text", "section": "APQP elements" },
+    { "key": "initial_samples_notes", "label": "3. Initial production samples (dimensional / visual / laboratory / performance)", "type": "memo", "section": "APQP elements" },
+    { "key": "gage_msa_notes", "label": "4. Gage and test equipment - MSA (special characteristics)", "type": "memo", "section": "APQP elements" },
+    { "key": "process_monitoring_notes", "label": "5. Process monitoring (instructions / process sheets / visual aids)", "type": "memo", "section": "APQP elements" },
+    { "key": "packaging_shipping_notes", "label": "6. Packaging / shipping (packaging approval / shipping trials)", "type": "memo", "section": "APQP elements" },
+    { "key": "signoff_1", "label": "Sign-off - team member / title / date (1)", "type": "text", "section": "Sign-off" },
+    { "key": "signoff_2", "label": "Sign-off - team member / title / date (2)", "type": "text", "section": "Sign-off" },
+    { "key": "signoff_3", "label": "Sign-off - team member / title / date (3)", "type": "text", "section": "Sign-off" }
+  ]
+}

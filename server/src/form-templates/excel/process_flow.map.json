@@ -1,0 +1,60 @@
+{
+  "primary_sheet": "Process Flow Diagram",
+  "sheets": [
+    "Process Flow Diagram"
+  ],
+  "fields": {
+    "customer": {
+      "sheet": "Process Flow Diagram",
+      "cell": "B3"
+    },
+    "customer_part_number": {
+      "sheet": "Process Flow Diagram",
+      "cell": "F3"
+    },
+    "supplier": {
+      "sheet": "Process Flow Diagram",
+      "cell": "B5"
+    },
+    "supplier_part_number": {
+      "sheet": "Process Flow Diagram",
+      "cell": "F5"
+    },
+    "part_name": {
+      "sheet": "Process Flow Diagram",
+      "cell": "B7"
+    },
+    "dwg_number": {
+      "sheet": "Process Flow Diagram",
+      "cell": "F8"
+    },
+    "dwg_rev": {
+      "sheet": "Process Flow Diagram",
+      "cell": "G8"
+    },
+    "dwg_date": {
+      "sheet": "Process Flow Diagram",
+      "cell": "H8"
+    },
+    "core_team": {
+      "sheet": "Process Flow Diagram",
+      "cell": "B9"
+    }
+  },
+  "tables": {
+    "operations": {
+      "sheet": "Process Flow Diagram",
+      "first_data_row": 13,
+      "columns": {
+        "op_no": "A",
+        "process_description": "B",
+        "out_going": "D",
+        "control_method": "E",
+        "characteristic_description": "F",
+        "sc": "H"
+      },
+      "capacity": 25,
+      "stop_on_blank_col": "A"
+    }
+  }
+}

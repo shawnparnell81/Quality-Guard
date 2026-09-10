@@ -5,26 +5,26 @@
   "clause": "8.5.1",
   "category": "APQP",
   "standard": "AIAG",
-  "description": "AIAG Process Flow Diagram as a step list: operation type, key inputs and outputs, and the product / process characteristics introduced at each step.",
+  "description": "Your process flow diagram - header plus one line per operation: process description, outgoing characteristic, control method, characteristic description and special-characteristic flag. Download the Excel template, fill it in, and \"Fill from Excel\" reads it back onto a record.",
   "fields": [
-    { "key": "part_number", "label": "Part number / name", "type": "text", "required": true, "section": "Header" },
-    { "key": "process_owner", "label": "Process owner", "type": "text", "section": "Header" },
-    { "key": "organization", "label": "Organization / plant", "type": "text", "section": "Header" },
-    { "key": "date_orig", "label": "Date (orig.)", "type": "date", "section": "Header" },
-    { "key": "date_rev", "label": "Date (rev.)", "type": "date", "section": "Header" },
-    { "key": "core_team", "label": "Core team", "type": "memo", "section": "Header" },
+    { "key": "customer", "label": "Customer", "type": "text", "section": "Header" },
+    { "key": "customer_part_number", "label": "Customer Part Number", "type": "text", "section": "Header" },
+    { "key": "supplier", "label": "Supplier", "type": "text", "section": "Header" },
+    { "key": "supplier_part_number", "label": "Supplier Part Number", "type": "text", "section": "Header" },
+    { "key": "part_name", "label": "Part Name", "type": "text", "section": "Header" },
+    { "key": "dwg_number", "label": "Dwg. Number", "type": "text", "section": "Header" },
+    { "key": "dwg_rev", "label": "Dwg. Rev", "type": "text", "section": "Header" },
+    { "key": "dwg_date", "label": "Dwg. Date", "type": "date", "section": "Header" },
+    { "key": "core_team", "label": "Core Team", "type": "memo", "section": "Header" },
     {
-      "key": "steps", "label": "Process steps", "type": "table", "section": "Flow",
+      "key": "operations", "label": "Process Flow", "type": "table", "required": true,
       "columns": [
-        { "key": "step_number", "label": "Step no.", "type": "text" },
-        { "key": "operation_description", "label": "Operation description", "type": "text" },
-        { "key": "operation_type", "label": "Type", "type": "select", "options": ["Operation", "Transport", "Inspection", "Storage", "Delay"] },
-        { "key": "incoming_from", "label": "From step", "type": "text" },
-        { "key": "key_inputs", "label": "Key process inputs", "type": "text" },
-        { "key": "key_outputs", "label": "Key process outputs", "type": "text" },
-        { "key": "product_characteristic", "label": "Product characteristic", "type": "text" },
-        { "key": "process_characteristic", "label": "Process characteristic", "type": "text" },
-        { "key": "special_char", "label": "Special char.", "type": "select", "options": ["", "Yes", "No"] }
+        { "key": "op_no", "label": "Op. No.", "type": "text" },
+        { "key": "process_description", "label": "Process Description", "type": "text" },
+        { "key": "out_going", "label": "Out-going", "type": "text" },
+        { "key": "control_method", "label": "Control Method", "type": "text" },
+        { "key": "characteristic_description", "label": "Description", "type": "text" },
+        { "key": "sc", "label": "SC", "type": "text" }
       ]
     }
   ]

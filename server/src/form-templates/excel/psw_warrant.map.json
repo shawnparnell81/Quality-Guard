@@ -1,0 +1,105 @@
+{
+  "primary_sheet": "Part Submission Warrant ",
+  "sheets": [
+    "Part Submission Warrant "
+  ],
+  "fields": {
+    "part_name": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B3"
+    },
+    "cust_part_number": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "F3"
+    },
+    "shown_on_drawing_no": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B5"
+    },
+    "org_part_number": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "F5"
+    },
+    "engineering_change_level": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B7"
+    },
+    "additional_engineering_changes": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B9"
+    },
+    "safety_government_regulation": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B12"
+    },
+    "purchase_order_no": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "D11"
+    },
+    "checking_aid_no": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B13"
+    },
+    "supplier_name_code": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "A18"
+    },
+    "customer_name_division": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "D19"
+    },
+    "street_address": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B21"
+    },
+    "city_region_postal": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B23"
+    },
+    "application": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "E21"
+    },
+    "submission_results": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B50"
+    },
+    "explanation_comments": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "A57"
+    },
+    "print_name": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B62"
+    },
+    "title": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B64"
+    },
+    "phone_no": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "D62"
+    },
+    "email": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "D64"
+    },
+    "engineering_change_dated": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "F7"
+    },
+    "additional_changes_dated": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "F9"
+    },
+    "reason_for_submission": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B38"
+    },
+    "requested_submission_level": {
+      "sheet": "Part Submission Warrant ",
+      "cell": "B45"
+    }
+  },
+  "tables": {}
+}
