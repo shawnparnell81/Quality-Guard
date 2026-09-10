@@ -189,6 +189,12 @@ export function xhrUpload(path, formData, onProgress, method = "POST") {
         xhr.open(method, BASE + path);
         xhr.withCredentials = true;
 
+        /* Same CSRF double-submit as request() / postForm() - the raw
+           XHR here does not get it for free. No Content-Type: the
+           browser sets the multipart boundary from the FormData. */
+        const token = csrfToken();
+        if (token && !CSRF_SAFE.has(method)) xhr.setRequestHeader("X-CSRF-Token", token);
+
         xhr.upload.addEventListener("progress", (event) => {
             if (typeof onProgress === "function") {
                 onProgress(event.lengthComputable ? event.loaded / event.total : null);
