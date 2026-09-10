@@ -130,6 +130,12 @@ export async function show(name, opts = {}) {
     if (!target) return;
 
     if (currentView) scrollByView.set(currentView, window.scrollY);
+    /* A view being left can carry live resources (timers, a presence
+       heartbeat) that its renderer needs to release. Fired before the
+       swap so a listener still sees the old DOM. */
+    if (currentView && currentView !== name) {
+        document.dispatchEvent(new CustomEvent("view-left", { detail: { view: currentView } }));
+    }
     trackTab(name);
     currentView = name;
 
