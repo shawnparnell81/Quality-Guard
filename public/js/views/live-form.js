@@ -10,21 +10,37 @@
    the shared table editor. The same builder renders the ?print= page
    read-only.
 
+   For an existing record the header's Summary / Severity / Due are
+   editable and save the same way; a debounced PATCH carries an
+   expected_version so a concurrent save is caught (a "reload" bar,
+   not a silent overwrite); a presence heartbeat shows who else has it
+   open; and a standing, non-blocking checklist lists the still-empty
+   required fields and any form-rule violation. The workflow /
+   links / attachments / audit trail below the form is the shared
+   buildRecordContext panel. The same builder renders the ?print= page
+   read-only.
+
    Reuses:
      buildField / readValue        public/js/forms.js
+     validate                      public/js/forms.js
      createTableEditor (via table)  public/js/table-editor.js
      evaluate                       public/js/expr.js  (inside the editor)
-     workflowButtons                ./change.js
-     buildUploader                  ../attach-upload.js
+     checkRules                     public/js/rules.js
+     beginEditing                  public/js/presence.js
+     buildRecordContext            ./record-context.js
    ============================================================ */
 
 import { api } from "../api.js";
-import { buildField, readValue } from "../forms.js";
+import { buildField, readValue, validate } from "../forms.js";
 import { el, humanize, formatDate, debounce, toast } from "../dom.js";
-import { recordLink } from "../record-nav.js";
-import { buildUploader } from "../attach-upload.js";
+import { checkRules } from "../rules.js";
+import { beginEditing } from "../presence.js";
 import { renderDocumentsPanel } from "./resources.js";
-import { workflowButtons } from "./change.js";
+import { buildRecordContext } from "./record-context.js";
+
+/* Severity lives on records.severity, not in the data payload - the
+   same three the record editor offers. */
+const SEVERITY_OPTIONS = [["ok", "OK"], ["warn", "Warning"], ["crit", "Critical"]];
 
 /* Per-type client calc that isn't a plain compute/expr column - keyed
    by record-type key. recompute(entries, { tables }) runs on each edit
@@ -160,8 +176,10 @@ function addMonths(iso, months) {
 
 /* ---------- the form ---------- */
 
-/* Returns { node, entries }. `node` is the whole .live-form document;
-   `entries` are buildField's return values, for save-time collection. */
+/* Returns { node, entries, meta }. `node` is the whole .live-form
+   document; `entries` are buildField's return values, for save-time
+   collection; `meta` (editable only) is { titleInput, severitySelect,
+   dueInput } - the records.* columns that live outside `data`. */
 export function buildLiveForm(record, definition, { editable = true } = {}) {
     const fields = Array.isArray(definition && definition.fields) ? definition.fields : [];
     const options = (definition && definition.options) || {};
@@ -180,19 +198,48 @@ export function buildLiveForm(record, definition, { editable = true } = {}) {
         bySection.get(key).push(entry);
     }
 
-    const header = el("div", { class: "lf-head" }, [
-        el("div", { class: "lf-head-title" }, [
-            el("span", { class: "lf-kicker", text: definition.name || humanize(record.type) }),
-            el("span", { class: "lf-no", text: record.number })
-        ]),
-        el("div", { class: "lf-facts" }, [
+    let meta = null;
+    let factNodes;
+    if (editable) {
+        const titleInput = el("input", {
+            type: "text", class: "lf-meta-input", value: record.title || "",
+            "aria-label": "Summary", placeholder: "What is wrong, in one line"
+        });
+        const severitySelect = el("select", { class: "lf-meta-input", "aria-label": "Severity" },
+            SEVERITY_OPTIONS.map(([value, label]) => el("option", {
+                value, text: label,
+                selected: (record.severity || "warn") === value ? "selected" : undefined
+            })));
+        const dueInput = el("input", {
+            type: "date", class: "lf-meta-input", "aria-label": "Due date",
+            value: record.due_at ? String(record.due_at).slice(0, 10) : ""
+        });
+        meta = { titleInput, severitySelect, dueInput };
+        factNodes = [
+            fact("Summary", titleInput),
+            fact("Owner", record.owner || "—"),
+            fact("Status", humanize(record.status)),
+            fact("Severity", severitySelect),
+            fact("Opened", formatDate(record.opened_at)),
+            fact("Due", dueInput)
+        ];
+    } else {
+        factNodes = [
             fact("Title", record.title || "—"),
             fact("Owner", record.owner || "—"),
             fact("Status", humanize(record.status)),
             fact("Opened", formatDate(record.opened_at)),
             fact("Due", record.due_at ? formatDate(record.due_at) : "—"),
             fact("Printed", formatDate(new Date().toISOString()))
-        ])
+        ];
+    }
+
+    const header = el("div", { class: "lf-head" }, [
+        el("div", { class: "lf-head-title" }, [
+            el("span", { class: "lf-kicker", text: definition.name || humanize(record.type) }),
+            el("span", { class: "lf-no", text: record.number })
+        ]),
+        el("div", { class: "lf-facts" }, factNodes)
     ]);
 
     const blocks = sections.map((sectionKey) => {
@@ -222,23 +269,37 @@ export function buildLiveForm(record, definition, { editable = true } = {}) {
     });
 
     const node = el("div", { class: "live-form" + (editable ? "" : " is-print") }, [header, ...blocks]);
-    return { node, entries };
+    return { node, entries, meta };
 }
 
 /* ---------- the screen ---------- */
 
+/* One live form is mounted on the record page at a time. Its presence
+   heartbeat has to stop when the next record (or a re-render) takes
+   over, and when the record view is navigated away from - the same
+   single-owner teardown openRecordEditor keeps. */
+let liveTeardown = null;
+
+document.addEventListener("view-left", (event) => {
+    if (event.detail && event.detail.view === "record" && liveTeardown) {
+        liveTeardown();
+        liveTeardown = null;
+    }
+});
+
 export async function renderLiveForm(number, { slot = "record-view" } = {}) {
+    if (liveTeardown) { liveTeardown(); liveTeardown = null; }
+
     const track = document.getElementById(slot + "-detail");
     const heading = document.getElementById(slot + "-detail-number");
     if (!track) return;
     track.replaceChildren(el("p", { class: "sm dim", text: "Loading…" }));
 
-    let record, transitions, links, definition;
+    let record, definition, version;
     try {
         const got = await api.record(number);
         record = got.record;
-        transitions = got.transitions || [];
-        links = got.links || [];
+        version = got.version || null;
         definition = await api.recordForm(record.type);
     } catch (error) {
         track.replaceChildren(el("p", { class: "sm", style: "color:var(--crit)", text: error.message }));
@@ -246,55 +307,133 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
     }
     if (heading) heading.textContent = record.number;
 
-    const { node, entries } = buildLiveForm(record, definition, { editable: true });
+    const { node, entries, meta } = buildLiveForm(record, definition, { editable: true });
 
     const recompute = RECOMPUTE[record.type];
     const runRecompute = (tables) => {
         if (recompute) { try { recompute(entries, { tables }); } catch { /* leave as typed */ } }
     };
 
-    const save = debounce(async () => {
-        runRecompute(true);   // make sure persisted derived values are current
+    const collectData = () => {
         const data = {};
         for (const e of entries) {
             const v = readValue(e);
             if (v !== undefined) data[e.field.key] = v;
         }
-        try { await api.updateRecord(number, { data }); }
-        catch (error) { toast(error.message, "error"); }
+        return data;
+    };
+
+    /* ---- standing "still needed" checklist (never blocks typing) ---- */
+    const todoBox = el("div", { class: "lf-todo no-print", hidden: "hidden" });
+    function paintTodo(extraTitle, extraItems) {
+        if (extraItems && extraItems.length) {
+            todoBox.replaceChildren(
+                el("div", { class: "section-label", text: extraTitle }),
+                el("ul", { class: "lf-todo-list" }, extraItems.map((m) => el("li", { text: m })))
+            );
+            todoBox.hidden = false;
+            return;
+        }
+        const rules = checkRules(definition, collectData());
+        const items = [...validate(entries), ...rules.blocked, ...rules.warnings];
+        if (!items.length) { todoBox.hidden = true; return; }
+        todoBox.replaceChildren(
+            el("div", { class: "section-label", text: "Before this record can move forward" }),
+            el("ul", { class: "lf-todo-list" }, items.map((m) => el("li", { text: m })))
+        );
+        todoBox.hidden = false;
+    }
+
+    /* ---- concurrency: an expected_version stamp + a reload bar ---- */
+    const staleBar = el("div", { class: "lf-stale-bar no-print", hidden: "hidden" });
+    let stale = false;
+    function goStale() {
+        stale = true;
+        staleBar.replaceChildren(
+            el("span", { text: "Someone else saved this record. Reload to pick up their change before editing further." }),
+            el("button", {
+                class: "btn sm", type: "button", text: "Reload",
+                onClick: () => renderLiveForm(number, { slot })
+            })
+        );
+        staleBar.hidden = false;
+    }
+
+    const save = debounce(async () => {
+        if (stale) return;
+        runRecompute(true);   // make sure persisted derived values are current
+        const payload = { data: collectData() };
+        if (meta) {
+            payload.title = meta.titleInput.value.trim() || record.title;
+            payload.severity = meta.severitySelect.value;
+            payload.due_at = meta.dueInput.value || null;
+        }
+        if (version) payload.expected_version = version;
+        try {
+            const res = await api.updateRecord(number, payload);
+            if (res && res.version) version = res.version;
+            paintTodo();
+        } catch (error) {
+            if (error.status === 409 && error.payload && error.payload.code === "stale") { goStale(); return; }
+            if (error.status === 422 && error.payload) {
+                paintTodo("The last change was not saved", error.payload.rule_violations
+                    || error.payload.schema_violations || [error.message]);
+                return;
+            }
+            toast(error.message, "error");
+        }
     }, 500);
 
     /* A keystroke updates the cheap flat-field aggregates only; leaving
        a field (change/blur) also writes derived table cells (one grid
-       redraw). The record saves 500ms after the burst settles. */
+       redraw) and refreshes the checklist. The record saves 500ms
+       after the burst settles. */
     node.addEventListener("input", () => { runRecompute(false); save(); });
-    node.addEventListener("change", () => { runRecompute(true); save(); });
+    node.addEventListener("change", () => { runRecompute(true); save(); paintTodo(); });
     runRecompute(true);
+    paintTodo();
 
-    const tail = [];
-    if (links.length) {
-        tail.push(el("div", { class: "section-label", text: "Linked records" }));
-        tail.push(el("div", { class: "chip-list" }, links.map((l) => recordLink(l))));
+    /* ---- presence: who else has this open ---- */
+    const presenceBar = el("div", { class: "presence-banner no-print", hidden: "hidden" });
+    function paintPresence(editors) {
+        if (!editors || !editors.length) { presenceBar.hidden = true; return; }
+        const names = editors.map((e) => e.name);
+        const who = names.length === 1
+            ? names[0]
+            : names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+        presenceBar.textContent = who + (names.length === 1 ? " also has" : " also have")
+            + " this record open. Whoever saves last wins.";
+        presenceBar.hidden = false;
     }
-    tail.push(...workflowButtons(record, transitions, () => renderLiveForm(number, { slot })));
-    tail.push(el("div", { class: "section-label", text: "Attachments" }));
-    tail.push(buildUploader({
-        url: api.recordAttachmentsUrl(number),
-        onComplete: () => renderLiveForm(number, { slot })
-    }));
+    const stopPresence = beginEditing(number, paintPresence, () => false);
+    liveTeardown = () => { stopPresence(); };
+
+    /* ---- the rest of the record: workflow / links / files / history ---- */
+    const context = buildRecordContext(record.type, number, {
+        onWorkflow: () => renderLiveForm(number, { slot })
+    });
 
     track.replaceChildren(
+        staleBar,
+        presenceBar,
         node,
-        el("div", { class: "no-print" }, tail),
+        todoBox,
+        el("div", { class: "no-print" }, [context]),
         el("div", { class: "section-label no-print", text: "Documents" }),
         el("div", { class: "panel-body no-print", id: slot + "-documents-panel" })
     );
     renderDocumentsPanel(record.number, slot + "-documents-panel");
 }
 
+/* A header fact - a label and either plain text or an editable control
+   (Summary / Severity / Due when the record is being edited). */
 function fact(label, value) {
+    const valueNode = typeof value === "string"
+        ? el("span", { class: "lf-fact-val", text: value })
+        : value;
+    if (typeof value !== "string") valueNode.classList.add("lf-fact-val");
     return el("div", { class: "lf-fact" }, [
         el("span", { class: "lf-fact-label", text: label }),
-        el("span", { class: "lf-fact-val", text: value })
+        valueNode
     ]);
 }

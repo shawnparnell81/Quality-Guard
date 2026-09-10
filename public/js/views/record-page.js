@@ -12,9 +12,10 @@
    whether a type is there yet; a caller that gets `false` from
    openRecordPage() falls back to that type's own screen.
 
-     GENERIC  - events.js renderRecordDetail, side panel removed
-     BESPOKE  - its own renderer (fair/ppap/8D/ECN), side panel removed
-     custom   - user-created type, renderCustomDetail (always full-page)
+     LIVE_BUILTIN - ncr/capa/complaint/scar/audit/risk: renderLiveForm
+                    (schema form + buildRecordContext), no Edit button
+     BESPOKE      - its own renderer (fair/ppap/8D/ECN/di/apqp)
+     custom       - user-created type, also renderLiveForm
    ============================================================ */
 
 import { show } from "../app.js";
@@ -32,7 +33,12 @@ import { openPane, hasPanes } from "../panes/paneManager.js";
 
 const SLOT = "record-view";
 
-const GENERIC = new Set(["ncr", "capa", "complaint", "scar", "audit", "risk"]);
+/* Built-in workflow types that render as a live document (Phase 2) -
+   the same navy schema form + buildRecordContext panel every custom
+   type uses, editing in place with an autosave PATCH. They keep their
+   workflow, links, attachments and audit trail through the context
+   panel; creation still goes through openRecordEditor. */
+const LIVE_BUILTIN = new Set(["ncr", "capa", "complaint", "scar", "audit", "risk"]);
 
 const BESPOKE = {
     fair: renderFairDetail,
@@ -50,10 +56,10 @@ const BESPOKE = {
 const CUSTOM_BESPOKE = {};
 
 /* Types whose paper copy is a designed one-sheet form (print-view.js),
-   not the generic pdfkit PDF: the built-in 8D plus every custom type
-   (they are all live documents now). */
+   not the generic pdfkit PDF: the built-in 8D, the live-document
+   built-ins, plus every custom type. */
 function isBespokePrint(type) {
-    return type === "eightd" || !BUILT_IN.has(type);
+    return type === "eightd" || LIVE_BUILTIN.has(type) || !BUILT_IN.has(type);
 }
 
 /* Built-in types whose old side panel carried no Edit button - the
@@ -68,7 +74,7 @@ const BUILT_IN = new Set([
 ]);
 
 export function converted(type) {
-    return GENERIC.has(type) || Boolean(BESPOKE[type]) || !BUILT_IN.has(type);
+    return LIVE_BUILTIN.has(type) || Boolean(BESPOKE[type]) || !BUILT_IN.has(type);
 }
 
 /* Where "Back" returns to, and the scroll position to restore there.
@@ -97,22 +103,12 @@ export async function openRecordPage(number, opts = {}) {
 
     if (!converted(type)) return false;
 
-    /* Every custom (user-installed) type is a live document now -
-       full-page view path, buildLiveForm from its schema, chrome =
-       Back + Print + Fill from Excel + Duplicate. */
-    const liveForm = !BUILT_IN.has(type);
-
-    /* GENERIC built-ins (NCR, CAPA, ...) open straight into their
-       editable schema form + context panel (forms.js openRecordEditor).
-       Custom types no longer take this path. */
-    if (GENERIC.has(type)) {
-        const back = opts.returnView || currentViewName() || "dashboard";
-        await show("record-editor", { reload: false });
-        await openRecordEditor(type, {
-            number: n, returnView: back, stayOnSave: true, custom: false
-        });
-        return true;
-    }
+    /* A live document: every custom (user-installed) type, plus the
+       Phase-2 built-in workflow types. Full-page view path,
+       buildLiveForm from its schema, chrome = Back + Print +
+       Fill from Excel + Duplicate; the workflow / links / history sit
+       in the buildRecordContext panel below the form. */
+    const liveForm = !BUILT_IN.has(type) || LIVE_BUILTIN.has(type);
 
     if (!opts.keepReturn) {
         returnTo = { view: opts.returnView || currentViewName() || "dashboard", scrollY: window.scrollY };
