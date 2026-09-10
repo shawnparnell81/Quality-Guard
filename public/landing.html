@@ -8,6 +8,9 @@
       name="description"
       content="ISO 9001 quality management built for shops that can't afford a big-company QMS budget. Nonconformance, CAPA, calibration, audits and training in one place."
     />
+    <link rel="icon" href="/img/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/img/favicon-180.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -300,6 +303,12 @@
         grid-template-columns: 1.05fr 0.95fr;
         gap: 56px;
         align-items: center;
+      }
+      .hero-logo {
+        display: block;
+        width: clamp(128px, 15vw, 168px);
+        height: auto;
+        margin-bottom: 22px;
       }
       .eyebrow {
         display: inline-flex;
@@ -834,28 +843,19 @@
             fill="none"
             aria-hidden="true"
           >
-            <rect
-              x="1.5"
-              y="1.5"
-              width="29"
-              height="29"
-              rx="7"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
             <path
-              d="M8 24 L16 8 L24 24"
+              d="M6 8.4V6.2A2.2 2.2 0 0 1 8.2 4h15.6A2.2 2.2 0 0 1 26 6.2v8.9c0 6.3-5.1 10.8-10 13.1C11.1 25.9 6 21.4 6 15.1Z"
               stroke="currentColor"
               stroke-width="2"
               stroke-linejoin="round"
             />
             <path
-              d="M6 24 H26"
-              stroke="var(--brass)"
-              stroke-width="2"
+              d="M20.6 12.1a5.1 5.1 0 1 0 .1 7.3V15.3h-3.3"
+              stroke="currentColor"
+              stroke-width="2.3"
               stroke-linecap="round"
+              stroke-linejoin="round"
             />
-            <circle cx="16" cy="24" r="2.2" fill="var(--brass)" />
           </svg>
           <span class="brand-name">QMS Guardian</span>
         </a>
@@ -879,6 +879,11 @@
       <section class="hero">
         <div class="wrap hero-grid">
           <div class="reveal in-view">
+            <img
+              class="hero-logo"
+              src="/img/qms-guardian-logo.png"
+              alt="QMS Guardian - Quality Management System"
+            />
             <span class="eyebrow"
               ><span class="dot"></span> Built for shops under 100 people</span
             >
@@ -1413,28 +1418,19 @@
             aria-hidden="true"
             style="width: 20px; height: 20px"
           >
-            <rect
-              x="1.5"
-              y="1.5"
-              width="29"
-              height="29"
-              rx="7"
-              stroke="currentColor"
-              stroke-width="1.6"
-            />
             <path
-              d="M8 24 L16 8 L24 24"
+              d="M6 8.4V6.2A2.2 2.2 0 0 1 8.2 4h15.6A2.2 2.2 0 0 1 26 6.2v8.9c0 6.3-5.1 10.8-10 13.1C11.1 25.9 6 21.4 6 15.1Z"
               stroke="currentColor"
               stroke-width="2"
               stroke-linejoin="round"
             />
             <path
-              d="M6 24 H26"
-              stroke="var(--brass)"
-              stroke-width="2"
+              d="M20.6 12.1a5.1 5.1 0 1 0 .1 7.3V15.3h-3.3"
+              stroke="currentColor"
+              stroke-width="2.3"
               stroke-linecap="round"
+              stroke-linejoin="round"
             />
-            <circle cx="16" cy="24" r="2.2" fill="var(--brass)" />
           </svg>
           <span class="brand-name" style="font-size: 14px">QMS Guardian</span>
         </a>
