@@ -28,6 +28,7 @@ import {
     renderDrawings, renderOnboarding, renderOnboardingPacket,
     renderReview, renderScorecards, wireEvaluate
 } from "./views/evaluate.js";
+import { renderCustomers, renderCustomerFile, wireCustomers } from "./views/customers.js";
 import { renderForms, wireForms } from "./views/formbuilder.js";
 import { wireRecordEditor } from "./forms.js";
 import { renderFloorReport } from "./views/floorreport.js";
@@ -96,6 +97,9 @@ const LOADERS = {
     shipping:    renderShipping,
     onboarding:  renderOnboarding,
     "onboarding-packet": renderOnboardingPacket,
+    customers:   () => renderCustomers(),
+    "customer-onboarding": () => renderCustomers({ onboardingOnly: true }),
+    "customer-file": renderCustomerFile,
     review:      renderReview,
     turtle:      renderTurtle,
     scorecards:  renderScorecards,
@@ -455,6 +459,7 @@ async function start() {
     wireOperations();
     wireLogs();
     wireEvaluate();
+    wireCustomers();
     wireReviewCharts();
     wirePpap();
     wireLpa();

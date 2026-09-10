@@ -984,6 +984,60 @@
         <div id="packet-body"></div>
     </section>
 
+    <!-- ============ CUSTOMERS ============ -->
+    <section class="view" id="view-customers" hidden>
+        <div class="view-head">
+            <div class="row" style="justify-content:space-between;align-items:start">
+                <div>
+                    <h1 class="view-title">Customers<span class="clause-ref">8.2</span></h1>
+                    <p class="view-sub">Every customer's folder - profile, onboarding, quotes, specs and the rest. Click a row to open it.</p>
+                </div>
+                <button class="btn btn-primary no-print" type="button" data-new-customer data-requires="customer.manage">New customer</button>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">All customers</h2><span class="panel-note">click a row to open its folder</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Customer</th><th>Code</th><th>Onboarding</th><th>Status</th></tr></thead>
+                    <tbody id="customer-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ CUSTOMER ONBOARDING ============ -->
+    <section class="view" id="view-customer-onboarding" hidden>
+        <div class="view-head">
+            <div class="row" style="justify-content:space-between;align-items:start">
+                <div>
+                    <h1 class="view-title">Customer Onboarding<span class="clause-ref">8.2.3</span></h1>
+                    <p class="view-sub">Customers still working through the onboarding stages. Click a row to open the folder and advance it.</p>
+                </div>
+                <button class="btn btn-primary no-print" type="button" data-new-customer data-requires="customer.manage">New customer</button>
+            </div>
+        </div>
+        <div class="panel">
+            <div class="panel-head"><h2 class="panel-title">Onboarding</h2><span class="panel-note">click a row to open its folder</span></div>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Customer</th><th>Code</th><th>Progress</th><th>Status</th></tr></thead>
+                    <tbody id="customer-onboarding-table"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ CUSTOMER FOLDER ============ -->
+    <section class="view" id="view-customer-file" hidden>
+        <div class="view-head">
+            <button class="btn no-print" id="customer-file-back" type="button" style="margin-bottom:10px">&larr; Back to customers</button>
+            <h1 class="view-title" id="customer-file-title">Customer folder</h1>
+            <p class="view-sub" id="customer-file-sub"></p>
+        </div>
+        <div id="customer-file-body"></div>
+    </section>
+
     <!-- ============ INTERNAL AUDIT ============ -->
     <section class="view" id="view-audit" hidden>
         <div class="view-head">
