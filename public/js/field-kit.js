@@ -27,14 +27,19 @@ export function ensureDialog() {
     return dialog;
 }
 
-/* Amber / red on a numeric cell once it crosses column.thresholds. */
+/* Amber / red on a numeric cell once it crosses column.thresholds.
+   By default a HIGH value is the bad one (RPN); thresholds.direction
+   "low" flips it so a value AT OR BELOW the threshold is the bad one
+   (a yield %, an OEE, a Cpk). */
 export function paintThreshold(cell, column, value) {
     cell.classList.remove("rpn-warn", "rpn-crit");
     const t = column.thresholds;
     const n = Number(value);
     if (!t || value === "" || !Number.isFinite(n)) return;
-    if (t.crit != null && n >= t.crit) cell.classList.add("rpn-crit");
-    else if (t.warn != null && n >= t.warn) cell.classList.add("rpn-warn");
+    const low = t.direction === "low";
+    const past = (limit) => (low ? n <= limit : n >= limit);
+    if (t.crit != null && past(t.crit)) cell.classList.add("rpn-crit");
+    else if (t.warn != null && past(t.warn)) cell.classList.add("rpn-warn");
 }
 
 /* "RPN = Severity × Occurrence × Detection" - shown as the title of a
