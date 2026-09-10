@@ -1,0 +1,32 @@
+{
+  "key": "quality_alert",
+  "name": "Quality Alert / Defect Conformance Notice",
+  "prefix": "QAN",
+  "clause": "8.7",
+  "category": "Problem solving",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "Immediate shop-floor containment bulletin - the affected part / area, a standard-vs-defect comparison with reference photos, the containment and inspection instruction, and initiator / manager / operator sign-off.",
+  "fields": [
+    { "key": "alert_control_no", "label": "Alert Control No.", "type": "text", "required": true, "section": "Alert details" },
+    { "key": "issue_date", "label": "Issue Date", "type": "date", "section": "Alert details" },
+    { "key": "expiration_date", "label": "Expiration Date", "type": "date", "section": "Alert details" },
+    {
+      "key": "current_status", "label": "Current Status", "type": "select",
+      "options": ["Active / Mandatory", "Expired / Archived"], "section": "Alert details"
+    },
+    { "key": "affected_part_no", "label": "Affected Part / Process No.", "type": "text", "section": "Alert details" },
+    { "key": "part_description", "label": "Part / Process Description", "type": "text", "section": "Alert details" },
+    { "key": "workcenter_area", "label": "Workcenter / Area", "type": "text", "section": "Alert details" },
+
+    { "key": "ok_condition_notes", "label": "Standard / OK condition - acceptable parameters", "type": "memo", "section": "Standard vs defect" },
+    { "key": "ok_image", "label": "Standard / OK condition photo", "type": "file", "section": "Standard vs defect" },
+    { "key": "notok_condition_notes", "label": "Defect / NOT OK condition - defect & reject criteria", "type": "memo", "section": "Standard vs defect" },
+    { "key": "notok_image", "label": "Defect / NOT OK condition photo", "type": "file", "section": "Standard vs defect" },
+
+    { "key": "containment_instructions", "label": "Immediate containment & inspection instructions", "type": "memo", "required": true, "section": "Containment" },
+
+    { "key": "qe_initiator", "label": "Quality Engineer / Initiator", "type": "signature", "section": "Sign-off" },
+    { "key": "ops_manager_approval", "label": "Operations Manager Approval", "type": "signature", "section": "Sign-off" },
+    { "key": "operator_acknowledgment", "label": "Operator Acknowledgment (verified shift clean point)", "type": "signature", "section": "Sign-off" }
+  ]
+}
