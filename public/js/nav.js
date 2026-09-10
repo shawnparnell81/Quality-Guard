@@ -106,6 +106,39 @@ const LOCKED_DEPT = "Administration";
 let mount = null;
 let outsideCloseWired = false;
 let navLayout = null;   // the org's stored menu layout, applied by buildNav
+let deptDrag = null;    // the .deptbar-item being dragged
+
+/* A personal, browser-local reordering of the department buttons,
+   layered on top of the org's Menu Layout. Just a list of department
+   names in the order this person wants them; anything not named keeps
+   its default place at the end. Needs no permission and never touches
+   the shared layout. */
+const DEPT_ORDER_KEY = "qmsg:navorder:v1";
+
+function readDeptOrder() {
+    try {
+        const v = JSON.parse(localStorage.getItem(DEPT_ORDER_KEY) || "[]");
+        return Array.isArray(v) ? v.filter((d) => typeof d === "string") : [];
+    } catch { return []; }
+}
+function writeDeptOrder(names) {
+    try { localStorage.setItem(DEPT_ORDER_KEY, JSON.stringify(names)); } catch { /* private mode */ }
+}
+
+/* Flat sections (Dashboard, Audit Readiness) stay pinned at the front;
+   the departments after them follow the personal order. Array.sort is
+   stable, so unranked departments keep their relative default order. */
+function applyDeptOrder(sections) {
+    const order = readDeptOrder();
+    if (order.length === 0) return sections;
+    const rank = new Map(order.map((d, i) => [d, i]));
+    const flat = sections.filter((s) => s.flat);
+    const depts = sections.filter((s) => !s.flat);
+    depts.sort((a, b) =>
+        (rank.has(a.dept) ? rank.get(a.dept) : Infinity)
+        - (rank.has(b.dept) ? rank.get(b.dept) : Infinity));
+    return [...flat, ...depts];
+}
 
 /* Flat index of every leaf in the default catalog, keyed by view. The
    stored layout carries only view keys and an order; label, count
@@ -279,7 +312,9 @@ function deptItem(section) {
     /* Toggle THIS panel only. Opening it never touches the others. */
     btn.addEventListener("click", () => setOpen(menu.hidden));
 
-    const wrapper = el("div", { class: "deptbar-item", "data-dept": section.dept }, [btn, menu]);
+    const wrapper = el("div", {
+        class: "deptbar-item", "data-dept": section.dept, draggable: "true"
+    }, [btn, menu]);
 
     /* Leaving the department - button or panel, they are one region
        because the panel is a child of the wrapper - closes it. Moving
@@ -288,7 +323,34 @@ function deptItem(section) {
        is shown inline regardless and there is nothing to hover. */
     wrapper.addEventListener("mouseleave", () => setOpen(false));
 
+    /* Drag the button to reorder it on the bar. A real drag suppresses
+       the click that would otherwise open the panel; a small nudge is
+       treated as a click by the browser and just opens it. */
+    wrapper.addEventListener("dragstart", (event) => {
+        deptDrag = wrapper;
+        wrapper.classList.add("dragging");
+        closeAllMenus();
+        event.dataTransfer.effectAllowed = "move";
+        try { event.dataTransfer.setData("text/plain", section.dept); } catch { /* Firefox */ }
+    });
+    wrapper.addEventListener("dragend", () => {
+        wrapper.classList.remove("dragging");
+        deptDrag = null;
+        writeDeptOrder([...mount.querySelectorAll(".deptbar-item[data-dept]")]
+            .map((node) => node.dataset.dept));
+    });
+
     return wrapper;
+}
+
+/* The department wrapper the pointer has not yet passed - where the
+   dragged one should land. */
+function deptDropTargetAt(x) {
+    for (const item of mount.querySelectorAll(".deptbar-item:not(.dragging)")) {
+        const box = item.getBoundingClientRect();
+        if (x < box.left + box.width / 2) return item;
+    }
+    return null;
 }
 
 /* Re-render the menu bar under the org's stored layout (or the
@@ -306,7 +368,7 @@ export function buildNav(mountEl, layout) {
     if (layout !== undefined) navLayout = layout;
     mount.replaceChildren();
 
-    for (const section of effectiveNav(navLayout)) {
+    for (const section of applyDeptOrder(effectiveNav(navLayout))) {
         if (section.flat) {
             for (const leaf of section.items) {
                 const link = leafButton(leaf);
@@ -316,6 +378,21 @@ export function buildNav(mountEl, layout) {
         } else {
             mount.append(deptItem(section));
         }
+    }
+
+    /* One delegated dragover moves the dragged department live. */
+    if (!mount.dataset.dndWired) {
+        mount.dataset.dndWired = "1";
+        mount.addEventListener("dragover", (event) => {
+            if (!deptDrag) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            const before = deptDropTargetAt(event.clientX);
+            if (before === deptDrag) return;
+            if (before) mount.insertBefore(deptDrag, before);
+            else mount.appendChild(deptDrag);
+        });
+        mount.addEventListener("drop", (event) => { if (deptDrag) event.preventDefault(); });
     }
 
     /* One listener for the life of the page: a click anywhere that is

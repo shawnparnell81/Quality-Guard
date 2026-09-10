@@ -45,6 +45,7 @@ const NOT_TABBABLE = new Set([
 let strip = null;
 let open = [HOME];     // ordered view names, HOME always first
 let active = HOME;
+let dragView = null;   // view name of the tab being dragged
 
 function labelFor(view) {
     return navItemLabels()[view]
@@ -60,6 +61,28 @@ function persist() {
     } catch { /* private mode / full - the tabs just will not survive a reload */ }
 }
 
+/* Where a drag currently hovers: the tab whose midpoint the pointer
+   has not yet passed, i.e. the one the dragged tab should land before.
+   Dashboard (HOME, always first) is never a drop target. */
+function dropTargetAt(x) {
+    const tabs = [...strip.querySelectorAll(".wtab")].filter((t) => t.dataset.view !== HOME);
+    for (const tab of tabs) {
+        const box = tab.getBoundingClientRect();
+        if (x < box.left + box.width / 2) return tab;
+    }
+    return null;
+}
+
+/* Rebuild `open` from the strip's DOM order (HOME forced first) and
+   persist. Run after a drag settles. */
+function reorderFromDom() {
+    const seen = [...strip.querySelectorAll(".wtab")]
+        .map((t) => t.dataset.view)
+        .filter((v) => v && v !== HOME);
+    open = [HOME, ...seen];
+    persist();
+}
+
 function render() {
     if (!strip) return;
 
@@ -69,7 +92,9 @@ function render() {
             role: "tab",
             "aria-selected": view === active ? "true" : "false",
             tabindex: "0",
-            title: labelFor(view)
+            title: labelFor(view),
+            "data-view": view,
+            draggable: view === HOME ? undefined : "true"
         }, [el("span", { class: "wtab-label", text: labelFor(view) })]);
 
         /* reload:false - the view's DOM is already built and holds its
@@ -82,6 +107,19 @@ function render() {
         });
 
         if (view !== HOME) {
+            tab.addEventListener("dragstart", (event) => {
+                dragView = view;
+                tab.classList.add("dragging");
+                event.dataTransfer.effectAllowed = "move";
+                try { event.dataTransfer.setData("text/plain", view); } catch { /* Firefox needs a payload */ }
+            });
+            tab.addEventListener("dragend", () => {
+                tab.classList.remove("dragging");
+                dragView = null;
+                reorderFromDom();
+                render();
+            });
+
             const close = el("button", {
                 class: "wtab-close", type: "button",
                 "aria-label": "Close " + labelFor(view)
@@ -94,6 +132,24 @@ function render() {
 
     /* Just Dashboard open -> the strip is noise, hide it. */
     strip.hidden = open.length <= 1;
+}
+
+/* One delegated dragover on the strip moves the dragged tab live. */
+function wireStripDnd() {
+    if (!strip || strip.dataset.dndWired) return;
+    strip.dataset.dndWired = "1";
+    strip.addEventListener("dragover", (event) => {
+        if (!dragView) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const dragging = strip.querySelector(".wtab.dragging");
+        if (!dragging) return;
+        const before = dropTargetAt(event.clientX);
+        if (before === dragging) return;
+        if (before) strip.insertBefore(dragging, before);
+        else strip.appendChild(dragging);
+    });
+    strip.addEventListener("drop", (event) => { if (dragView) event.preventDefault(); });
 }
 
 export function closeTab(view) {
@@ -124,6 +180,7 @@ export function trackTab(view) {
    show(). Returns the view to open. */
 export function wireTabs() {
     strip = document.getElementById("workspace-tabs");
+    wireStripDnd();
 
     try {
         const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
