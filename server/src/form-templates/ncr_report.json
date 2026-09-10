@@ -1,0 +1,49 @@
+{
+  "key": "ncr_report",
+  "name": "Non-Conformance Report (NCR)",
+  "prefix": "NCRR",
+  "clause": "8.7",
+  "category": "Problem solving",
+  "standard": "IATF 16949",
+  "description": "Suspect-material quarantine isolation and MRB disposition tracking - part traceability and lot logistics, the defect description with a scrap / rework / unaccounted-balance tally, the containment actions, and the MRB final disposition with sign-off.",
+  "fields": [
+    { "key": "ncr_ticket_number", "label": "NCR Ticket Number", "type": "text", "required": true, "section": "1. Part traceability & lot logistics" },
+    { "key": "date_logged", "label": "Date Logged", "type": "date", "section": "1. Part traceability & lot logistics" },
+    { "key": "affected_part_number", "label": "Affected Part Number", "type": "text", "section": "1. Part traceability & lot logistics" },
+    { "key": "part_description", "label": "Part Description", "type": "text", "section": "1. Part traceability & lot logistics" },
+    { "key": "traceability_code", "label": "Traceability Code / Heat Lot", "type": "text", "section": "1. Part traceability & lot logistics" },
+    { "key": "production_line_shift", "label": "Production Line / Shift", "type": "text", "section": "1. Part traceability & lot logistics" },
+    { "key": "total_qty_suspect", "label": "Total Quantity Suspect", "type": "number", "section": "1. Part traceability & lot logistics" },
+    { "key": "supplier_source", "label": "Supplier / Internal Source", "type": "text", "section": "1. Part traceability & lot logistics" },
+
+    { "key": "defect_description", "label": "Detailed Defect Description", "type": "memo", "required": true, "section": "2. Discrepancy & defect allocation" },
+    { "key": "qty_scrap", "label": "Scrap Target Qty", "type": "number", "section": "2. Discrepancy & defect allocation" },
+    { "key": "qty_rework", "label": "Rework Target Qty", "type": "number", "section": "2. Discrepancy & defect allocation" },
+    { "key": "qty_balance_unaccounted", "label": "Balance Unaccounted", "type": "number", "section": "2. Discrepancy & defect allocation" },
+
+    { "key": "containment_location", "label": "Physical Containment Location", "type": "text", "section": "3. Immediate containment isolation" },
+    {
+      "key": "suspect_inventory_status", "label": "Suspect Inventory Status", "type": "select",
+      "options": ["Red tagged & physically locked", "Sorting work in progress", "Released from hold"],
+      "section": "3. Immediate containment isolation"
+    },
+    { "key": "linked_alert_8d_reference", "label": "Linked Alert / 8D Reference", "type": "text", "section": "3. Immediate containment isolation" },
+
+    {
+      "key": "mrb_disposition", "label": "MRB Final Engineering Disposition Action", "type": "select",
+      "options": [
+        "Pending review panel decision",
+        "Scrap / total audit loss",
+        "Rework according to R-SOI procedures",
+        "Return to vendor (RTV)",
+        "Use as-is concession (customer waiver required)"
+      ],
+      "section": "4. Material Review Board (MRB) final disposition"
+    },
+    { "key": "disposition_justification", "label": "Disposition Justification / Notes", "type": "memo", "section": "4. Material Review Board (MRB) final disposition" },
+
+    { "key": "qi_initiator", "label": "Quality Inspector / Initiator", "type": "signature", "section": "Sign-off" },
+    { "key": "manufacturing_lead", "label": "Manufacturing Lead", "type": "signature", "section": "Sign-off" },
+    { "key": "mrb_chair", "label": "MRB Chair / Engineering", "type": "signature", "section": "Sign-off" }
+  ]
+}
