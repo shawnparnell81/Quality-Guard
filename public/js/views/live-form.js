@@ -35,8 +35,26 @@ import { workflowButtons } from "./change.js";
 const RECOMPUTE = {
     calibration_log: recomputeCalibration,
     internal_audit_checklist: recomputeAuditTally,
-    process_capability: recomputeCpk
+    process_capability: recomputeCpk,
+    training_matrix: recomputeTrainingMatrix
 };
+
+/* Station Qualification % per operator row: share of the three
+   stations at L2 (certified) or L3 (trainer). */
+function recomputeTrainingMatrix(entries, { tables } = {}) {
+    if (!tables) return;
+    const t = entries.find((e) => e.field.key === "operators" && e.readTable);
+    if (!t) return;
+    const rows = t.readTable();
+    const capable = (s) => s === "L2: Certified" || s === "L3: Trainer";
+    let touched = false;
+    for (const r of rows) {
+        const n = [r.station_1, r.station_2, r.station_3].filter(capable).length;
+        const pct = ((n / 3) * 100).toFixed(1);
+        if (r.station_qualification_pct !== pct) { r.station_qualification_pct = pct; touched = true; }
+    }
+    if (touched) t.writeTable(rows);
+}
 
 /* set a flat field's input read-only to a computed value */
 function setDerived(entries, key, value) {
