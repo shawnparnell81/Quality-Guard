@@ -1,0 +1,31 @@
+{
+  "key": "management_review",
+  "name": "Manager Review Meeting Minutes",
+  "prefix": "MGR",
+  "clause": "9.3",
+  "category": "Governance",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "The leadership review record - meeting metadata and attendees, a note per performance-trend input (audit outcomes, customer satisfaction, process metrics / Cpk, resource allocation), and the action pipeline with owners and target dates.",
+  "fields": [
+    { "key": "session_reference", "label": "Session Reference", "type": "text", "required": true, "section": "Meeting details" },
+    { "key": "meeting_date", "label": "Meeting Date", "type": "date", "section": "Meeting details" },
+    { "key": "facilitator", "label": "Facilitator", "type": "text", "section": "Meeting details" },
+    { "key": "documented_by", "label": "Documented By", "type": "text", "section": "Meeting details" },
+    { "key": "attendees", "label": "Executive Attendance & Attendees", "type": "memo", "section": "Meeting details" },
+
+    { "key": "review_audit_outcomes", "label": "Audit Outcomes & Findings", "type": "memo", "section": "Performance trend reviews" },
+    { "key": "review_customer_satisfaction", "label": "Customer Satisfaction & Escapes", "type": "memo", "section": "Performance trend reviews" },
+    { "key": "review_process_metrics", "label": "Process Metrics & Capabilities (Cpk)", "type": "memo", "section": "Performance trend reviews" },
+    { "key": "review_resource_allocation", "label": "Resource Allocation & Changes", "type": "memo", "section": "Performance trend reviews" },
+
+    {
+      "key": "action_items", "label": "Direct Actions & Assignments Pipeline", "type": "table",
+      "section": "Action pipeline",
+      "columns": [
+        { "key": "requirement", "label": "Strategic Action Requirement", "type": "text" },
+        { "key": "owner", "label": "Assigned Owner", "type": "text" },
+        { "key": "target_completion", "label": "Target Completion", "type": "date" }
+      ]
+    }
+  ]
+}
