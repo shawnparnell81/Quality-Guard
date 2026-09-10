@@ -27,12 +27,30 @@ import { renderDocumentsPanel } from "./resources.js";
 import { workflowButtons } from "./change.js";
 
 /* Per-type client calc that isn't a plain compute/expr column - keyed
-   by record-type key. Given (record, entries) after each edit and
-   before a save; mutates a table entry's rows through its editor.
-   RPN and product/sum columns need nothing here. */
+   by record-type key. Given `entries` (buildField results for every
+   field); runs on each edit and before every save. It may write into a
+   table editor (calibration) or into a flat field's input (the audit
+   tally). RPN and product/sum columns need nothing here. */
 const RECOMPUTE = {
-    calibration_log: recomputeCalibration
+    calibration_log: recomputeCalibration,
+    internal_audit_checklist: recomputeAuditTally
 };
+
+/* Live Compliant / OFI / NC counts from the findings table. */
+function recomputeAuditTally(entries) {
+    const t = entries.find((e) => e.field.key === "findings" && e.readTable);
+    if (!t) return;
+    const n = { count_compliant: 0, count_ofi: 0, count_nc: 0 };
+    for (const r of t.readTable()) {
+        if (r.finding === "Compliant") n.count_compliant += 1;
+        else if (r.finding === "Opportunity for improvement") n.count_ofi += 1;
+        else if (r.finding === "Non-conformance") n.count_nc += 1;
+    }
+    for (const [key, val] of Object.entries(n)) {
+        const e = entries.find((x) => x.field.key === key);
+        if (e && e.input) { e.input.value = String(val); e.input.readOnly = true; }
+    }
+}
 
 const DAY = 86400000;
 
@@ -162,8 +180,9 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
     const { node, entries } = buildLiveForm(record, definition, { editable: true });
 
     const recompute = RECOMPUTE[record.type];
+    const runRecompute = () => { if (recompute) { try { recompute(entries); } catch { /* leave as typed */ } } };
+
     const save = debounce(async () => {
-        if (recompute) { try { recompute(entries); } catch { /* leave the row as typed */ } }
         const data = {};
         for (const e of entries) {
             const v = readValue(e);
@@ -172,8 +191,13 @@ export async function renderLiveForm(number, { slot = "record-view" } = {}) {
         try { await api.updateRecord(number, { data }); }
         catch (error) { toast(error.message, "error"); }
     }, 500);
-    node.addEventListener("input", save);
-    node.addEventListener("change", save);
+
+    /* Derived values update on the keystroke; the record saves 500ms
+       after the burst settles. */
+    const onEdit = () => { runRecompute(); save(); };
+    node.addEventListener("input", onEdit);
+    node.addEventListener("change", onEdit);
+    runRecompute();
 
     const tail = [];
     if (links.length) {

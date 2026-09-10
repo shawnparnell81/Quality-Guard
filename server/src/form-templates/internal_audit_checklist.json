@@ -1,0 +1,32 @@
+{
+  "key": "internal_audit_checklist",
+  "name": "Internal Process Audit Checklist",
+  "prefix": "IAC",
+  "clause": "9.2",
+  "category": "Audit",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "Objective process verification and evidence log - the audited area, the requirement checks with observed evidence and a conformity finding per line, and a live Compliant / OFI / NC tally.",
+  "fields": [
+    { "key": "audited_process", "label": "Audited Process / Department", "type": "text", "required": true, "section": "Audit details" },
+    { "key": "audit_date", "label": "Audit Date", "type": "date", "section": "Audit details" },
+    { "key": "lead_auditor", "label": "Lead Auditor", "type": "text", "section": "Audit details" },
+    { "key": "area_manager", "label": "Area Manager / Process Owner", "type": "text", "section": "Audit details" },
+
+    { "key": "count_compliant", "label": "Compliant", "type": "number", "section": "Finding summary" },
+    { "key": "count_ofi", "label": "Opportunity for improvement (OFI)", "type": "number", "section": "Finding summary" },
+    { "key": "count_nc", "label": "Non-conformance (NC)", "type": "number", "section": "Finding summary" },
+
+    {
+      "key": "findings", "label": "Process Audit Requirements & Verified Evidence", "type": "table", "required": true,
+      "section": "Requirement checks",
+      "columns": [
+        { "key": "requirement", "label": "Audit Requirement / Criteria Point", "type": "text" },
+        { "key": "evidence", "label": "Observed Objective Evidence / Notes", "type": "memo" },
+        {
+          "key": "finding", "label": "Conformity Finding", "type": "select",
+          "options": ["Compliant", "Opportunity for improvement", "Non-conformance"]
+        }
+      ]
+    }
+  ]
+}
