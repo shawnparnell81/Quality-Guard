@@ -4,10 +4,10 @@
 
    This is the Vendor Onboarding screens (views/evaluate.js) reshaped
    for the sell side. `renderCustomers` is the list; `renderCustomerFile`
-   is one customer's whole folder - profile, the onboarding stages, and
-   a document library grouped by category (quotes, specs, drawings,
-   contracts, correspondence, other). Every document is a file upload or
-   a link to a controlled document.
+   is one customer's whole folder - profile, an Automation panel, the
+   onboarding stages, and the seven numbered document folders
+   (01_Admin ... 07_Projects) the onboarding automation builds. Every
+   document is a file upload or a link to a controlled document.
    ============================================================ */
 
 import { api } from "../api.js";
@@ -32,14 +32,26 @@ const CUSTOMER_STATUS = {
     inactive: ["Inactive", "hold"]
 };
 
-const CATEGORIES = [
-    ["quote", "Quotes"],
-    ["spec", "Specifications"],
-    ["drawing", "Drawings"],
-    ["contract", "Contracts & NDAs"],
-    ["correspondence", "Correspondence"],
-    ["other", "Other"]
-];
+const AUTOMATION_STATUS = {
+    done: ["Done", "done"],
+    running: ["Running", "prog"],
+    failed: ["Failed", "open"],
+    skipped: ["Skipped", "hold"],
+    pending: ["Not run", "hold"]
+};
+
+const STEP_LABEL = {
+    folders: "Folder structure",
+    metadata: "Metadata snapshot",
+    quality: "Quality profile",
+    engineering: "Engineering profile",
+    starter_docs: "Starter documents"
+};
+
+const FOLDER_STATUS = {
+    created: ["Ready", "done"],
+    pending: ["Pending", "hold"]
+};
 
 /* ---------- the list ---------- */
 
@@ -126,12 +138,12 @@ function openDoc(doc) {
     }
 }
 
-async function openAddDocumentForm({ stage, category, categoryLabel }) {
+async function openAddDocumentForm({ stage, folderKey, folderName }) {
     let documents = [];
     try { ({ documents } = await api.documents()); } catch { documents = []; }
 
     openEntityForm({
-        title: stage ? "Add a document - " + stage.name : "Add a document - " + categoryLabel,
+        title: stage ? "Add a document - " + stage.name : "Add a document - " + folderName,
         fields: [
             { key: "source", label: "Where from", type: "select", required: true,
               options: ["Upload a file", "Link a controlled document"] },
@@ -148,7 +160,7 @@ async function openAddDocumentForm({ stage, category, categoryLabel }) {
         onSubmit: ({ values, files }) => {
             const form = new FormData();
             if (stage) form.append("stage_key", stage.stage_key);
-            else form.append("category", category);
+            else form.append("folder_key", folderKey);
             if (values.note) form.append("note", values.note);
             if (values.source === "Link a controlled document") {
                 if (!values.document) throw new Error("Choose a controlled document to link");
@@ -216,6 +228,67 @@ function docList(docs, onOpen, onRemove, canManage) {
     }));
 }
 
+async function runAutomation(label, call) {
+    try {
+        const result = await call();
+        const failed = (result.steps || []).filter((s) => s.status === "failed");
+        toast(failed.length
+            ? label + ": " + failed.length + " step(s) failed - see the panel"
+            : label + " complete");
+    } catch (error) {
+        toast(label + " failed: " + error.message);
+    }
+    await renderCustomerFile();
+}
+
+function renderAutomationPanel(automation, canManage) {
+    const steps = automation?.steps || [];
+
+    const list = el("ul", { class: "packet-docs" }, steps.map((step) => {
+        const [label, kind] = AUTOMATION_STATUS[step.status] || [humanize(step.status), "hold"];
+        const when = step.finished_at || step.created_at;
+        return el("li", {}, [
+            el("span", { class: "sm", text: STEP_LABEL[step.step] || humanize(step.step) }),
+            pill(label, kind),
+            step.error
+                ? el("span", { class: "sm", style: "color:var(--crit)", text: " - " + step.error })
+                : step.detail
+                    ? el("span", { class: "sm dim", text: " - " + step.detail })
+                    : null,
+            when ? el("span", { class: "sm dim", style: "margin-left:auto",
+                text: formatDate(when) }) : null
+        ]);
+    }));
+
+    const actions = el("div", { class: "row-actions", style: "margin-top:12px;flex-wrap:wrap" }, []);
+    if (canManage) {
+        const buttons = [
+            ["Run full automation", () => api.runCustomerAutomation(currentCustomerId), "btn-primary"],
+            ["Create folders", () => api.customerCreateFolders(currentCustomerId)],
+            ["Sync metadata", () => api.customerSyncMetadata(currentCustomerId)],
+            ["Generate starter docs", () => api.customerGenerateStarterDocs(currentCustomerId)]
+        ];
+        for (const [label, call, extra] of buttons) {
+            const b = el("button", {
+                class: "btn btn-xs" + (extra ? " " + extra : ""),
+                type: "button", dataset: { requires: "customer.manage" }
+            }, label);
+            b.addEventListener("click", () => {
+                b.disabled = true;
+                runAutomation(label, call).finally(() => { b.disabled = false; });
+            });
+            actions.append(b);
+        }
+    }
+
+    return el("div", { class: "panel" }, el("div", { class: "panel-body" }, [
+        steps.length
+            ? list
+            : el("p", { class: "sm dim", text: "This customer predates the automation - run it to build the folders and starter documents." }),
+        canManage ? actions : null
+    ]));
+}
+
 export async function renderCustomerFile() {
     const title = document.getElementById("customer-file-title");
     const sub = document.getElementById("customer-file-sub");
@@ -230,7 +303,7 @@ export async function renderCustomerFile() {
     body.replaceChildren(el("p", { class: "sm dim", text: "Loading..." }));
 
     try {
-        const { customer, stages, library, can_manage, can_onboard } =
+        const { customer, stages, folders, automation, can_manage, can_onboard } =
             await api.customer(currentCustomerId);
 
         if (title) title.textContent = customer.name;
@@ -294,30 +367,46 @@ export async function renderCustomerFile() {
             ]));
         });
 
-        /* document library by category */
-        const libCards = CATEGORIES.map(([key, catLabel]) => {
+        /* automation */
+        const automationPanel = renderAutomationPanel(automation, can_manage);
+
+        /* the seven numbered document folders */
+        const folderCards = (folders || []).map((folder) => {
+            const [fLabel, fKind] = FOLDER_STATUS[folder.status] || [humanize(folder.status), "hold"];
             const add = can_manage
                 ? (() => {
                     const b = el("button", { class: "btn btn-xs", type: "button" }, "Add");
-                    b.addEventListener("click", () => openAddDocumentForm({ category: key, categoryLabel: catLabel }));
+                    b.addEventListener("click", () => openAddDocumentForm({
+                        folderKey: folder.folder_key, folderName: folder.name
+                    }));
                     return b;
                 })()
                 : null;
             return el("div", { class: "panel" }, el("div", { class: "panel-body" }, [
                 el("div", { class: "row", style: "justify-content:space-between;align-items:center" }, [
-                    el("h3", { class: "packet-stage-name", text: catLabel }),
+                    el("div", { class: "row", style: "gap:8px;align-items:center" }, [
+                        el("h3", { class: "packet-stage-name", text: folder.name.replace(/^\d+_/, "") }),
+                        pill(fLabel, fKind)
+                    ]),
                     add
                 ]),
-                docList(library[key] || [], openDoc, (doc) => removeDoc(doc), can_manage)
+                docList(folder.documents || [], openDoc, (doc) => removeDoc(doc), can_manage)
             ]));
         });
 
+        const folderSection = folderCards.length
+            ? folderCards
+            : [el("p", { class: "sm dim", text:
+                "No folders yet. Run the onboarding automation to build them." })];
+
         body.replaceChildren(
             profile,
+            el("div", { class: "section-label", text: "Onboarding automation" }),
+            automationPanel,
             el("div", { class: "section-label", text: "Onboarding" }),
             ...stageCards,
-            el("div", { class: "section-label", text: "Documents" }),
-            ...libCards
+            el("div", { class: "section-label", text: "Document folders" }),
+            ...folderSection
         );
         applyPermissions(body);
     } catch (error) {

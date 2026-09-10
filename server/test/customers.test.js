@@ -4,10 +4,14 @@
 
    Proves /api/customers end to end: create a customer (default
    onboarding stages appear), list it with 0-of-N progress, upload a
-   quote and link a controlled spec into the library, attach a
+   quote and link a controlled spec into a numbered folder, attach a
    document to a stage, download it back, complete stages in order
    (out-of-order is refused, the last one flips the customer to
    active), and the permission + tenant-isolation gates.
+
+   The onboarding automation that fires on create has its own file
+   (customer-automation.test.js); here we only need its folders to
+   exist so a document can be filed into one.
    ============================================================ */
 
 import { test, before, after } from "node:test";
@@ -163,7 +167,9 @@ test("creating a customer seeds the default onboarding stages", async () => {
     assert.equal(folder.body.stages.length, 6);
     assert.equal(folder.body.stages[0].stage_key, "nda_terms");
     assert.ok(folder.body.stages.every((s) => s.status === "pending"));
-    assert.ok("quote" in folder.body.library && "spec" in folder.body.library);
+    /* the automation built the seven numbered folders on create */
+    assert.equal(folder.body.folders.length, 7);
+    assert.ok(folder.body.folders.some((f) => f.folder_key === "quality"));
 });
 
 test("the list shows the customer with 0-of-6 progress", async () => {
@@ -180,10 +186,10 @@ test("a name collision is refused", async () => {
     assert.equal(dup.status, 409);
 });
 
-test("a quote uploads into the library and downloads back", async () => {
+test("a quote uploads into a numbered folder and downloads back", async () => {
     const pdf = await makePdf();
     const form = new FormData();
-    form.append("category", "quote");
+    form.append("folder_key", "orders");
     form.append("note", "Q-4471, valid 60 days");
     form.append("file", new Blob([pdf], { type: "application/pdf" }), "quote-4471.pdf");
 
@@ -195,8 +201,9 @@ test("a quote uploads into the library and downloads back", async () => {
     assert.equal(addedBody.kind, "upload");
 
     const folder = await api(adminCookie, "GET", "/api/customers/" + customerId);
-    assert.equal(folder.body.library.quote.length, 1);
-    const doc = folder.body.library.quote[0];
+    const orders = folder.body.folders.find((f) => f.folder_key === "orders");
+    assert.equal(orders.documents.length, 1);
+    const doc = orders.documents[0];
     assert.equal(doc.original_filename, "quote-4471.pdf");
     assert.equal(doc.note, "Q-4471, valid 60 days");
 
@@ -208,9 +215,9 @@ test("a quote uploads into the library and downloads back", async () => {
     assert.ok(bytes.length > 100 && bytes.subarray(0, 4).toString() === "%PDF");
 });
 
-test("a controlled document links into the spec library", async () => {
+test("a controlled document links into a numbered folder", async () => {
     const form = new FormData();
-    form.append("category", "spec");
+    form.append("folder_key", "engineering");
     form.append("document", "SPEC-88");
 
     const added = await fetch(BASE + "/api/customers/" + customerId + "/documents", {
@@ -219,9 +226,10 @@ test("a controlled document links into the spec library", async () => {
     assert.equal(added.status, 201);
 
     const folder = await api(adminCookie, "GET", "/api/customers/" + customerId);
-    assert.equal(folder.body.library.spec.length, 1);
-    assert.equal(folder.body.library.spec[0].kind, "link");
-    assert.equal(folder.body.library.spec[0].doc_number, "SPEC-88");
+    const eng = folder.body.folders.find((f) => f.folder_key === "engineering");
+    assert.equal(eng.documents.length, 1);
+    assert.equal(eng.documents[0].kind, "link");
+    assert.equal(eng.documents[0].doc_number, "SPEC-88");
 });
 
 test("a document attaches to an onboarding stage", async () => {
@@ -239,10 +247,10 @@ test("a document attaches to an onboarding stage", async () => {
     assert.equal(stage.documents.length, 1);
 });
 
-test("giving both a stage and a category is refused", async () => {
+test("giving both a stage and a folder is refused", async () => {
     const form = new FormData();
     form.append("stage_key", "requirements");
-    form.append("category", "spec");
+    form.append("folder_key", "engineering");
     form.append("document", "SPEC-88");
     const bad = await fetch(BASE + "/api/customers/" + customerId + "/documents", {
         method: "POST", headers: { Cookie: adminCookie }, body: form

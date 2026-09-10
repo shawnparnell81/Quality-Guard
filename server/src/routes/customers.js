@@ -5,10 +5,13 @@
    Onboarding is the same feature Vendor Onboarding is for suppliers
    (evaluate.js), reshaped for the sell side: a customer has a fixed
    set of onboarding stages that run in order, and a folder of
-   documents - each either attached to a stage or filed under a
-   library category (quotes, specs, drawings, contracts,
-   correspondence, other). Completing the last stage flips the
-   customer to `active`.
+   documents - each attached either to a stage or to one of the seven
+   numbered folders (01_Admin ... 07_Projects) the onboarding
+   automation builds. Completing the last stage flips the customer to
+   `active`.
+
+   The automation engine (../customer-automation.js) runs on customer
+   creation and every step is also a manual button here.
    ============================================================ */
 
 import { Router } from "express";
@@ -16,6 +19,10 @@ import multer from "multer";
 import { query, withTransaction } from "../db.js";
 import { requirePermission } from "../auth.js";
 import { saveUploadedFile, readUploadedFile } from "../file-storage.js";
+import { log } from "../logger.js";
+import {
+    runFull, runStep, AUTOMATION_STEPS, FOLDERS
+} from "../customer-automation.js";
 
 export const customers = Router();
 
@@ -26,7 +33,30 @@ const upload = multer({
 
 const DOC_EXT = [".pdf", ".xlsx", ".xls", ".docx", ".doc", ".csv", ".png", ".jpg", ".jpeg"];
 
-const CATEGORIES = ["quote", "spec", "drawing", "contract", "correspondence", "other"];
+const FOLDER_KEYS = FOLDERS.map((f) => f.key);
+
+/* Resolve a customer id inside the caller's org, or null. */
+async function findCustomer(orgId, id) {
+    const r = await query("select id from customers where org_id = $1 and id = $2", [orgId, id]);
+    return r.rowCount === 0 ? null : r.rows[0].id;
+}
+
+/* The latest automation_logs row per step, for the status panel. */
+async function automationSummary(customerId) {
+    const r = await query(`
+        select distinct on (step)
+               step, status, run_source, detail, error, started_at, finished_at, created_at
+          from automation_logs
+         where customer_id = $1
+         order by step, created_at desc
+    `, [customerId]);
+    const byStep = Object.fromEntries(r.rows.map((row) => [row.step, row]));
+    return {
+        steps: AUTOMATION_STEPS.map((step) => byStep[step] || { step, status: "pending" }),
+        last_run: r.rows.reduce((max, row) =>
+            !max || row.created_at > max ? row.created_at : max, null)
+    };
+}
 
 /* Every customer gets these onboarding stages at creation, in order. */
 const DEFAULT_STAGES = [
@@ -111,7 +141,23 @@ customers.post("/customers", requirePermission("customer.manage"),
             });
 
             if (created.conflict) return response.status(409).json({ error: created.conflict });
-            response.status(201).json({ id: created.id, name });
+
+            /* Fire the onboarding automation. Continue-on-failure and
+               fully detached from the create: a thrown step is already
+               logged to automation_logs, and the customer stands
+               regardless. The user re-runs a failed step from its
+               button on the folder page. */
+            let automation = null;
+            try {
+                automation = await runFull(
+                    request.user.org_id, created.id, request.user.id, { source: "auto" }
+                );
+            } catch (autoError) {
+                log.error("customer_automation_run_failed",
+                    { customerId: created.id, error: autoError.message });
+            }
+
+            response.status(201).json({ id: created.id, name, automation });
         } catch (error) {
             next(error);
         }
@@ -138,8 +184,15 @@ customers.get("/customers/:id", requirePermission("customer.read"),
                  order by s.position
             `, [request.params.id]);
 
+            const folderRows = await query(`
+                select id, folder_key, name, position, status, path
+                  from customer_folders
+                 where customer_id = $1
+                 order by position
+            `, [request.params.id]);
+
             const docs = await query(`
-                select cd.id, cd.stage_id, cd.category, cd.kind, cd.note, cd.uploaded_at,
+                select cd.id, cd.stage_id, cd.folder_id, cd.kind, cd.note, cd.uploaded_at,
                        cd.original_filename, cd.mime_type, cd.size_bytes,
                        up.full_name as uploaded_by,
                        d.doc_number, d.title as doc_title, d.current_revision
@@ -151,7 +204,7 @@ customers.get("/customers/:id", requirePermission("customer.read"),
             `, [request.params.id]);
 
             const byStage = new Map();
-            const library = Object.fromEntries(CATEGORIES.map((c) => [c, []]));
+            const byFolder = new Map();
             for (const row of docs.rows) {
                 const doc = {
                     id: row.id, kind: row.kind, note: row.note,
@@ -163,10 +216,17 @@ customers.get("/customers/:id", requirePermission("customer.read"),
                 if (row.stage_id) {
                     if (!byStage.has(row.stage_id)) byStage.set(row.stage_id, []);
                     byStage.get(row.stage_id).push(doc);
-                } else if (row.category && library[row.category]) {
-                    library[row.category].push(doc);
+                } else if (row.folder_id) {
+                    if (!byFolder.has(row.folder_id)) byFolder.set(row.folder_id, []);
+                    byFolder.get(row.folder_id).push(doc);
                 }
             }
+
+            const metadata = await query(`
+                select billing_address, shipping_address, contacts,
+                       quality_requirements, engineering_requirements, folder_root, synced_at
+                  from customer_metadata where customer_id = $1
+            `, [request.params.id]);
 
             response.json({
                 customer: customer.rows[0],
@@ -176,7 +236,12 @@ customers.get("/customers/:id", requirePermission("customer.read"),
                     ...stage,
                     documents: byStage.get(stage.id) || []
                 })),
-                library
+                folders: folderRows.rows.map((folder) => ({
+                    ...folder,
+                    documents: byFolder.get(folder.id) || []
+                })),
+                metadata: metadata.rows[0] || null,
+                automation: await automationSummary(request.params.id)
             });
         } catch (error) {
             next(error);
@@ -290,23 +355,20 @@ customers.post("/customers/:id/documents", requirePermission("customer.manage"),
             const note = String(request.body?.note || "").trim() || null;
             const docNumber = String(request.body?.document || "").trim();
             const stageKey = String(request.body?.stage_key || "").trim();
-            const category = String(request.body?.category || "").trim();
+            const folderKey = String(request.body?.folder_key || "").trim();
 
-            if (!!stageKey === !!category) {
-                return response.status(400).json({ error: "Give exactly one of stage_key or category" });
+            if (!!stageKey === !!folderKey) {
+                return response.status(400).json({ error: "Give exactly one of stage_key or folder_key" });
             }
-            if (category && !CATEGORIES.includes(category)) {
-                return response.status(400).json({ error: "Unknown category " + category });
+            if (folderKey && !FOLDER_KEYS.includes(folderKey)) {
+                return response.status(400).json({ error: "Unknown folder " + folderKey });
             }
             if (!request.file && !docNumber) {
                 return response.status(400).json({ error: "Attach a file or name a controlled document" });
             }
 
-            const customer = await query(
-                "select id from customers where org_id = $1 and id = $2",
-                [request.user.org_id, request.params.id]
-            );
-            if (customer.rowCount === 0) return response.status(404).json({ error: "No such customer" });
+            const customerId = await findCustomer(request.user.org_id, request.params.id);
+            if (!customerId) return response.status(404).json({ error: "No such customer" });
 
             let stageId = null;
             if (stageKey) {
@@ -316,6 +378,20 @@ customers.post("/customers/:id/documents", requirePermission("customer.manage"),
                 );
                 if (stage.rowCount === 0) return response.status(404).json({ error: "No such stage" });
                 stageId = stage.rows[0].id;
+            }
+
+            let folderId = null;
+            if (folderKey) {
+                const folder = await query(
+                    "select id from customer_folders where customer_id = $1 and folder_key = $2",
+                    [request.params.id, folderKey]
+                );
+                if (folder.rowCount === 0) {
+                    return response.status(404).json({
+                        error: "That folder does not exist yet - run Create folders first"
+                    });
+                }
+                folderId = folder.rows[0].id;
             }
 
             let linkedDocId = null;
@@ -343,11 +419,11 @@ customers.post("/customers/:id/documents", requirePermission("customer.manage"),
             const inserted = await withTransaction(async (client) => {
                 const row = await client.query(`
                     insert into customer_documents
-                        (org_id, customer_id, stage_id, category, kind, original_filename,
+                        (org_id, customer_id, stage_id, folder_id, kind, original_filename,
                          mime_type, size_bytes, storage_path, document_id, note, uploaded_by)
                     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     returning id, kind
-                `, [request.user.org_id, request.params.id, stageId, category || null,
+                `, [request.user.org_id, request.params.id, stageId, folderId,
                     request.file ? "upload" : "link",
                     filename, mime, size, storagePath, linkedDocId, note, request.user.id]);
 
@@ -417,6 +493,75 @@ customers.get("/customers/:id/documents/:docId/download", requirePermission("cus
             response.setHeader("Content-Disposition",
                 (inline ? "inline" : "attachment") + "; filename=\"" + (doc.original_filename || "document") + "\"");
             response.send(buffer);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* ---------- onboarding automation: manual (re-)runs ---------- */
+
+/* Run the whole sequence again. Idempotent; ?force / { force:true }
+   also rewrites the two profiles. */
+customers.post("/customers/:id/run-full-automation", requirePermission("customer.manage"),
+    async (request, response, next) => {
+        try {
+            const customerId = await findCustomer(request.user.org_id, request.params.id);
+            if (!customerId) return response.status(404).json({ error: "No such customer" });
+
+            const force = request.body?.force === true || request.query.force === "true";
+            const result = await runFull(
+                request.user.org_id, customerId, request.user.id, { source: "manual", force }
+            );
+            response.json(result);
+        } catch (error) {
+            next(error);
+        }
+    });
+
+/* One step at a time. sync-metadata bundles the three data steps so a
+   single button refreshes the snapshot and both profiles. */
+function stepRoute(pathSuffix, steps) {
+    customers.post("/customers/:id/" + pathSuffix, requirePermission("customer.manage"),
+        async (request, response, next) => {
+            try {
+                const customerId = await findCustomer(request.user.org_id, request.params.id);
+                if (!customerId) return response.status(404).json({ error: "No such customer" });
+
+                const force = request.body?.force === true || request.query.force === "true";
+                const out = [];
+                for (const step of steps) {
+                    out.push(await runStep(
+                        request.user.org_id, customerId, request.user.id,
+                        step, { source: "manual", force }
+                    ));
+                }
+                response.json({ steps: out });
+            } catch (error) {
+                next(error);
+            }
+        });
+}
+
+stepRoute("create-folders", ["folders"]);
+stepRoute("sync-metadata", ["metadata", "quality", "engineering"]);
+stepRoute("generate-starter-docs", ["starter_docs"]);
+
+/* The full append-only trail for the status panel. */
+customers.get("/customers/:id/automation-logs", requirePermission("customer.read"),
+    async (request, response, next) => {
+        try {
+            const customerId = await findCustomer(request.user.org_id, request.params.id);
+            if (!customerId) return response.status(404).json({ error: "No such customer" });
+
+            const logs = await query(`
+                select step, status, run_source, detail, error,
+                       started_at, finished_at, created_at
+                  from automation_logs
+                 where customer_id = $1
+                 order by created_at desc
+                 limit 200
+            `, [customerId]);
+            response.json({ count: logs.rowCount, logs: logs.rows });
         } catch (error) {
             next(error);
         }

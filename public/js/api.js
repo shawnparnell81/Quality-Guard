@@ -480,6 +480,16 @@ export const api = {
     customerDocumentUrl: (id, docId) =>
         "/api/customers/" + encodeURIComponent(id)
         + "/documents/" + encodeURIComponent(docId) + "/download",
+    runCustomerAutomation: (id, payload) =>
+        request("POST", "/customers/" + encodeURIComponent(id) + "/run-full-automation", payload || {}),
+    customerCreateFolders: (id) =>
+        request("POST", "/customers/" + encodeURIComponent(id) + "/create-folders", {}),
+    customerSyncMetadata: (id) =>
+        request("POST", "/customers/" + encodeURIComponent(id) + "/sync-metadata", {}),
+    customerGenerateStarterDocs: (id) =>
+        request("POST", "/customers/" + encodeURIComponent(id) + "/generate-starter-docs", {}),
+    customerAutomationLogs: (id) =>
+        get("/customers/" + encodeURIComponent(id) + "/automation-logs"),
 
     vendors:      ()        => get("/vendors"),
     vendorEvaluations: (name) => get("/vendors/" + encodeURIComponent(name) + "/evaluations"),
