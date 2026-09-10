@@ -129,13 +129,79 @@ app.use("/api", rateLimit({
     max: rlCap("RATE_LIMIT_GLOBAL_PER_MIN", 600), when: rlOn
 }));
 
+/* The origin this request came in on, honoured for the few absolute
+   URLs SEO needs (canonical, og:url, sitemap loc). Reads the proxy
+   headers directly so it is right behind a TLS terminator without
+   needing "trust proxy" - this is display text, not an auth decision. */
+function originOf(request) {
+    const proto = String(request.headers["x-forwarded-proto"] || request.protocol || "http")
+        .split(",")[0].trim();
+    const host = request.headers["x-forwarded-host"] || request.get("host") || ("localhost:" + PORT);
+    return proto + "://" + host;
+}
+
+/* landing.html carries a literal {{ORIGIN}} token in its canonical /
+   Open Graph / JSON-LD URLs; it is substituted per request so the page
+   is correct on localhost, staging or the eventual real domain with no
+   build step and no configured base URL. Re-read each time - the file
+   is small, the route is cold, and reading it fresh means an edit shows
+   without a server restart (there is no build / asset pipeline here). */
+const LANDING_PATH = join(publicDir, "landing.html");
+function sendLanding(request, response) {
+    response.set("Cache-Control", "no-store");
+    response.type("html").send(
+        readFileSync(LANDING_PATH, "utf8").replaceAll("{{ORIGIN}}", originOf(request))
+    );
+}
+
 /* The public address is the pitch, not the product. Visiting the bare
    domain shows the landing page; the working application only lives
    at /app, which nobody reaches without going through sign-in first
    (the app's own client-side session check bounces straight to
    /login.html for anyone not authenticated). */
-app.get("/", (request, response) => {
-    response.sendFile(join(publicDir, "landing.html"));
+app.get("/", sendLanding);
+app.get("/landing.html", sendLanding);   // same token substitution on the direct path
+
+/* robots.txt - the public page (and its assets) are open to everyone,
+   the app and API are off-limits. Every AI answer-engine and training
+   crawler gets an explicit welcome so a UA-specific default cannot lock
+   us out of ChatGPT / Perplexity / Claude / Google AI citations. */
+app.get("/robots.txt", (request, response) => {
+    const disallow = "Disallow: /app\nDisallow: /api/";
+    const aiBots = [
+        "GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-Web",
+        "anthropic-ai", "PerplexityBot", "Perplexity-User", "Google-Extended",
+        "CCBot", "Bytespider", "Amazonbot", "Applebot-Extended", "cohere-ai",
+        "Meta-ExternalAgent", "Diffbot", "YouBot"
+    ];
+    const body = [
+        "User-agent: *",
+        disallow,
+        "Disallow: /login.html",
+        "Disallow: /change-password.html",
+        "",
+        ...aiBots.flatMap((ua) => [`User-agent: ${ua}`, "Allow: /", disallow, ""]),
+        `Sitemap: ${originOf(request)}/sitemap.xml`,
+        ""
+    ].join("\n");
+    response.type("text/plain").set("Cache-Control", "public, max-age=86400").send(body);
+});
+
+/* sitemap.xml - one URL, the landing page. */
+app.get("/sitemap.xml", (request, response) => {
+    const origin = originOf(request);
+    const lastmod = new Date().toISOString().slice(0, 10);
+    const xml =
+        `<?xml version="1.0" encoding="UTF-8"?>\n` +
+        `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+        `  <url>\n` +
+        `    <loc>${origin}/</loc>\n` +
+        `    <lastmod>${lastmod}</lastmod>\n` +
+        `    <changefreq>monthly</changefreq>\n` +
+        `    <priority>1.0</priority>\n` +
+        `  </url>\n` +
+        `</urlset>\n`;
+    response.type("application/xml").set("Cache-Control", "public, max-age=86400").send(xml);
 });
 
 /* Both /app and /app/ land here (non-strict routing). index.html now
@@ -143,6 +209,7 @@ app.get("/", (request, response) => {
    slash no longer resolves them against /app/ and 404s. */
 app.get("/app", (request, response) => {
     response.set("Cache-Control", "no-store");
+    response.set("X-Robots-Tag", "noindex, nofollow");   // the app is not for search engines
     response.sendFile(join(publicDir, "index.html"));
 });
 
