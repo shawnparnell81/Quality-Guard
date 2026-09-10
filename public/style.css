@@ -3177,6 +3177,198 @@ th.col-you { color: var(--brand); }
     }
     .print-area h1, .print-area h2, .print-area h3 { break-after: avoid; }
     .print-area tr, .print-area .kv > div { break-inside: avoid; }
+
+    /* Designed forms: a controlled document, not a data dump. Navy
+       flattens to black, every cell keeps its gridline, and the sheet
+       is sized to fit. */
+    .print-area .d8-form,
+    .print-area .callog-sheet { font-size: 9pt; }
+    .print-area .d8-block-head,
+    .print-area .d8-doc-head,
+    .print-area .d8-strip-step.active,
+    .print-area .cal-doc-head,
+    .print-area .d8-grid th,
+    .print-area .cal-grid th {
+        background: #000 !important; color: #fff !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .print-area .d8-in,
+    .print-area .cal-in,
+    .print-area .d8-cell,
+    .print-area .d8-val,
+    .print-area .cal-cell-val,
+    .print-area .cal-computed,
+    .print-area .d8-cell-val {
+        border: 1px solid #000 !important; min-height: 0; padding: 2px 4px;
+    }
+    .print-area .d8-block { break-inside: avoid; }
+    .print-area .cal-past { font-weight: 700; }
+}
+
+/* Calibration log's 14-column register needs the long edge of the page. */
+@page callog { size: letter landscape; margin: 12mm; }
+@media print {
+    .print-area .callog-sheet { page: callog; }
+}
+
+/* ============================================================
+   Designed forms - 8D and Calibration Log (print-first bespoke
+   layouts). A "classic navy" controlled-document look: navy header
+   bands, slate label cells, explicit gridlines. The sheet renders as
+   a white document in either app theme, so the on-screen form and the
+   printout are the same object.
+   ============================================================ */
+
+body.print-mode {
+    background: #fff;
+}
+body.print-mode .topbar,
+body.print-mode .deptbar,
+body.print-mode .sidebar-backdrop,
+body.print-mode #workspace-tabs,
+body.print-mode .tabbar { display: none !important; }
+body.print-mode #view-print { display: block; padding: 0; }
+body.print-mode .app,
+body.print-mode .app-main { display: block; margin: 0; padding: 0; }
+
+#print-host { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
+.print-bar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; gap: 8px; padding: 10px 0; margin-bottom: 16px;
+    background: #fff; border-bottom: 1px solid var(--hairline);
+}
+
+.d8-form,
+.callog-sheet {
+    --navy: #0E1861;
+    --slate: #EEF1F7;
+    --rule: #9aa3b2;
+    background: #fff;
+    color: #1f2430;
+    border: 1px solid var(--rule);
+}
+
+/* ---- document header ---- */
+.d8-doc-head,
+.cal-doc-head {
+    background: var(--navy);
+    color: #fff;
+    padding: 10px 14px;
+}
+.d8-doc-title,
+.cal-doc-title {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.d8-doc-kicker,
+.cal-doc-kicker { font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+.d8-doc-no,
+.cal-doc-no { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+.d8-doc-facts,
+.cal-doc-facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 2px 14px; margin-top: 8px; font-size: 11px;
+}
+.d8-doc-facts .d8-label,
+.cal-doc-facts .cal-label {
+    display: block; text-transform: uppercase; letter-spacing: .05em;
+    font-size: 9px; color: #b9c0e8;
+}
+.d8-doc-facts .d8-val,
+.cal-doc-facts .cal-val { color: #fff; }
+.d8-doc-facts .d8-in { color: #1f2430; }
+
+/* ---- 8D discipline strip ---- */
+.d8-strip {
+    display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--rule);
+}
+.d8-strip-step {
+    flex: 1 1 90px; padding: 6px 8px; border-right: 1px solid var(--rule);
+    font-size: 10px; background: var(--slate);
+}
+.d8-strip-step:last-child { border-right: 0; }
+.d8-strip-step.done { background: #e3f0e4; }
+.d8-strip-step.active { background: var(--navy); color: #fff; }
+.d8-strip-tag { font-weight: 700; display: block; }
+.d8-strip-name { color: inherit; opacity: .85; }
+
+/* ---- 8D blocks ---- */
+.d8-block { border-bottom: 1px solid var(--rule); }
+.d8-block:last-child { border-bottom: 0; }
+.d8-block-head {
+    margin: 0; padding: 5px 12px; font-size: 12px; font-weight: 700;
+    background: var(--navy); color: #fff;
+}
+.d8-block-tag {
+    display: inline-block; min-width: 44px; margin-right: 8px;
+    font-family: "IBM Plex Mono", monospace;
+}
+.d8-block-body {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+}
+.d8-field {
+    display: flex; flex-direction: column; border-right: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+}
+.d8-field-wide { grid-column: 1 / -1; }
+.d8-label {
+    padding: 3px 8px; background: var(--slate); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .03em; color: #3a4257;
+}
+.d8-in,
+.cal-in {
+    border: 0; padding: 5px 8px; font: inherit; font-size: 12px; width: 100%;
+    background: #fff; color: #1f2430; box-sizing: border-box;
+}
+.d8-in { min-height: 30px; }
+textarea.d8-in { resize: vertical; }
+.d8-val,
+.cal-cell-val {
+    padding: 5px 8px; font-size: 12px; min-height: 24px;
+}
+
+/* ---- shared small grids (5-why, D5 actions, cal equipment) ---- */
+.d8-grid-wrap,
+.cal-grid-wrap { padding: 8px 12px; overflow-x: auto; }
+.d8-grid,
+.cal-grid { width: 100%; border-collapse: collapse; font-size: 11px; }
+.d8-grid th,
+.cal-grid th {
+    background: var(--navy); color: #fff; font-weight: 600; text-align: left;
+    padding: 4px 6px; border: 1px solid var(--rule); white-space: nowrap;
+}
+.d8-grid td,
+.cal-grid td { border: 1px solid var(--rule); padding: 0; }
+.d8-cell,
+.cal-cell {
+    border: 0; width: 100%; padding: 4px 6px; font: inherit; font-size: 11px;
+    background: #fff; color: #1f2430; box-sizing: border-box;
+}
+.d8-cell-val { padding: 4px 6px; font-size: 11px; }
+.d8-rm, .cal-rm { text-align: center; width: 28px; }
+
+.d8-why { display: flex; flex-direction: column; gap: 3px; padding: 8px 12px; }
+.d8-why-row { display: flex; align-items: center; gap: 8px; }
+.d8-why-n {
+    flex: 0 0 54px; font-weight: 700; font-size: 10px; text-transform: uppercase;
+}
+.d8-why-row .d8-cell,
+.d8-why-row .d8-cell-val {
+    flex: 1; border: 1px solid var(--rule);
+}
+
+/* ---- calibration status flags ---- */
+.cal-computed {
+    padding: 4px 6px; font-size: 11px; background: var(--slate); text-align: center;
+}
+.cal-computed.cal-past { background: #fdecea; color: #b3261e; font-weight: 700; }
+.cal-computed.cal-soon { background: #fff4e0; color: #8a5a00; font-weight: 600; }
+.cal-computed.cal-ok { background: #e7f4e8; color: #1e6b2b; }
+.cal-computed.cal-inactive { background: var(--surface-2); color: var(--ink-3); }
+.cal-grid td select.cal-in { padding: 4px 6px; }
+
+@media (max-width: 780px) {
+    .d8-block-body { grid-template-columns: 1fr; }
+    .d8-field { border-right: 0; }
 }
 
 /* ============================================================

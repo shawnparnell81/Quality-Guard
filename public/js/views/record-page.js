@@ -19,7 +19,7 @@
 
 import { show } from "../app.js";
 import { api } from "../api.js";
-import { el, toast } from "../dom.js";
+import { el, toast, printRecord } from "../dom.js";
 import { openRecordEditor } from "../forms.js";
 import { renderRecordDetail } from "./events.js";
 import { renderCustomDetail } from "./form-record.js";
@@ -28,6 +28,7 @@ import { renderPpapDetail } from "./ppap.js";
 import { renderEightDDetail, renderChangeDetail } from "./change.js";
 import { renderDiDetail } from "./di.js";
 import { renderApqpDetail } from "./apqp.js";
+import { renderCalibrationLog } from "./calibration-log.js";
 import { openPane, hasPanes } from "../panes/paneManager.js";
 
 const SLOT = "record-view";
@@ -42,6 +43,19 @@ const BESPOKE = {
     di: renderDiDetail,
     apqp: renderApqpDetail
 };
+
+/* Custom (user-installed) record types that get a designed, editable
+   bespoke layout instead of the generic label-above-field form. Same
+   render(number, { slot }) contract as BESPOKE. */
+const CUSTOM_BESPOKE = {
+    calibration_log: renderCalibrationLog
+};
+
+/* Types whose paper copy is a designed one-sheet form (print-view.js),
+   not the generic pdfkit PDF. */
+function isBespokePrint(type) {
+    return type === "eightd" || type in CUSTOM_BESPOKE;
+}
 
 /* Built-in types whose old side panel carried no Edit button - the
    record is driven by attaching deliverables / advancing phases, not
@@ -92,10 +106,14 @@ export async function openRecordPage(number, opts = {}) {
 
     if (!converted(type)) return false;
 
+    /* A custom type with a designed bespoke layout: full-page view path,
+       its own renderer, chrome trimmed to Back + Print. */
+    const customBespoke = Boolean(CUSTOM_BESPOKE[type]);
+
     /* The merged surface: the record opens as its editable form with a
        context panel below it (forms.js openRecordEditor). No separate
        read-only view, no Edit button. */
-    if (editInPlace(type)) {
+    if (editInPlace(type) && !customBespoke) {
         const back = opts.returnView || currentViewName() || "dashboard";
         await show("record-editor", { reload: false });
         await openRecordEditor(type, {
@@ -113,7 +131,7 @@ export async function openRecordPage(number, opts = {}) {
     shell.dataset.type = type;
     current = { number: n, type };
 
-    const isCustom = !BUILT_IN.has(type);
+    const isCustom = !BUILT_IN.has(type) && !customBespoke;
 
     const heading = document.getElementById(SLOT + "-detail-number");
     if (heading) heading.textContent = n;
@@ -124,12 +142,17 @@ export async function openRecordPage(number, opts = {}) {
 
     /* A built-in type leans on the chrome's Edit / Print / PDF;
        renderCustomDetail builds its own button row in the panel body,
-       so for a custom type the chrome bar is hidden. */
+       so for a plain custom type the chrome bar is hidden. A custom
+       bespoke layout keeps the bar but only Back + Print (it edits in
+       place, and its paper copy is the designed print view). */
     document.getElementById(SLOT + "-actions").hidden = isCustom;
-    document.getElementById(SLOT + "-edit").hidden = NO_EDIT.has(type);
+    document.getElementById(SLOT + "-edit").hidden = NO_EDIT.has(type) || customBespoke;
+    document.getElementById(SLOT + "-pdf").hidden = customBespoke;
 
     try {
-        if (isCustom) {
+        if (customBespoke) {
+            await CUSTOM_BESPOKE[type](n, { slot: SLOT });
+        } else if (isCustom) {
             await renderCustomDetail(type, n, { slot: SLOT });
         } else if (BESPOKE[type]) {
             await BESPOKE[type](n, { slot: SLOT });
@@ -189,8 +212,13 @@ function actionBtn(id, text, extra = "") {
 
 function wireActions() {
     document.getElementById(SLOT + "-print").addEventListener("click", () => {
-        if (current) window.open(
-            "/api/records/" + encodeURIComponent(current.number) + "/pdf?inline=1", "_blank");
+        if (!current) return;
+        if (isBespokePrint(current.type)) {
+            printRecord(current.number);   // the designed one-sheet form
+        } else {
+            window.open(
+                "/api/records/" + encodeURIComponent(current.number) + "/pdf?inline=1", "_blank");
+        }
     });
     document.getElementById(SLOT + "-pdf").addEventListener("click", () => {
         if (!current) return;
