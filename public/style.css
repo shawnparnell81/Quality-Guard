@@ -3306,6 +3306,11 @@ body.print-mode .app-main { display: block; margin: 0; padding: 0; }
 .live-form .lf-field > textarea { resize: vertical; }
 .live-form .lf-field .field-hint { display: none; }
 .live-form .lf-field .req { color: var(--crit); }
+/* a derived value (an aggregate a hook fills, like the audit tally) -
+   reads as output, not an empty box to type in */
+.live-form input[readonly] {
+    background: var(--slate); color: #3a4257; font-weight: 600;
+}
 
 /* table fields: buildField wraps createTableEditor's grid in
    .field-group. Give it the register look. */
