@@ -1,0 +1,48 @@
+{
+  "key": "scar_report",
+  "name": "Supplier Corrective Action Request (SCAR)",
+  "prefix": "SCARR",
+  "clause": "10.2",
+  "category": "Problem solving",
+  "standard": "IATF 16949",
+  "description": "Supply-chain defect resolution - case metadata, the defect description and evidence, the supplier's 24-hour containment certification, a 5-Why root-cause drill-down, and the permanent corrective / preventative action plan with validation gates and sign-off.",
+  "fields": [
+    { "key": "scar_control_reference", "label": "SCAR Control Reference", "type": "text", "required": true, "section": "1. Request initiation & case metadata" },
+    { "key": "issue_dispatch_date", "label": "Issue / Dispatch Date", "type": "date", "section": "1. Request initiation & case metadata" },
+    { "key": "supplier_name_code", "label": "Supplier Name & Code", "type": "text", "section": "1. Request initiation & case metadata" },
+    { "key": "target_response_due_date", "label": "Target Response Due Date", "type": "date", "section": "1. Request initiation & case metadata" },
+    { "key": "affected_part", "label": "Affected Part ID / Description", "type": "text", "section": "1. Request initiation & case metadata" },
+    { "key": "linked_ncr_ticket", "label": "Linked NCR Hold Ticket", "type": "text", "section": "1. Request initiation & case metadata" },
+
+    { "key": "defect_description", "label": "Defect Description & Non-Conformance Evidence", "type": "memo", "required": true, "section": "2. Defect description & evidence" },
+
+    { "key": "sorting_location", "label": "Suspect Inventory Sorting Location", "type": "text", "section": "3. Supplier 24-hour containment certification" },
+    { "key": "clean_break_point", "label": "Certified Clean Break Point / Lot ID", "type": "text", "section": "3. Supplier 24-hour containment certification" },
+    { "key": "containment_mechanisms", "label": "Short-term containment mechanisms applied", "type": "memo", "section": "3. Supplier 24-hour containment certification" },
+
+    { "key": "why_1", "label": "Why 1 - why did the discrepancy physically occur?", "type": "text", "section": "4. Structural root-cause discovery (5-Why)" },
+    { "key": "why_2", "label": "Why 2 - why was that condition allowed to progress?", "type": "text", "section": "4. Structural root-cause discovery (5-Why)" },
+    { "key": "why_3", "label": "Why 3 - why did the checks fail to isolate it?", "type": "text", "section": "4. Structural root-cause discovery (5-Why)" },
+    { "key": "why_4", "label": "Why 4 - why was the process design vulnerable to this failure mode?", "type": "text", "section": "4. Structural root-cause discovery (5-Why)" },
+    { "key": "why_5", "label": "Why 5 - foundational system failure / standard-instruction drift point", "type": "text", "section": "4. Structural root-cause discovery (5-Why)" },
+
+    {
+      "key": "actions", "label": "Permanent Corrective & Preventative Action Mapping", "type": "table",
+      "section": "5. Permanent corrective & preventative action",
+      "columns": [
+        { "key": "requirement", "label": "Systemic Permanent Action Requirement", "type": "text" },
+        { "key": "owner", "label": "Assigned Owner", "type": "text" },
+        { "key": "target_date", "label": "Target Date", "type": "date" },
+        {
+          "key": "validation_gate", "label": "Validation Gate", "type": "select",
+          "options": ["Open / Pending", "Verified effective"]
+        }
+      ]
+    },
+
+    { "key": "supplier_quality_authority", "label": "Supplier Quality Authority", "type": "signature", "section": "Sign-off" },
+    { "key": "internal_sqe", "label": "Internal SQE Representative", "type": "signature", "section": "Sign-off" },
+    { "key": "plant_quality_manager", "label": "Plant Quality Manager", "type": "signature", "section": "Sign-off" },
+    { "key": "closure_approval", "label": "Effectiveness Verified / Closure Approval", "type": "signature", "section": "Sign-off" }
+  ]
+}
