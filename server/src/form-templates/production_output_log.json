@@ -1,0 +1,35 @@
+{
+  "key": "production_output_log",
+  "name": "Production & Output Log",
+  "prefix": "POL",
+  "clause": "8.5.1",
+  "category": "Production",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "Hourly yield metrics and shift performance - the shift header plus one line per hour window: target vs actual, scrap, net yield % (auto, flagged amber below 98 and red below 95), and defect / downtime notes.",
+  "fields": [
+    { "key": "log_date", "label": "Date", "type": "date", "required": true, "section": "Shift" },
+    {
+      "key": "shift_team", "label": "Shift / Team", "type": "select",
+      "options": ["Shift A - Day", "Shift B - Night", "Shift C - Swing"], "section": "Shift"
+    },
+    { "key": "workcenter", "label": "Workcenter / Line", "type": "text", "section": "Shift" },
+    { "key": "operator_lead", "label": "Operator / Lead", "type": "text", "section": "Shift" },
+
+    {
+      "key": "hourly", "label": "Hourly Performance Tracking Grid", "type": "table", "required": true,
+      "section": "Hourly performance",
+      "columns": [
+        { "key": "hour_window", "label": "Hour Window", "type": "text" },
+        { "key": "target_qty", "label": "Target Qty", "type": "number" },
+        { "key": "actual_qty", "label": "Actual Produced", "type": "number" },
+        { "key": "scrap_qty", "label": "Scrap Qty", "type": "number" },
+        {
+          "key": "net_yield_pct", "label": "Net Yield %", "type": "computed",
+          "expr": "round(actual_qty / (actual_qty + scrap_qty) * 100, 1)",
+          "thresholds": { "warn": 98, "crit": 95, "direction": "low" }
+        },
+        { "key": "notes", "label": "Defect Descriptions / Downtime Variance Notes", "type": "memo" }
+      ]
+    }
+  ]
+}

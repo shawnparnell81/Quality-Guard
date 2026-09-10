@@ -3339,6 +3339,8 @@ body.print-mode .app-main { display: block; margin: 0; padding: 0; }
     font-variant-numeric: tabular-nums; text-align: right;
 }
 .live-form .lf-tablewrap td .computed-cell { background: var(--slate); }
+.live-form .lf-tablewrap td .computed-cell.rpn-warn { background: #fde68a; color: #7c2d12; font-weight: 700; }
+.live-form .lf-tablewrap td .computed-cell.rpn-crit { background: #fecaca; color: #7f1d1d; font-weight: 700; }
 .live-form .lf-tablewrap .row-tools { white-space: nowrap; text-align: center; }
 .live-form .lf-tablewrap .field-hint { display: block; margin-top: 4px; color: var(--ink-3); }
 
