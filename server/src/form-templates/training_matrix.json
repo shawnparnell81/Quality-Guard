@@ -1,0 +1,32 @@
+{
+  "key": "training_matrix",
+  "name": "Training & Competency Matrix",
+  "prefix": "TCM",
+  "clause": "7.2",
+  "category": "People",
+  "standard": "ISO 9001 / IATF 16949",
+  "description": "Workforce qualification and station cross-training - one row per operator with a competency level (L0 untrained / L1 trainee / L2 certified / L3 trainer) at each station, and a station-qualification % (share of stations at L2 or above).",
+  "fields": [
+    {
+      "key": "operators", "label": "Operational Cross-Training Matrix", "type": "table", "required": true,
+      "section": "Cross-training matrix",
+      "columns": [
+        { "key": "operator_name", "label": "Operator Name", "type": "text" },
+        { "key": "clock_id", "label": "Clock / Clock ID", "type": "text" },
+        {
+          "key": "station_1", "label": "Station 1: Setup & Launch", "type": "select",
+          "options": ["L0: Untrained", "L1: Trainee", "L2: Certified", "L3: Trainer"]
+        },
+        {
+          "key": "station_2", "label": "Station 2: Run Operations", "type": "select",
+          "options": ["L0: Untrained", "L1: Trainee", "L2: Certified", "L3: Trainer"]
+        },
+        {
+          "key": "station_3", "label": "Station 3: Inspection / Pack", "type": "select",
+          "options": ["L0: Untrained", "L1: Trainee", "L2: Certified", "L3: Trainer"]
+        },
+        { "key": "station_qualification_pct", "label": "Station Qualification %", "type": "text" }
+      ]
+    }
+  ]
+}
