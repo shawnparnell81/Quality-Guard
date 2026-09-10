@@ -1,0 +1,51 @@
+{
+  "key": "deviation_request",
+  "name": "Deviation Request / Concession Permit",
+  "prefix": "DEV",
+  "clause": "8.7.1.1",
+  "category": "Problem solving",
+  "standard": "IATF 16949",
+  "description": "Temporary authorised departure from an engineering print or approved process - the standard vs. proposed deviation condition, the piece-count / date / breakpoint expiration limits, an engineering risk checklist with enhanced-inspection rules, and the permit lifecycle authorisation state with sign-off.",
+  "fields": [
+    { "key": "deviation_permit_no", "label": "Deviation Permit No.", "type": "text", "required": true, "section": "1. Initiation & traceability metadata" },
+    { "key": "request_date", "label": "Request Date", "type": "date", "section": "1. Initiation & traceability metadata" },
+    { "key": "affected_part", "label": "Affected Part ID / Description", "type": "text", "section": "1. Initiation & traceability metadata" },
+    { "key": "workcenter_line", "label": "Workcenter / Assembly Line", "type": "text", "section": "1. Initiation & traceability metadata" },
+    {
+      "key": "customer_authorization_required", "label": "Customer Authorization Required?", "type": "select",
+      "options": [
+        "No - internal process variation only",
+        "Yes - direct product affecting (waiver needed)"
+      ],
+      "section": "1. Initiation & traceability metadata"
+    },
+    { "key": "requestor_department", "label": "Requestor / Department", "type": "text", "section": "1. Initiation & traceability metadata" },
+
+    { "key": "standard_condition", "label": "Standard print / process condition", "type": "memo", "section": "2. Standard print / process condition" },
+
+    { "key": "proposed_deviation_state", "label": "Proposed temporary deviation state", "type": "memo", "required": true, "section": "3. Proposed temporary deviation state" },
+
+    { "key": "max_production_pieces", "label": "Maximum Production Pieces Allowed", "type": "number", "section": "4. Temporary boundary expiration constraints" },
+    { "key": "planned_expiration_date", "label": "Planned Expiration Date", "type": "date", "section": "4. Temporary boundary expiration constraints" },
+    { "key": "traceable_breakpoint_method", "label": "Traceable Breakpoint Method", "type": "text", "section": "4. Temporary boundary expiration constraints" },
+
+    { "key": "enhanced_inspection_requirements", "label": "Enhanced inspection / verification requirements", "type": "memo", "section": "5. Risk evaluation & interim containment rules" },
+    { "key": "risk_fit_form_function_unaffected", "label": "Fit, form, or function unaffected", "type": "boolean", "section": "5. Risk evaluation & interim containment rules" },
+    { "key": "risk_fmea_profile_evaluated", "label": "FMEA risk profile evaluated", "type": "boolean", "section": "5. Risk evaluation & interim containment rules" },
+    { "key": "risk_downstream_sorting_unnecessary", "label": "Downstream sorting unnecessary", "type": "boolean", "section": "5. Risk evaluation & interim containment rules" },
+
+    { "key": "manufacturing_engineering", "label": "Manufacturing Engineering", "type": "signature", "section": "Dispositions & sign-off" },
+    { "key": "quality_manager_approval", "label": "Quality Manager Approval", "type": "signature", "section": "Dispositions & sign-off" },
+    { "key": "operations_plant_leadership", "label": "Operations / Plant Leadership", "type": "signature", "section": "Dispositions & sign-off" },
+    {
+      "key": "permit_lifecycle_state", "label": "Permit Lifecycle Authorization State", "type": "select",
+      "options": [
+        "Pending approval",
+        "Authorized run",
+        "Expired / closed",
+        "Rejected / denied"
+      ],
+      "section": "Dispositions & sign-off"
+    }
+  ]
+}
